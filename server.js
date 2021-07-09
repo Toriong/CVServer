@@ -17,10 +17,10 @@ mongoose.connect(dbconnection, {
     console.log("connection to mongodb database is successful!")
 });
 
-app.use("/", require("./routes/user"));
+app.use("/", require("./routes/blogposts"));
 
-
+app.use("/", require("./routes/users"))
 
 app.listen(3005, () => {
-    console.log('server started on 3005')
+    console.log('users server started on 3005')
 })

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const blogPostSchema = {
     id: String,
+    authorIcon: String,
     authorIconAlt: String,
     blogPostsImages: [
         {
@@ -14,8 +15,10 @@ const blogPostSchema = {
     subTitle: String,
     body: String,
     datePublished: String,
-    mainTag: String,
-    remainingTags: String,
+    tags: {
+        main: String,
+        remaining: [String]
+    }
 }
 
 // model instaniates a new blog post schema based upon the schema abovec

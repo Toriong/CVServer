@@ -26,10 +26,11 @@ router.route("/users").post((request, response) => {
     newUser.save();
 })
 
+
 // get = get the user account when the user signs in
 router.route("/users").get((request, response) => {
     User.find()
-        .then(users => response.json(users))
+        .then(user => response.json(user))
 })
 
 
