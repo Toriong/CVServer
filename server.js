@@ -5,8 +5,12 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 const dbconnection = "mongodb+srv://gtorio:simba1997@clustercv.blvqa.mongodb.net/CVBlog"
+const bodyParser = require('body-parser');
 
-app.use(cors())
+app.use(bodyParser.json({ limit: "50mb" }));
+app.use(bodyParser.urlencoded({ limit: "50mb", extended: true, parameterLimit: 50000 }));
+
+app.use(cors());
 
 app.use(express.json());
 

@@ -34,8 +34,7 @@ router.route("/blogPosts").post((req, res) => {
 router.route("/blogposts").get((req, res) => {
     console.log("fetch received")
     BlogPost.find()
-        .then(blogPost => res.json(blogPost))
-
+        .then(blogPosts => res.json(blogPosts))
 });
 
 module.exports = router;

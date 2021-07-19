@@ -11,7 +11,13 @@ const userSchema = {
     sex: String,
     reasonsToJoin: String,
     email: String,
-    phoneNum: String
+    phoneNum: String,
+    isSignIn: Boolean,
+    bio: String,
+    topics: String,
+    socialMedia: String,
+    icon: String,
+    blogPosts: String
 };
 
 const User = mongoose.model("users", userSchema);
