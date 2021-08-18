@@ -20,9 +20,9 @@ router.route("/users").post((request, response) => {
             reasonsToJoin: request.body.data.reasonsToJoin,
             email: request.body.data.email,
             phoneNum: request.body.data.phoneNum,
-            isSignIn: request.body.data.isSignIn.currently,
+            isSignIn: request.body,
         });
-
+        console.log(newUser)
         newUser.save();
     }
 
@@ -49,7 +49,7 @@ router.route("/users/:id").post((request, response) => {
             if (err) {
                 console.error("error message: ", err);
             }
-            console.log("numberAffectd", numberAffected);
+            console.log("numbers affected", numberAffected);
         });
 
     response.json({
@@ -77,13 +77,13 @@ router.route("/users/:userInfo").get((request, response) => {
             } else {
                 console.error("Sign in attempt FAILED");
                 response.json({
-                    message: "Inavlid username or password."
+                    message: "Invalid username or password."
                 })
             }
         }).catch(() => {
             console.error("Sign in attempt FAILED");
             response.json({
-                message: "Inavlid username or password."
+                message: "Invalid username or password."
             })
         })
     } else {
@@ -94,6 +94,12 @@ router.route("/users/:userInfo").get((request, response) => {
             });
     }
 });
+
+router.route("/users").get((req, res) => {
+    console.log("getting all users");
+    User.find()
+        .then(user => res.json(user))
+})
 
 
 

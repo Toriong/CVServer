@@ -17,7 +17,8 @@ const userSchema = {
     topics: String,
     socialMedia: String,
     icon: String,
-    blogPosts: String
+    blogPosts: String,
+    isSign: Boolean
 };
 
 const User = mongoose.model("users", userSchema);
