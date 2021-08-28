@@ -19,9 +19,10 @@ const blogPostSchema = {
         main: String,
         remaining: [String]
     }
-}
+};
 
-// model instaniates a new blog post schema based upon the schema abovec
+
+// model instantiates a new blog post schema based upon the schema above
 const BlogPost = mongoose.model('blogPost', blogPostSchema);
 
 module.exports = BlogPost;

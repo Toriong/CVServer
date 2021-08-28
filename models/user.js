@@ -12,13 +12,14 @@ const userSchema = {
     reasonsToJoin: String,
     email: String,
     phoneNum: String,
-    isSignIn: Boolean,
     bio: String,
-    topics: String,
-    socialMedia: String,
+    topics: Array,
+    socialMedia: Array,
     icon: String,
     blogPosts: String,
-    isSign: Boolean
+    isSignedIn: Boolean,
+    isUserNew: Boolean,
+    roughDrafts: Array
 };
 
 const User = mongoose.model("users", userSchema);
