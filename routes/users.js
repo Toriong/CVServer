@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const User = require("../models/user");
+const { MongoClient } = require("mongodb");
 
-// post = save new user into the database
+
+
 
 // creates user's account
 router.route("/users").post((request, response) => {
@@ -33,9 +35,7 @@ router.route("/users").post((request, response) => {
 
 // update the user's profile
 router.route("/users/:id").post((request, response) => {
-    console.log("fetch received, update user's account");
     const id = request.params.id;
-    console.log(request.body)
     // what is exactly is 'User', is it how the document in the collection is structured? 
     if (request.body.name === "add bio, icon, topics, and social media") {
         console.log("updating user's account")
@@ -57,8 +57,11 @@ router.route("/users/:id").post((request, response) => {
         response.json({
             message: "backend successfully updated user's profile"
         });
-    } else if (request.body.name === "blog post rough drafts") {
+    } else if (request.body.name === "updateDraft") {
         console.log("saving rough draft of user's blogPost");
+        // GOAL: update the specific rough draft that the user is working on by their id
+        // get the rough draft the user is working on 
+        // find the user by their 
         User.updateOne({ _id: id }, {
             // get the draft that the user's is currently making by way of its id
             roughDrafts: request.body.data
@@ -74,6 +77,33 @@ router.route("/users/:id").post((request, response) => {
             });
         response.json({
             message: "user's draft saved into database"
+        });
+
+        // add a new rough draft to user's roughDrafts when the user clicks on the 'Write Post' button
+    } else if (request.body.name === "addNewDraft") {
+        console.log("user wants to write a new rough draft.");
+        const package = request.body;
+        // REDO: within the findAndModify method, find the specific user by their username. Then spit out the result and modify the results  
+        User.find().then(users => {
+            const user = users.find(user_ => user_.userName === package.username);
+            const newDraft = {
+                ...package.data,
+                createdDate: Date.now()
+            }
+            const roughDrafts_ = [...user.roughDrafts, newDraft];
+            User.updateOne({ userName: user.userName }, {
+                roughDrafts: roughDrafts_
+            },
+                { multi: true },
+                err => {
+                    if (err) {
+                        console.error("error message: ", err);
+                    }
+                }
+            )
+        })
+        response.json({
+            message: "post request successful, new rough draft added"
         });
     }
 })
@@ -128,10 +158,10 @@ router.route("/users/:package").get((request, response) => {
             response.json({
                 roughDrafts: user_[0].roughDrafts
             })
-        }).catch(() => {
-            console.error("Something went wrong");
+        }).catch(err => {
+            console.error(`Something went wrong, error message: ${err}`);
             response.json({
-                message: "something went wrong"
+                message: `Something went wrong, error message: ${err}`
             })
         });
     }
