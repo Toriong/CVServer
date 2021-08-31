@@ -80,44 +80,60 @@ router.route("/users/:id").post((request, response) => {
 
 // get = get the user account when the user signs in or after the user creates an account
 // get the specific user account info when user signs in
-router.route("/users/:userInfo").get((request, response) => {
+router.route("/users/:package").get((request, response) => {
     console.log("fetch received, get specific user");
-    console.log(request.body);
-    console.log(request.params.userInfo);
-    const user = JSON.parse(request.params.userInfo);
-    if (user.password) {
-        User.find({ userName: user.username }).then(user_ => {
-            if (user_[0].password === user.password) {
+    console.log(request.params.package);
+    const package = JSON.parse(request.params.package);
+    if (package.password) {
+        User.find({ userName: package.username }).then(user_ => {
+            if (user_[0].password === package.password) {
                 console.log("user signed back in")
+                console.log(JSON.stringify(user_[0]));
                 response.json({
-                    message: `Welcome back ${user.username}!`,
+                    message: `Welcome back ${user_[0].userName}!`,
                     user: {
                         id: user_[0]._id,
                         icon: user_[0].icon,
-                        userName: user.username,
-                        roughDrafts: user_[0].roughDrafts,
+                        userName: user_[0].userName,
                         firstName: user_[0].firstName,
-                        lastName: user_[0].lastName
+                        lastName: user_[0].lastName,
+                        roughDrafts: user_[0].roughDrafts
                     }
                 })
             } else {
-                console.error("Sign in attempt FAILED");
+                console.error("Sign-in attempt FAILED");
                 response.json({
                     message: "Invalid username or password."
                 })
             }
         }).catch(() => {
-            console.error("Sign in attempt FAILED");
+            console.error("Sign-in attempt FAILED");
             response.json({
                 message: "Invalid username or password."
             })
         })
-    } else {
-        console.log("user created a account")
-        User.find({ userName: user })
-            .then(user => {
-                response.json(user[0]._id)
-            });
+    }
+    // else {
+    //     // why do I have this code here?
+    //     console.log("user created a account")
+    //     User.find({ userName: user })
+    //         .then(user => {
+    //             response.json(user[0]._id)
+    //         });
+    // }
+
+    if (package.name === "getRoughDrafts") {
+        User.find({ userName: package.username }).then(user_ => {
+            console.log("getting user's rough drafts")
+            response.json({
+                roughDrafts: user_[0].roughDrafts
+            })
+        }).catch(() => {
+            console.error("Something went wrong");
+            response.json({
+                message: "something went wrong"
+            })
+        });
     }
 });
 
