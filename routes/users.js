@@ -2,9 +2,16 @@ const express = require('express');
 const router = express.Router();
 const User = require("../models/user");
 const { MongoClient } = require("mongodb");
+const getDate = require('../functions/getDate')
 
 
 
+
+// NOTES:
+// what if the user's has no rough drafts field? Does push just creates one for me?
+
+// QUESTIONS:
+// when I find the user.roughDrafts, how do I find the specific id in user.RoughDrafts from the server side
 
 // creates user's account
 router.route("/users").post((request, response) => {
@@ -36,72 +43,75 @@ router.route("/users").post((request, response) => {
 // update the user's profile
 router.route("/users/:id").post((request, response) => {
     const id = request.params.id;
-    // what is exactly is 'User', is it how the document in the collection is structured? 
-    if (request.body.name === "add bio, icon, topics, and social media") {
+    const package = request.body;
+    if (package.name === "add bio, icon, topics, and social media") {
         console.log("updating user's account")
-        User.updateOne({ _id: id }, {
-            bio: request.body.data_.bio,
-            icon: request.body.data_.icon,
-            topics: JSON.stringify(request.body.data_.topics),
-            socialMedia: JSON.stringify(request.body.data_.socialMedia)
-        },
-            // what does { multi: true } mean? 
+        User.updateOne(
+            {
+                _id: id
+            },
+            {
+                // EDIT
+                bio: request.body.data_.bio,
+                icon: request.body.data_.icon,
+                topics: JSON.stringify(request.body.data_.topics),
+                socialMedia: JSON.stringify(request.body.data_.socialMedia)
+            },
             { multi: true },
-            (err, numberAffected) => {
-                if (err) {
-                    console.error("error message: ", err);
+            (error, data) => {
+                if (error) {
+                    console.error("error message: ", error);
+                } else {
+                    console.log("data", data);
                 }
-                console.log("numbers affected", numberAffected);
-            });
+            }
+        );
 
         response.json({
             message: "backend successfully updated user's profile"
         });
-    } else if (request.body.name === "updateDraft") {
+    } else if (package.name === "updateDraft") {
         console.log("saving rough draft of user's blogPost");
-        // GOAL: update the specific rough draft that the user is working on by their id
-        // get the rough draft the user is working on 
-        // find the user by their 
-        User.updateOne({ _id: id }, {
-            // get the draft that the user's is currently making by way of its id
-            roughDrafts: request.body.data
-        },
-            // what does { multi: true } mean? 
-            { multi: true },
-            (err, numberAffected) => {
-                if (err) {
-                    console.error("error message: ", err);
+        // find the user in the user collections
+        User.updateOne(
+            { userName: package.username, "roughDrafts.id": package.data.id },
+            {
+                $set: {
+                    "roughDrafts.$.title": package.data.title,
+                    "roughDrafts.$.subtitle": package.data.subtitle,
+                    "roughDrafts.$.body": package.data.body,
+                    "roughDrafts.$.tags": package.data.tags,
+                    "roughDrafts.$.wordCount": package.data.wordCount,
+                    "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
                 }
-                // what is 'numberAffected' mean? 
-                console.log("numbers affected", numberAffected);
-            });
+            },
+            (error, data) => {
+                if (error) {
+                    console.error("error message: ", error);
+                } else {
+                    console.log("data", data);
+                }
+            }
+        )
         response.json({
             message: "user's draft saved into database"
         });
 
         // add a new rough draft to user's roughDrafts when the user clicks on the 'Write Post' button
-    } else if (request.body.name === "addNewDraft") {
+    } else if (package.name === "addNewDraft") {
         console.log("user wants to write a new rough draft.");
-        const package = request.body;
-        // REDO: within the findAndModify method, find the specific user by their username. Then spit out the result and modify the results  
-        User.find().then(users => {
-            const user = users.find(user_ => user_.userName === package.username);
-            const newDraft = {
-                ...package.data,
-                createdDate: Date.now()
-            }
-            const roughDrafts_ = [...user.roughDrafts, newDraft];
-            User.updateOne({ userName: user.userName }, {
-                roughDrafts: roughDrafts_
-            },
-                { multi: true },
-                err => {
-                    if (err) {
-                        console.error("error message: ", err);
-                    }
+        console.log(package);
+        User.updateOne(
+            { userName: package.username },
+            { $push: { roughDrafts: package.data } },
+            { multi: true },
+            (err, data) => {
+                if (err) {
+                    console.error("error message: ", err);
+                } else {
+                    console.log("data", data);
                 }
-            )
-        })
+            });
         response.json({
             message: "post request successful, new rough draft added"
         });
@@ -127,7 +137,6 @@ router.route("/users/:package").get((request, response) => {
                         userName: user_[0].userName,
                         firstName: user_[0].firstName,
                         lastName: user_[0].lastName,
-                        roughDrafts: user_[0].roughDrafts
                     }
                 })
             } else {
