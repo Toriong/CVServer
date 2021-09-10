@@ -41,7 +41,7 @@ router.route("/users").post((request, response) => {
 })
 
 // update the user's profile
-router.route("/users/:id").post((request, response) => {
+router.route("/users/:package").post((request, response) => {
     const id = request.params.id;
     const package = request.body;
     if (package.name === "add bio, icon, topics, and social media") {
@@ -73,28 +73,55 @@ router.route("/users/:id").post((request, response) => {
     } else if (package.name === "updateDraft") {
         console.log("saving rough draft of user's blogPost");
         // find the user in the user collections
-        User.updateOne(
-            { userName: package.username, "roughDrafts.id": package.data.id },
-            {
-                $set: {
-                    "roughDrafts.$.title": package.data.title,
-                    "roughDrafts.$.subtitle": package.data.subtitle,
-                    "roughDrafts.$.body": package.data.body,
-                    "roughDrafts.$.tags": package.data.tags,
-                    "roughDrafts.$.wordCount": package.data.wordCount,
-                    "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
+        console.log(package.data);
+        if (package.data.introPic || package.data.introPic === null) {
+            console.log("pic update")
+            User.updateOne(
+                { userName: package.username, "roughDrafts.id": package.data.id },
+                {
+                    $set: {
+                        "roughDrafts.$.title": package.data.title,
+                        "roughDrafts.$.subtitle": package.data.subtitle,
+                        "roughDrafts.$.body": package.data.body,
+                        "roughDrafts.$.tags": package.data.tags,
+                        "roughDrafts.$.wordCount": package.data.wordCount,
+                        "roughDrafts.$.introPic": package.data.introPic,
+                        "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
+                    }
+                },
+                (error, data) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                    } else {
+                        console.log("data", data);
+                    }
                 }
-            },
-            (error, data) => {
-                if (error) {
-                    console.error("error message: ", error);
-                } else {
-                    console.log("data", data);
+            )
+        } else {
+            console.log("non-pic update")
+            User.updateOne(
+                { userName: package.username, "roughDrafts.id": package.data.id },
+                {
+                    $set: {
+                        "roughDrafts.$.title": package.data.title,
+                        "roughDrafts.$.subtitle": package.data.subtitle,
+                        "roughDrafts.$.body": package.data.body,
+                        "roughDrafts.$.tags": package.data.tags,
+                        "roughDrafts.$.wordCount": package.data.wordCount,
+                        "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
+                    }
+                },
+                (error, data) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                    } else {
+                        console.log("data", data);
+                    }
                 }
-            }
-        )
+            )
+        }
         response.json({
-            message: "user's draft saved into database"
+            message: "Draft saved"
         });
 
         // add a new rough draft to user's roughDrafts when the user clicks on the 'Write Post' button
@@ -115,6 +142,26 @@ router.route("/users/:id").post((request, response) => {
         response.json({
             message: "post request successful, new rough draft added"
         });
+    } else if (package.name === "deleteDraft") {
+        console.log(package.data)
+        User.updateOne(
+            { userName: package.username },
+            {
+                $pull: { roughDrafts: { id: package.data } }
+            },
+            (error, data) => {
+                if (error) {
+                    console.error("error message: ", error);
+                } else {
+                    console.log("data", data);
+                    response.json({
+                        message: "Successfully deleted draft.",
+                        updatedDrafts: data
+                    });
+                }
+            }
+        );
+        console.log("draft has been deleted")
     }
 })
 
