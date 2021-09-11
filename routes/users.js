@@ -1,17 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const User = require("../models/user");
-const { MongoClient } = require("mongodb");
-const getDate = require('../functions/getDate')
 
 
+// GOAL: when the user clicks on the publish btn on the front-end side, have the following occurs;
+
+// pertaining to the user's file (in users.js):
+// find the specific draft that the user wants to publish, and delete it from user.roughDrafts
+// store only the id of the draft that the user wants to published into user.publishedDrafts
+
+// in blogposts.js
+// retrieve the blogpost that the user wants to publish, and push it into blogposts collection
+
+// GOAL: In users.js, 1) store only the id of the draft that the user wants to publish into user.publishedDrafts and 2) delete the draft that the user wants to publish from user.publishedDrafts
+// 1. package received from the user which contains the user id, the id of the blogPost, and the version of the selected tags
+// 2. use the user id to get the specific user, use the id 
 
 
-// NOTES:
-// what if the user's has no rough drafts field? Does push just creates one for me?
-
-// QUESTIONS:
-// when I find the user.roughDrafts, how do I find the specific id in user.RoughDrafts from the server side
 
 // creates user's account
 router.route("/users").post((request, response) => {
@@ -41,7 +46,9 @@ router.route("/users").post((request, response) => {
 })
 
 // update the user's profile
-router.route("/users/:package").post((request, response) => {
+// CAN rename route to "/users/updateUserInfo"
+// don't need to use the params
+router.route("/users/:id").post((request, response) => {
     const id = request.params.id;
     const package = request.body;
     if (package.name === "add bio, icon, topics, and social media") {
@@ -70,9 +77,9 @@ router.route("/users/:package").post((request, response) => {
         response.json({
             message: "backend successfully updated user's profile"
         });
+        // updates only the title, subtitle, introPic, and the body of the user's draft
     } else if (package.name === "updateDraft") {
         console.log("saving rough draft of user's blogPost");
-        // find the user in the user collections
         console.log(package.data);
         if (package.data.introPic || package.data.introPic === null) {
             console.log("pic update")
@@ -83,7 +90,6 @@ router.route("/users/:package").post((request, response) => {
                         "roughDrafts.$.title": package.data.title,
                         "roughDrafts.$.subtitle": package.data.subtitle,
                         "roughDrafts.$.body": package.data.body,
-                        "roughDrafts.$.tags": package.data.tags,
                         "roughDrafts.$.wordCount": package.data.wordCount,
                         "roughDrafts.$.introPic": package.data.introPic,
                         "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
@@ -100,13 +106,13 @@ router.route("/users/:package").post((request, response) => {
         } else {
             console.log("non-pic update")
             User.updateOne(
+                // roughDrafts.id is using the dot notation to only access the id field of all of the elements that is stored in the array in roughDrafts
                 { userName: package.username, "roughDrafts.id": package.data.id },
                 {
                     $set: {
                         "roughDrafts.$.title": package.data.title,
                         "roughDrafts.$.subtitle": package.data.subtitle,
                         "roughDrafts.$.body": package.data.body,
-                        "roughDrafts.$.tags": package.data.tags,
                         "roughDrafts.$.wordCount": package.data.wordCount,
                         "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
                     }
@@ -120,11 +126,31 @@ router.route("/users/:package").post((request, response) => {
                 }
             )
         }
-        response.json({
-            message: "Draft saved"
-        });
+        // add tags to the draft that the user is trying to post
+    } else if (package.name === "addTagsToDraft") {
+        console.log("updating tags of draft");
+        console.log(package.data)
+        console.log(id)
+        User.updateOne(
+            { _id: id, "roughDrafts.id": package.data.draftId },
+            {
+                $set:
+                {
+                    "roughDrafts.$.tags": package.data.tags
+                }
+            },
+            (error, data) => {
+                if (error) {
+                    console.error("error message: ", error);
+                } else {
+                    console.log("data", data);
+                }
+            }
+        )
 
-        // add a new rough draft to user's roughDrafts when the user clicks on the 'Write Post' button
+        response.json({
+            message: "Tags added."
+        });
     } else if (package.name === "addNewDraft") {
         console.log("user wants to write a new rough draft.");
         console.log(package);
@@ -165,12 +191,19 @@ router.route("/users/:package").post((request, response) => {
     }
 })
 
-// get = get the user account when the user signs in or after the user creates an account
-// get the specific user account info when user signs in
+
+// GOAL: send to the user all of the tags of the specific draft that the user wants to publish
+// get the username from the package 
+// find the user's account
+// get the roughDraft that the user wants to publish by using the id that was sent up to the server 
+// when the roughDraft is retrieved, send back to the user all of the tags that were selected by the user
+
 router.route("/users/:package").get((request, response) => {
     console.log("fetch received, get specific user");
+    console.log(request.params)
     console.log(request.params.package);
     const package = JSON.parse(request.params.package);
+    // get the specific user account info when user signs in
     if (package.password) {
         User.find({ userName: package.username }).then(user_ => {
             if (user_[0].password === package.password) {
@@ -198,21 +231,26 @@ router.route("/users/:package").get((request, response) => {
                 message: "Invalid username or password."
             })
         })
-    }
-    // else {
-    //     // why do I have this code here?
-    //     console.log("user created a account")
-    //     User.find({ userName: user })
-    //         .then(user => {
-    //             response.json(user[0]._id)
-    //         });
-    // }
-
-    if (package.name === "getRoughDrafts") {
+    } else if (package.name === "getRoughDrafts") {
         User.find({ userName: package.username }).then(user_ => {
             console.log("getting user's rough drafts")
             response.json({
                 roughDrafts: user_[0].roughDrafts
+            })
+        }).catch(err => {
+            console.error(`Something went wrong, error message: ${err}`);
+            response.json({
+                message: `Something went wrong, error message: ${err}`
+            })
+        });
+    } else if (package.name === "getTags") {
+        User.find({ userName: package.username }).then(user => {
+            console.log("sending tags to the front-end");
+            const roughDrafts = user[0].roughDrafts;
+            const draft = roughDrafts.find(draft => draft.id === package.draftId);
+            console.log(draft.tags)
+            response.json({
+                tags: draft.tags
             })
         }).catch(err => {
             console.error(`Something went wrong, error message: ${err}`);
