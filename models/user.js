@@ -20,7 +20,8 @@ const userSchema = {
     blogPosts: String,
     isSignedIn: Boolean,
     isUserNew: Boolean,
-    roughDrafts: Array
+    roughDrafts: Array,
+    publishedDrafts: Array
 };
 
 

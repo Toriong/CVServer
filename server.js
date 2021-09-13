@@ -13,10 +13,10 @@ const fs = require('fs');
 const multiparty = require('connect-multiparty');
 
 // this will enable the front-end to upload files/images to the server
-const multipartyMiddleware = multiparty({ upload: './images' });
+const multipartyMiddleware = multiparty({ upload: './writingPostImageUploads' });
 
-app.use(bodyParser.json({ limit: "50mb" }));
-app.use(bodyParser.urlencoded({ limit: "50mb", extended: true, parameterLimit: 50000 }));
+app.use(bodyParser.json({ limit: "1000mb" }));
+app.use(bodyParser.urlencoded({ limit: "1000mb", extended: true, parameterLimit: 500000 }));
 
 app.get('/', (request, response) => {
     response.status(200).json({
@@ -39,7 +39,7 @@ mongoose.connect(dbconnection, {
     console.log("connection to mongodb database is successful!")
 });
 
-app.use("/", require("./routes/blogposts"));
+app.use("/", require("./routes/blogPosts"));
 
 app.use("/", require("./routes/users"));
 
@@ -47,9 +47,11 @@ app.use("/", require("./routes/tags"));
 
 // upload and present the image that the user uploads to the text editor
 app.post("/writePostImages", multipartyMiddleware, (req, res) => {
+
     const imageTempFile = req.files.upload;
     const imageTempFilePath = imageTempFile.path
-    console.log('imageTempFile', imageTempFile);
+    // console.log("imageTempFilePath", imageTempFilePath)
+    console.log('imageTempFile.name', imageTempFile.name);
 
     // 'path' module provides utilities for working with file and directory paths
     const targetPathUrl = path.join(__dirname, `./writingPostImageUploads/${imageTempFile.name}`);
@@ -58,6 +60,7 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
         console.log("I was executed");
 
         // what is url doing?
+        console.log("imageTempFile.originalFilename", imageTempFile.originalFilename);
         res.status(200).json({
             uploaded: true,
             // how does the img src="" know that this is the url to use for its src attribute?

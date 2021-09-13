@@ -1,24 +1,15 @@
 const mongoose = require('mongoose');
 
 const blogPostSchema = {
-    id: String,
-    authorIcon: String,
-    authorIconAlt: String,
-    blogPostsImages: [
-        {
-            main: String,
-            alt: String
-        }
-    ],
-    author: String,
+    _id: String,
+    username: String,
     title: String,
-    subTitle: String,
+    subtitle: String,
+    introPic: Object,
     body: String,
-    datePublished: String,
-    tags: {
-        main: String,
-        remaining: [String]
-    }
+    tags: Array,
+    publicationDate: Object
+
 };
 
 
