@@ -13,7 +13,7 @@ const fs = require('fs');
 const multiparty = require('connect-multiparty');
 
 // this will enable the front-end to upload files/images to the server
-const multipartyMiddleware = multiparty({ upload: './writingPostImageUploads' });
+const multipartyMiddleware = multiparty({ uploadDir: './writingPostImageUploads' });
 
 app.use(bodyParser.json({ limit: "1000mb" }));
 app.use(bodyParser.urlencoded({ limit: "1000mb", extended: true, parameterLimit: 500000 }));
@@ -47,24 +47,21 @@ app.use("/", require("./routes/tags"));
 
 // upload and present the image that the user uploads to the text editor
 app.post("/writePostImages", multipartyMiddleware, (req, res) => {
-
+    console.log("req.files.upload", req.files.upload);
     const imageTempFile = req.files.upload;
     const imageTempFilePath = imageTempFile.path
     // console.log("imageTempFilePath", imageTempFilePath)
-    console.log('imageTempFile.name', imageTempFile.name);
-
     // 'path' module provides utilities for working with file and directory paths
     const targetPathUrl = path.join(__dirname, `./writingPostImageUploads/${imageTempFile.name}`);
-    console.log(targetPathUrl)
     if (path.extname(imageTempFile.originalFilename).toLowerCase() === ".png" || ".jpg") {
-        console.log("I was executed");
 
         // what is url doing?
-        console.log("imageTempFile.originalFilename", imageTempFile.originalFilename);
         res.status(200).json({
             uploaded: true,
-            // how does the img src="" know that this is the url to use for its src attribute?
-            url: imageTempFile.originalFilename
+
+            //able to save the save the images, but the title, subtitle, and the intro pic gets deleted
+            url: `http://localhost:3005/${imageTempFile.originalFilename}`
+            // url: `${imageTempFile.originalFilename}`
         })
         // fs = a module that allows the user to access and interact with the file systems
         // relocated the uploaded image into /writingPostImageUploads file
