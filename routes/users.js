@@ -83,7 +83,6 @@ router.route("/users/updateInfo").post((request, response) => {
                         "roughDrafts.$.title": package.data.title,
                         "roughDrafts.$.subtitle": package.data.subtitle,
                         "roughDrafts.$.body": package.data.body,
-                        "roughDrafts.$.wordCount": package.data.wordCount,
                         "roughDrafts.$.introPic": package.data.introPic,
                         "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
                     }
@@ -111,7 +110,6 @@ router.route("/users/updateInfo").post((request, response) => {
                         "roughDrafts.$.title": package.data.title,
                         "roughDrafts.$.subtitle": package.data.subtitle,
                         "roughDrafts.$.body": package.data.body,
-                        "roughDrafts.$.wordCount": package.data.wordCount,
                         "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
                     }
                 },
@@ -209,55 +207,55 @@ router.route("/users/updateInfo").post((request, response) => {
             const frontEndDraft = package.data;
             const drafts = user[0].roughDrafts;
             const draftInDB = drafts.find(_draft => _draft.id === frontEndDraft._id);
-            console.log(draftInDB);
-            // const isTitleSame = draftInDB.title === frontEndDraft._title;
-            // const isSubTitleSame = frontEndDraft._subtitle ? frontEndDraft._subtitle === draftInDB.subtitle : undefined;
-            // const isIntroPicSame = frontEndDraft._introPic ? ((frontEndDraft._introPic.src === draftInDB.introPic.src) && (frontEndDraft._introPic.name === draftInDB.introPic.name)) : undefined;
-            // const isBodySame = frontEndDraft._body === draftInDB.body;
-            // const areTagsSame = JSON.stringify(frontEndDraft._tags) === JSON.stringify(draftInDB.tags);
+            const isTitleSame = draftInDB.title === frontEndDraft._title;
+            const isSubTitleSame = frontEndDraft._subtitle ? frontEndDraft._subtitle === draftInDB.subtitle : undefined;
+            const isIntroPicSame = frontEndDraft._introPic ? ((frontEndDraft._introPic.src === draftInDB.introPic.src) && (frontEndDraft._introPic.name === draftInDB.introPic.name)) : undefined;
+            const isBodySame = frontEndDraft._body === draftInDB.body;
+            const areTagsSame = JSON.stringify(frontEndDraft._tags) === JSON.stringify(draftInDB.tags);
             // optional: subtitle and the intro pic
             // check if the user inserted subtitle and or if the user inserted an intro pic 
-            // console.log({
-            //     isTitleSame,
-            //     isSubTitleSame,
-            //     isIntroPicSame,
-            //     isBodySame,
-            //     areTagsSame
-            // });
+            console.log({
+                isTitleSame,
+                isSubTitleSame,
+                isIntroPicSame,
+                isBodySame,
+                areTagsSame
+            });
 
-            // if (
-            //     (isTitleSame && isSubTitleSame && isIntroPicSame && isBodySame && areTagsSame) ||
-            //     (isTitleSame && (isSubTitleSame === undefined) && isIntroPicSame && isBodySame && areTagsSame) ||
-            //     (isTitleSame && isSubTitleSame && (isIntroPicSame === undefined) && isBodySame && areTagsSame) ||
-            //     (isTitleSame && (isSubTitleSame === undefined) && (isIntroPicSame === undefined) && isBodySame && areTagsSame)
-            // ) {
-            //     console.log("moving user draft to published field");
-            //     // User.updateOne(
-            //     //     { userName: package.username },
-            //     //     {
-            //     //         $push: {
-            //     //             publishedDrafts: frontEndDraft._id
-            //     //         },
-            //     //         $pull: {
-            //     //             roughDrafts: { id: frontEndDraft._id }
-            //     //         }
-            //     //     },
-            //     //     (error, data) => {
-            //     //         if (error) throw error;
-            //     //         else {
-            //     //             response.json({
-            //     //                 message: "success"
-            //     //             });
-            //     //         }
-            //     //     }
-            //     // );
-            // } else {
-            //     // if the any of the criteria returns to be false, then tell the user that an error has occurred
-            //     console.log("data that was received doesn't match with the data stored in DB.")
-            //     response.json({
-            //         message: "ERROR"
-            //     })
-            // }
+            if (
+                (isTitleSame && isSubTitleSame && isIntroPicSame && isBodySame && areTagsSame) ||
+                (isTitleSame && (isSubTitleSame === undefined) && isIntroPicSame && isBodySame && areTagsSame) ||
+                (isTitleSame && isSubTitleSame && (isIntroPicSame === undefined) && isBodySame && areTagsSame) ||
+                (isTitleSame && (isSubTitleSame === undefined) && (isIntroPicSame === undefined) && isBodySame && areTagsSame)
+            ) {
+                console.log("moving user draft to published field");
+                User.updateOne(
+                    { userName: package.username },
+                    {
+                        $push: {
+                            publishedDrafts: frontEndDraft._id
+                        },
+                        $pull: {
+                            roughDrafts: { id: frontEndDraft._id }
+                        }
+                    },
+                    (error, numbersAffected) => {
+                        if (error) throw error;
+                        else {
+                            console.log("numbersAffected", numbersAffected);
+                            response.json({
+                                message: "success"
+                            });
+                        }
+                    }
+                );
+            } else {
+                // if the any of the criteria returns to be false, then tell the user that an error has occurred
+                console.log("data that was received doesn't match with the data stored in DB.")
+                response.json({
+                    message: "ERROR"
+                })
+            }
         })
     }
 })

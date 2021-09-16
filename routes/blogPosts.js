@@ -13,13 +13,6 @@ router.route("/blogPosts").get((req, res) => {
 });
 
 
-// GOAL: get the following data when the user presses the publish button on the front-end:
-// title
-// subtitle (if present)
-// introPic
-// body
-// tags
-// username of the user
 router.route("/blogPosts").post((req, res) => {
     const package = req.body;
     const data = package.data;
@@ -75,6 +68,33 @@ router.route("/blogPosts").post((req, res) => {
             message: "blog post successfully posted onto feed."
         });
     };
-})
+});
+
+// GOAL: get the posts of the specific user
+// get the username of the user 
+// get all of the drafts that has username of the user
+// send it back to the front-end
+
+router.route("/blogPosts/:package").get((req, res) => {
+    console.log("get user's published posts")
+    const package = JSON.parse(req.params.package);
+    BlogPost.find({ username: package.username }).then(posts => {
+        if (posts.length) {
+            res.json(
+                {
+                    arePostsPresent: true,
+                    _posts: posts
+                }
+            )
+        } else {
+            res.json(
+                {
+                    arePostsPresent: false,
+                }
+            )
+        }
+    })
+});
+
 
 module.exports = router;

@@ -52,6 +52,8 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
     const imageTempFilePath = imageTempFile.path
     // console.log("imageTempFilePath", imageTempFilePath)
     // 'path' module provides utilities for working with file and directory paths
+
+    console.log(imageTempFile.name);
     const targetPathUrl = path.join(__dirname, `./writingPostImageUploads/${imageTempFile.name}`);
     if (path.extname(imageTempFile.originalFilename).toLowerCase() === ".png" || ".jpg") {
 
@@ -67,8 +69,6 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
         // relocated the uploaded image into /writingPostImageUploads file
         fs.rename(imageTempFilePath, targetPathUrl, err => { err && console.log(`Error message: ${err}`) })
     }
-
-    console.log(req.files);
 })
 
 
