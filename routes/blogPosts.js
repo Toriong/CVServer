@@ -70,30 +70,31 @@ router.route("/blogPosts").post((req, res) => {
     };
 });
 
-// GOAL: get the posts of the specific user
-// get the username of the user 
-// get all of the drafts that has username of the user
-// send it back to the front-end
-
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts")
     const package = JSON.parse(req.params.package);
-    BlogPost.find({ username: package.username }).then(posts => {
-        if (posts.length) {
-            res.json(
-                {
-                    arePostsPresent: true,
-                    _posts: posts
-                }
-            )
-        } else {
-            res.json(
-                {
-                    arePostsPresent: false,
-                }
-            )
-        }
-    })
+    if (package.name === "getPublishedDrafts") {
+        BlogPost.find({ username: package.username }).then(posts => {
+            if (posts.length) {
+                res.json(
+                    {
+                        arePostsPresent: true,
+                        _posts: posts
+                    }
+                )
+            } else {
+                res.json(
+                    {
+                        arePostsPresent: false,
+                    }
+                )
+            }
+        })
+    } else if (package.name === "getPost") {
+        BlogPost.find({ _id: package.draftId }).then(post => {
+            res.json(post[0]);
+        })
+    }
 });
 
 

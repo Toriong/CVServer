@@ -50,11 +50,9 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
     console.log("req.files.upload", req.files.upload);
     const imageTempFile = req.files.upload;
     const imageTempFilePath = imageTempFile.path
-    // console.log("imageTempFilePath", imageTempFilePath)
     // 'path' module provides utilities for working with file and directory paths
-
-    console.log(imageTempFile.name);
     const targetPathUrl = path.join(__dirname, `./writingPostImageUploads/${imageTempFile.name}`);
+    console.log(path.extname(imageTempFile.originalFilename));
     if (path.extname(imageTempFile.originalFilename).toLowerCase() === ".png" || ".jpg") {
 
         // what is url doing?
