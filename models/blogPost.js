@@ -11,7 +11,6 @@ const blogPostSchema = {
     body: String,
     tags: Array,
     publicationDate: Object,
-    // what if the array has another nested array that we need to access
     comments: Array
 
 };

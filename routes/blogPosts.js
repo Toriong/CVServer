@@ -152,7 +152,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         //     editedReply,
         //     timeOfLastEdit
         // })
-        console.log("postId", postId);
         BlogPost.updateOne(
             {
                 _id: postId,
