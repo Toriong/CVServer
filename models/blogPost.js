@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+
+// how to created schema's with nested arrays
 const blogPostSchema = {
     _id: String,
     username: String,
@@ -8,7 +10,9 @@ const blogPostSchema = {
     introPic: Object,
     body: String,
     tags: Array,
-    publicationDate: Object
+    publicationDate: Object,
+    // what if the array has another nested array that we need to access
+    comments: Array
 
 };
 

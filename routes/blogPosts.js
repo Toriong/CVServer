@@ -70,6 +70,114 @@ router.route("/blogPosts").post((req, res) => {
     };
 });
 
+router.route("/blogPosts/updatePost").post((req, res) => {
+    const { name, postId, data } = req.body;
+    console.log("name", name)
+    // GOAL: update the target blog post by getting the blog post and pushing the new comment into the field of comments
+    if (name === "newComment") {
+        BlogPost.updateOne(
+            { _id: postId },
+            {
+                $push: {
+                    comments: data
+                }
+            },
+            (error, numbersAffected) => {
+                if (error) {
+                    console.error(`Error message: ${error}`);
+                }
+                console.log("numbersAffected: ", numbersAffected)
+            }
+        );
+    } else if (name === "commentEdited") {
+        console.log("data", data)
+        const { id, edits } = data;
+        BlogPost.updateOne(
+            {
+                _id: postId,
+                "comments.id": id
+            },
+            {
+                $set: {
+                    "comments.$.comment": edits
+                }
+            },
+            (error, numbersAffected) => {
+                if (error) {
+                    console.error(`Error message: ${error}`);
+                }
+                console.log("numbersAffected: ", numbersAffected)
+            }
+        );
+    } else if (name === "newReply") {
+        const { commentId } = req.body;
+        console.log({
+            commentId,
+            postId
+        })
+        BlogPost.updateOne(
+            {
+                _id: postId,
+                "comments.id": commentId
+            },
+            {
+                $push:
+                {
+                    "comments.$.replies": data
+                }
+            },
+            (error, numbersAffected) => {
+                if (error) {
+                    console.error(`Error message: ${error}`);
+                }
+                console.log("numbersAffected: ", numbersAffected)
+            }
+        )
+
+    } else if (name === "editedReply") {
+        // GOAL: have the targeted reply be updated in the DB
+        // the reply is updated 
+        // reply is located by using the id of the reply
+        // the comment is located by using the id of the comment
+        // the post is located by using the id of the post
+        // the data received from the front-end is the following:
+        // the id of the post 
+        // id of the comment
+        // the id of the reply to the comment that is being targeted for an edit
+        const { replyId, commentId } = req.body;
+        const { editedReply, timeOfLastEdit } = data;
+        // console.log({
+        //     replyId,
+        //     commentId,
+        //     editedReply,
+        //     timeOfLastEdit
+        // })
+        console.log("postId", postId);
+        BlogPost.updateOne(
+            {
+                _id: postId,
+                "comments.id": commentId,
+                "replies.id": replyId
+            },
+            {
+                $set:
+                {
+                    "replies.$.comment": editedReply,
+                    "replies.$.timeOfLastEdit": timeOfLastEdit
+                }
+            },
+            (error, numbersAffected) => {
+                if (error) throw error;
+                else {
+                    console.log("numbersAffected: ", numbersAffected);
+                }
+            }
+        )
+    }
+    res.json("post requested received, new comment added");
+})
+
+
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts")
     const package = JSON.parse(req.params.package);

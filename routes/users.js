@@ -7,7 +7,6 @@ const User = require("../models/user");
 
 // creates user's account
 router.route("/users").post((request, response) => {
-    console.log("TESTINGGGGGG")
     console.log("request received from the frontend")
     if (request.body.packageName === "newUser") {
         const newUser = new User({
@@ -191,16 +190,6 @@ router.route("/users/updateInfo").post((request, response) => {
         console.log("draft has been deleted")
     } else if (package.name === "draftCheck") {
         console.log("check if draft is ok to be published")
-        // check if the package.data matches with everything that is stored in the database
-        // get the user's account
-        // get the specific draft from the user account
-        // check if the all of the data matches
-        // if all of the data matches, then do another query to store the id of the draft into publish draft and delete the draft from the user.roughDrafts
-        // if at least one field of the data doesn't match, then stop the execution of the function send the error message that is written at the top of this file
-
-        // in one query, can I find and get the specific user's rough draft that the user wants to publish?
-        // in one query, get the profile of the user, get the draft that the user wants to publish  
-
         User.find({
             userName: package.username
         }).then(user => {
@@ -320,13 +309,16 @@ router.route("/users/:package").get((request, response) => {
                 message: `Something went wrong, error message: ${err}`
             })
         });
+    } else if (package.name === "getUserInfo") {
+        console.log("package.postId: ", package.postId);
+        res.json("request received")
     }
 });
 
 router.route("/users").get((req, res) => {
     console.log("getting all users");
     User.find()
-        .then(user => res.json(user))
+        .then(users => res.json(users))
 })
 
 
