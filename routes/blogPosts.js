@@ -1,9 +1,8 @@
 const { request } = require('express');
 const express = require('express');
 const router = express.Router();
-const BlogPost = require('../models/blogPost');
 const getTime = require("../functions/getTime");
-
+const BlogPost = require('../models/blogPost');
 
 //get the blogPost from the database and sends it to the Feed.js component
 router.route("/blogPosts").get((req, res) => {
@@ -89,13 +88,14 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 console.log("numbersAffected: ", numbersAffected)
             }
         );
+        res.json("post requested received, new comment added");
     } else if (name === "commentEdited") {
         console.log("data", data)
-        const { id, edits } = data;
+        const { _id, edits } = data;
         BlogPost.updateOne(
             {
                 _id: postId,
-                "comments.id": id
+                "comments._id": _id
             },
             {
                 $set: {
@@ -109,16 +109,14 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 console.log("numbersAffected: ", numbersAffected)
             }
         );
+        res.json("post requested received, commented updated");
     } else if (name === "newReply") {
         const { commentId } = req.body;
-        console.log({
-            commentId,
-            postId
-        })
+        console.log("data._id", data._id);
         BlogPost.updateOne(
             {
                 _id: postId,
-                "comments.id": commentId
+                "comments._id": commentId
             },
             {
                 $push:
@@ -133,37 +131,25 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 console.log("numbersAffected: ", numbersAffected)
             }
         )
-
+        res.json("post requested received, reply added to comment");
     } else if (name === "editedReply") {
-        // GOAL: have the targeted reply be updated in the DB
-        // the reply is updated 
-        // reply is located by using the id of the reply
-        // the comment is located by using the id of the comment
-        // the post is located by using the id of the post
-        // the data received from the front-end is the following:
-        // the id of the post 
-        // id of the comment
-        // the id of the reply to the comment that is being targeted for an edit
         const { replyId, commentId } = req.body;
-        const { editedReply, timeOfLastEdit } = data;
-        // console.log({
-        //     replyId,
-        //     commentId,
-        //     editedReply,
-        //     timeOfLastEdit
-        // })
+        const { editedReply, updatedAt } = data;
         BlogPost.updateOne(
             {
                 _id: postId,
-                "comments.id": commentId,
-                "replies.id": replyId
+                "comments._id": commentId
             },
             {
                 $set:
                 {
-                    "replies.$.comment": editedReply,
-                    "replies.$.timeOfLastEdit": timeOfLastEdit
+                    "comments.$.replies.$[reply].comment": editedReply,
+                    "comments.$.replies.$[reply].updatedAt": updatedAt,
                 }
+            },
+            {
+                multi: false,
+                arrayFilters: [{ "reply._id": replyId }]
             },
             (error, numbersAffected) => {
                 if (error) throw error;
@@ -172,8 +158,8 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 }
             }
         )
+        res.json("post requested received, reply edited");
     }
-    res.json("post requested received, new comment added");
 })
 
 

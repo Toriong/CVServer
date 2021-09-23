@@ -189,6 +189,7 @@ router.route("/users/updateInfo").post((request, response) => {
         );
         console.log("draft has been deleted")
     } else if (package.name === "draftCheck") {
+        // how to check if a value is present in the database?
         console.log("check if draft is ok to be published")
         User.find({
             userName: package.username
@@ -201,16 +202,6 @@ router.route("/users/updateInfo").post((request, response) => {
             const isIntroPicSame = frontEndDraft._introPic ? ((frontEndDraft._introPic.src === draftInDB.introPic.src) && (frontEndDraft._introPic.name === draftInDB.introPic.name)) : undefined;
             const isBodySame = frontEndDraft._body === draftInDB.body;
             const areTagsSame = JSON.stringify(frontEndDraft._tags) === JSON.stringify(draftInDB.tags);
-            // optional: subtitle and the intro pic
-            // check if the user inserted subtitle and or if the user inserted an intro pic 
-            console.log({
-                isTitleSame,
-                isSubTitleSame,
-                isIntroPicSame,
-                isBodySame,
-                areTagsSame
-            });
-
             if (
                 (isTitleSame && isSubTitleSame && isIntroPicSame && isBodySame && areTagsSame) ||
                 (isTitleSame && (isSubTitleSame === undefined) && isIntroPicSame && isBodySame && areTagsSame) ||

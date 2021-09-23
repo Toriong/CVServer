@@ -1,22 +1,45 @@
-const mongoose = require('mongoose');
+const Mongoose = require('mongoose');
+
+
+const ReplySchema = new Mongoose.Schema(
+    {
+        _id: String,
+        user: Object,
+        comment: String,
+        createdAt: Object,
+        updatedAt: Object
+    }
+)
+
+const CommentSchema = new Mongoose.Schema(
+    {
+        _id: String,
+        user: Object,
+        comment: String,
+        createdAt: Object,
+        updatedAt: Object,
+        replies: [ReplySchema]
+    }
+)
 
 
 // how to created schema's with nested arrays
-const blogPostSchema = {
-    _id: String,
-    username: String,
-    title: String,
-    subtitle: String,
-    introPic: Object,
-    body: String,
-    tags: Array,
-    publicationDate: Object,
-    comments: Array
-
-};
+const BlogPostSchema = new Mongoose.Schema(
+    {
+        _id: String,
+        username: String,
+        title: String,
+        subtitle: String,
+        introPic: Object,
+        body: String,
+        tags: Array,
+        publicationDate: Object,
+        comments: [CommentSchema]
+    }
+)
 
 
 // model instantiates a new blog post schema based upon the schema above
-const BlogPost = mongoose.model('blogPost', blogPostSchema);
+const BlogPost = Mongoose.model('blogPost', BlogPostSchema);
 
 module.exports = BlogPost;

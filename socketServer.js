@@ -19,7 +19,7 @@ io.on("connection", socket => {
     // Listen for new messages
     socket.on(nameOfMessageEvent, data => {
         // make a conditional based upon the room id
-        console.log("data", data.body.input);
+        // console.log("data", data.body.input);
         io.in(roomId).emit(nameOfMessageEvent, data);
     });
 

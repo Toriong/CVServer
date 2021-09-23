@@ -1,8 +1,42 @@
 const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
+
+
+// the object for the activity field will be the following:
+// the comments that the user posted:
+// this will be an array an each array will 
+
+const commentSchema = new Schema({
+    postId: String,
+    commentId: String,
+    wasUpdated: Boolean
+})
+
+const replySchema = new Schema({
+    postId: String,
+    commentId: String,
+    replyId: String,
+    wasUpdated: Boolean
+});
+
+const likeSchema = new Schema({
+    name: String,
+    postId: String,
+    commentId: String,
+    replyId: String
+})
+
+
+
+const activitySchema = new Schema({
+    comments: [commentSchema],
+    replies: [replySchema],
+    likes: [likeSchema]
+});
 
 
 // schema: allows us to define the field in a document that will be stored in the collection of the database
-const userSchema = {
+const userSchema = new Schema({
     id: String,
     firstName: String,
     lastName: String,
@@ -21,8 +55,9 @@ const userSchema = {
     isSignedIn: Boolean,
     isUserNew: Boolean,
     roughDrafts: Array,
-    publishedDrafts: Array
-};
+    publishedDrafts: Array,
+    activities: activitySchema
+});
 
 
 // what is mongoose.model is doing?
