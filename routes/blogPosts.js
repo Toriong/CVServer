@@ -71,6 +71,7 @@ router.route("/blogPosts").post((req, res) => {
 
 router.route("/blogPosts/updatePost").post((req, res) => {
     const { name, postId, data } = req.body;
+    console.log("new data comment", data);
     console.log("name", name)
     // GOAL: update the target blog post by getting the blog post and pushing the new comment into the field of comments
     if (name === "newComment") {

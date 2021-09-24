@@ -2,37 +2,64 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 
-// the object for the activity field will be the following:
-// the comments that the user posted:
-// this will be an array an each array will 
 
-const commentSchema = new Schema({
-    postId: String,
-    commentId: String,
-    wasUpdated: Boolean
-})
-
-const replySchema = new Schema({
-    postId: String,
-    commentId: String,
-    replyId: String,
-    wasUpdated: Boolean
-});
-
-const likeSchema = new Schema({
-    name: String,
-    postId: String,
-    commentId: String,
-    replyId: String
-})
+const commentAndReplyActivitySchema = new Schema(
+    {
+        _id: String,
+        wasUpdated: Boolean
+    },
+    {
+        autoIndexId: false
+    }
+)
 
 
+const commentSchema = new Schema(
+    {
+        _id: String,
+        commentIds: [commentAndReplyActivitySchema],
+    },
+    {
+        autoIndexId: false
+    }
+)
 
-const activitySchema = new Schema({
-    comments: [commentSchema],
-    replies: [replySchema],
-    likes: [likeSchema]
-});
+// have the wasUpdated field be stored into every single element in the elements in the replyId field
+const replySchema = new Schema(
+    {
+        _id: String,
+        commentId: String,
+        replyIds: [commentAndReplyActivitySchema],
+    },
+    {
+        autoIndexId: false
+    }
+);
+
+const likeSchema = new Schema(
+    {
+        type: String,
+        postId: String || Array,
+        commentId: String || Array,
+        replyId: String || Array
+    },
+    {
+        autoIndexId: false
+    }
+)
+
+
+
+const activitiesSchema = new Schema(
+    {
+        comments: [commentSchema],
+        replies: [replySchema],
+        likes: [likeSchema]
+    },
+    {
+        autoIndexId: false
+    }
+);
 
 
 // schema: allows us to define the field in a document that will be stored in the collection of the database
@@ -56,7 +83,7 @@ const userSchema = new Schema({
     isUserNew: Boolean,
     roughDrafts: Array,
     publishedDrafts: Array,
-    activities: activitySchema
+    activities: activitiesSchema
 });
 
 

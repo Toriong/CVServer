@@ -4,7 +4,7 @@ const Mongoose = require('mongoose');
 const ReplySchema = new Mongoose.Schema(
     {
         _id: String,
-        user: Object,
+        userId: String,
         comment: String,
         createdAt: Object,
         updatedAt: Object
@@ -14,7 +14,7 @@ const ReplySchema = new Mongoose.Schema(
 const CommentSchema = new Mongoose.Schema(
     {
         _id: String,
-        user: Object,
+        userId: String,
         comment: String,
         createdAt: Object,
         updatedAt: Object,

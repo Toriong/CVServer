@@ -36,22 +36,23 @@ router.route("/users").post((request, response) => {
 // update the user's profile
 // CAN rename route to "/users/updateUserInfo"
 // don't need to use the params
+// don't use username, use the id of the user 
 router.route("/users/updateInfo").post((request, response) => {
-    const id = request.params.id;
-    console.log(id);
-    const package = request.body;
-    if (package.name === "add bio, icon, topics, and social media") {
+    const { name, username, data } = request.body
+    if (name === "add bio, icon, topics, and social media") {
         console.log("updating user's account")
+        const { bio, icon, topics, socialMedia } = data
         User.updateOne(
             {
-                userName: package.username
+                userName: username
             },
             {
                 // EDIT
-                bio: request.body.data_.bio,
-                icon: request.body.data_.icon,
-                topics: JSON.stringify(request.body.data_.topics),
-                socialMedia: JSON.stringify(request.body.data_.socialMedia)
+                bio: bio,
+                icon: icon,
+                // why did I stringify these two?
+                topics: JSON.stringify(topics),
+                socialMedia: JSON.stringify(socialMedia)
             },
             { multi: true },
             (error, data) => {
@@ -67,23 +68,23 @@ router.route("/users/updateInfo").post((request, response) => {
             message: "backend successfully updated user's profile"
         });
         //     // updates only the title, subtitle, introPic, and the body of the user's draft
-    } else if (package.name === "updateDraft") {
+    } else if (name === "updateDraft") {
         console.log("updating draft")
-        if (package.data.introPic || package.data.introPic === null) {
-            console.log("pic update")
-            console.log(package.draftId);
+        const { draftId, data } = request.body;
+        const { title, subtitle, introPic, timeOfLastEdit, body } = data;
+        if (introPic || introPic === null) {
             User.updateOne(
                 {
-                    userName: package.username,
-                    "roughDrafts.id": package.draftId
+                    userName: username,
+                    "roughDrafts.id": draftId
                 },
                 {
                     $set: {
-                        "roughDrafts.$.title": package.data.title,
-                        "roughDrafts.$.subtitle": package.data.subtitle,
-                        "roughDrafts.$.body": package.data.body,
-                        "roughDrafts.$.introPic": package.data.introPic,
-                        "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
+                        "roughDrafts.$.title": title,
+                        "roughDrafts.$.subtitle": subtitle,
+                        "roughDrafts.$.body": body,
+                        "roughDrafts.$.introPic": introPic,
+                        "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
                     }
                 },
                 (error, data) => {
@@ -101,15 +102,15 @@ router.route("/users/updateInfo").post((request, response) => {
             console.log("non-pic update");
             User.updateOne(
                 {
-                    userName: package.username,
-                    "roughDrafts.id": package.draftId
+                    userName: username,
+                    "roughDrafts.id": draftId
                 },
                 {
                     $set: {
-                        "roughDrafts.$.title": package.data.title,
-                        "roughDrafts.$.subtitle": package.data.subtitle,
-                        "roughDrafts.$.body": package.data.body,
-                        "roughDrafts.$.timeOfLastEdit": package.data.timeOfLastEdit,
+                        "roughDrafts.$.title": title,
+                        "roughDrafts.$.subtitle": subtitle,
+                        "roughDrafts.$.body": body,
+                        "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
                     }
                 },
                 (error, data) => {
@@ -126,18 +127,18 @@ router.route("/users/updateInfo").post((request, response) => {
         }
 
         // add tags to the draft that the user is trying to post
-    } else if (package.name === "addTagsToDraft") {
+    } else if (name === "addTagsToDraft") {
         console.log("updating tags of draft");
-        console.log("package", package)
+        const { draftId, data: tags } = request.body;
         User.updateOne(
             {
-                userName: package.username,
-                "roughDrafts.id": package.draftId
+                userName: username,
+                "roughDrafts.id": draftId
             },
             {
                 $set:
                 {
-                    "roughDrafts.$.tags": package.data
+                    "roughDrafts.$.tags": tags
                 }
             },
             (error, data) => {
@@ -151,12 +152,12 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             }
         );
-    } else if (package.name === "addNewDraft") {
+    } else if (name === "addNewDraft") {
         console.log("user wants to write a new rough draft.");
-        console.log(package);
+        const { data: draftId } = request.body;
         User.updateOne(
-            { userName: package.username },
-            { $push: { roughDrafts: package.data } },
+            { userName: username },
+            { $push: { roughDrafts: draftId } },
             { multi: true },
             (err, data) => {
                 if (err) {
@@ -168,12 +169,12 @@ router.route("/users/updateInfo").post((request, response) => {
         response.json({
             message: "post request successful, new rough draft added"
         });
-    } else if (package.name === "deleteDraft") {
-        console.log(package.data)
+    } else if (name === "deleteDraft") {
+        const { data: draftId } = request.body;
         User.updateOne(
-            { userName: package.username },
+            { userName: username },
             {
-                $pull: { roughDrafts: { id: package.data } }
+                $pull: { roughDrafts: { id: draftId } }
             },
             (error, data) => {
                 if (error) {
@@ -188,20 +189,23 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         );
         console.log("draft has been deleted")
-    } else if (package.name === "draftCheck") {
+    } else if (name === "draftCheck") {
         // how to check if a value is present in the database?
         console.log("check if draft is ok to be published")
         User.find({
-            userName: package.username
+            userName: username
         }).then(user => {
-            const frontEndDraft = package.data;
+            // REFACTOR THIS CODE
+            // draft sent from the front end
+            const { _id, _title, _subtitle, _introPic, _body, _tags } = data;
             const drafts = user[0].roughDrafts;
-            const draftInDB = drafts.find(_draft => _draft.id === frontEndDraft._id);
-            const isTitleSame = draftInDB.title === frontEndDraft._title;
-            const isSubTitleSame = frontEndDraft._subtitle ? frontEndDraft._subtitle === draftInDB.subtitle : undefined;
-            const isIntroPicSame = frontEndDraft._introPic ? ((frontEndDraft._introPic.src === draftInDB.introPic.src) && (frontEndDraft._introPic.name === draftInDB.introPic.name)) : undefined;
-            const isBodySame = frontEndDraft._body === draftInDB.body;
-            const areTagsSame = JSON.stringify(frontEndDraft._tags) === JSON.stringify(draftInDB.tags);
+            const draftInDB = drafts.find(_draft => _draft.id === _id);
+            const { title: draftInDbTitle, subtitle: draftInDbSubtitle, introPic: draftInDbIntroPic, tags: draftInDBTags, body: draftInDbBody } = draftInDB
+            const isTitleSame = draftInDbTitle === _title;
+            const isSubTitleSame = _subtitle ? _subtitle === draftInDbSubtitle : undefined;
+            const isIntroPicSame = _introPic ? ((_introPic.src === draftInDbIntroPic.src) && (_introPic.name === draftInDbIntroPic.name)) : undefined;
+            const isBodySame = _body === draftInDbBody;
+            const areTagsSame = JSON.stringify(_tags) === JSON.stringify(draftInDBTags);
             if (
                 (isTitleSame && isSubTitleSame && isIntroPicSame && isBodySame && areTagsSame) ||
                 (isTitleSame && (isSubTitleSame === undefined) && isIntroPicSame && isBodySame && areTagsSame) ||
@@ -210,13 +214,13 @@ router.route("/users/updateInfo").post((request, response) => {
             ) {
                 console.log("moving user draft to published field");
                 User.updateOne(
-                    { userName: package.username },
+                    { userName: username },
                     {
                         $push: {
-                            publishedDrafts: frontEndDraft._id
+                            publishedDrafts: _id
                         },
                         $pull: {
-                            roughDrafts: { id: frontEndDraft._id }
+                            roughDrafts: { id: _id }
                         }
                     },
                     (error, numbersAffected) => {
@@ -237,6 +241,131 @@ router.route("/users/updateInfo").post((request, response) => {
                 })
             }
         })
+    } else if (name === "userCommented") {
+        console.log("data userCommented", data)
+        // GOAL: store the id of the post and the user comment into user.activities field under the subfield of comments
+        // the user activities for comments is updated with the following: {locationPost: string, comments: [new comment id added]}
+        // if it doesn't exist, then create a new object with the with the following object added into the commentsId field: {locationPost: string, comments: [new comment id added]}
+        // if it exists, then push the new data into the commentsId field
+        // check if the postId already exists in the array that is stored activities.comments
+        // access the activities.comments field of the user profile
+        // using user's id, find the user's profile
+        // the following package is retrieved from the frontend: {name: "userCommented", userId: string, data: {locationPost: string, newComment: id of the comment}}
+        const { userId, postId } = request.body;
+        const { newCommentId, fieldName } = data;
+        // NOTES: 
+        // first check if the postId containing all of the comments ids exist already in the activities.comments field 
+        // if it exists, then push the new comment into the commentsId field in respects to the post that the comment is located in
+        // if the post doesn't exist, therefore the comment is the first comment onto the post by the user, create a new object with the following fields: {postId, commentIds:[]}
+
+        // GOAL:  find if the postId exists in the comments array of activities.comments
+        // NOTES: 
+        // handle situations when there is no activities field in the user's document
+
+        // CASES:
+        // CASE1:
+        // if the user already commented on a post, then first target the targeted field, find the user id in the nested targeted field, and push the new comment into that field
+        // if this is the first time that the user is commented on the post, check if within user.activities.comments.$[comment]._id is equal to the postId
+        // if the above is true, then locate its comments array--or the targeted field--and push the new comment
+        // if not, then push the new activity into the user.activities.targetField
+        const element = fieldName.slice(0, -1);
+        const activityField = `activities.${fieldName}`;
+        const activityFieldId = `activities.${fieldName}.$[${element}]._id`;
+        const activity = {
+            _id: postId,
+            commentIds: [{ _id: newCommentId }]
+        };
+        // GET THE IDS ARRAY OF THE TARGETED FIELD:
+        let fieldIds;
+        if (fieldName === "comments") {
+            fieldIds = "commentsId";
+        } else if (fieldName === "replies") {
+            fieldIds = "repliesId";
+        } else if (fieldName === "posts") {
+            fieldIds = "postIds"
+        }
+        // GOAL: get the commentIds, repliesId, or the postIds of the activities field
+        const targetField = `activities.${fieldName}.$[${element}].${fieldIds}`;
+        console.log(targetField)
+        User.find(
+            { _id: userId },
+            { activities: 1, _id: 0 }
+        ).then(results => {
+            // GOAL: check if the post that the user commented on exists within the target field
+            // CASE1: if the activities field is empty, then create the activities field with the code below
+            // CASE2: if the activities field does exist, then check if the target field (comments, replies, or likes) exists. If the target field exists, then check if the user has already commented on the post. If the user already has, then locate the post and push the new activity--push its id. 
+            // GOAL: push the new comment into its respective post in the activities field  
+            const { activities } = results[0];
+            console.log({ activities })
+            console.log(activities[fieldName])
+            if (activities && (activities[fieldName] && activities[fieldName].length)) {
+                const isTargetPostPresent = activities[fieldName].find(activity => activity._id === postId);
+                console.log({ isTargetPostPresent })
+                if (isTargetPostPresent) {
+                    User.updateOne(
+                        { _id: userId },
+                        {
+                            $push:
+                            {
+                                [targetField]: activity
+                            }
+                        },
+                        {
+                            multi: false,
+                            arrayFilters: [{ [`${element}._id`]: postId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) throw error;
+                            else {
+                                console.log({ numsAffected })
+                            }
+                        }
+                    )
+                }
+            }
+        })
+
+
+
+        // User.updateOne(
+        //     { _id: userId },
+        //     {
+        //         $push:
+        //         {
+        //             [activityField]: activity
+        //         }
+        //     },
+        //     (error, numsAffect) => {
+        //         if (error) throw error;
+        //         console.log(numsAffect);
+        //     }
+        // )
+
+        response.json(
+            "update completed"
+        );
+
+        // User.updateOne(
+        //     {
+        //         _id: userId,
+        //     },
+        //     {
+        //         $push:
+        //         {
+        //             "activities.comments.$[comment].commentIds": newCommentId
+        //         }
+        //     },
+        //     {
+        //         arrayFilters: [{ "comment.postId": postId }]
+        //     },
+        //     (error, numbersAffected) => {
+        //         if (error) throw error;
+        //         else {
+        //             console.log("numbersAffected", numbersAffected);
+        //         }
+        //     }
+        // )
+
     }
 })
 
