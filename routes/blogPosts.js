@@ -92,7 +92,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         res.json("post requested received, new comment added");
     } else if (name === "commentEdited") {
         console.log("data", data)
-        const { _id, edits } = data;
+        const { _id, edits, updatedAt } = data;
         BlogPost.updateOne(
             {
                 _id: postId,
@@ -100,7 +100,8 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             },
             {
                 $set: {
-                    "comments.$.comment": edits
+                    "comments.$.comment": edits,
+                    "comments.$.updatedAt": updatedAt
                 }
             },
             (error, numbersAffected) => {

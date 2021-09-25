@@ -3,29 +3,107 @@ const router = express.Router();
 const User = require("../models/user");
 
 
-const pushNewPostCommentedActivity = (commentId, postId, userId) => {
+const pushCommentedActivity = (commentId, postId, userId, isCommentOnNewPost) => {
     const activity = {
         _id: postId,
         commentIds: [{ _id: commentId }]
     }
-    User.updateOne(
-        { _id: userId },
-        {
-            $push:
+    if (isCommentOnNewPost) {
+        User.updateOne(
+            { _id: userId },
             {
-                "activities.comments": activity
+                $push:
+                {
+                    "activities.comments": activity
+                }
+            },
+            (error, numsAffect) => {
+                if (error) throw error;
+                else {
+                    console.log("new comment on post was added.", numsAffect);
+                }
             }
-        },
-        (error, numsAffect) => {
-            if (error) throw error;
-            else {
-                console.log("new comment on post was added.", numsAffect);
+        )
+    } else {
+        User.updateOne(
+            { _id: userId },
+            {
+                $push: {
+                    "activities.comments.$[comment].commentIds": { _id: commentId }
+                }
+            },
+            {
+                arrayFilters: [{ "comment._id": postId }]
+            },
+            (error, numsAffect) => {
+                if (error) throw error;
+                else {
+                    console.log("user added another comment on the same post.", numsAffect);
+                }
             }
-        }
-    )
+        )
+    }
 };
 
-const checkIfValIsPresent = (array, comparison) => {
+
+// NOTES:
+// first check if the user reply is on the same post
+// second, check if the user reply is on the same comment
+
+// CASES:
+// CASE1: user replies to multiple comments on the same post
+//GOAL: push the following object into the replyIds of the post that the user already replied on: {_id: replyId}
+// locate the post in activities.replies by using the postId
+// push the new replyId into activities.replies.targetComment.replyIds
+
+// CASE2: user posts a new reply and is the first reply onto a post 
+// GOAL: push a new replyActivity into the activities.replies
+// pass in the following 
+const pushReplyActivity = (commentId, postId, replyId, userId, isReplyOnNewPost, isReplyOnNewComment) => {
+    const activity = {
+        _id: postId,
+        commentId: commentId,
+        replyIds: [{ _id: replyId }]
+    }
+    // check for the following:
+    if (isReplyOnNewPost) {
+        User.updateOne(
+            { _id: userId },
+            {
+                $push:
+                {
+                    "activities.comments": activity
+                }
+            },
+            (error, numsAffect) => {
+                if (error) throw error;
+                else {
+                    console.log("new comment on post was added.", numsAffect);
+                }
+            }
+        )
+    } else {
+        User.updateOne(
+            { _id: userId },
+            {
+                $push: {
+                    "activities.comments.$[comment].commentIds": { _id: commentId }
+                }
+            },
+            {
+                arrayFilters: [{ "comment._id": postId }]
+            },
+            (error, numsAffect) => {
+                if (error) throw error;
+                else {
+                    console.log("user added another comment on the same post.", numsAffect);
+                }
+            }
+        )
+    }
+}
+
+const checkIfValIsInArray = (array, comparison) => {
     return array.find(val => val._id === comparison) !== undefined;
 }
 
@@ -266,17 +344,8 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         })
     } else if (name === "userCommented") {
-        // GOAL: update the user activities.comments when the user comments on a post 
-        // receive thea package from the front end, that consist of postId, the userCommentItd
-        // do a find query and check if the postId is present in the array that is stored in activities.comments
-        // check if the user already commented on the post in activities.comments
-        // if the user already commented on the post, then--in activities.comments--find the post by way of the postId and push the new comment id into commentIds
-        // if the user hasn't commented on the post yet, then push the {postId, commentId} into activities.comments
-        console.log("data userCommented", data)
         const { userId } = request.body;
         const { newCommentId: commentId, postId: _postId } = data;
-
-
         User.find(
             {
                 _id: userId,
@@ -288,81 +357,129 @@ router.route("/users/updateInfo").post((request, response) => {
             if (results.length) {
                 const { activities } = results[0];
                 const { comments } = activities;
-                const isCommentPresent = comments.length && checkIfValIsPresent(comments, _postId)
+                const isCommentPresent = comments.length && checkIfValIsInArray(comments, _postId)
                 if (isCommentPresent) {
-                    // const _comments = comments.map(comment => {
-                    //     const { _id, commentIds } = comment;
-                    //     if (_id === postId) {
-                    //         return {
-                    //             ...comment,
-                    //             commentIds: [...commentIds, commentId]
-                    //         }
-                    //     }
-                    //     return comment;
-                    // });
-                    console.log("user commented on post already, pushing new comment onto post")
-                    User.updateOne(
-                        { _id: userId },
-                        {
-                            $push: {
-                                "activities.comments.$[comment].commentIds": commentId
-                            }
-                        },
-                        {
-                            arrayFilters: [{ "comment._id": _postId }]
-                        },
-                        (error, numsAffect) => {
-                            if (error) throw error;
-                            else {
-                                console.log("user added another comment on the same post.", numsAffect);
-                            }
-                        }
-                    )
+                    pushCommentedActivity(commentId, _postId, userId)
                 } else {
                     console.log("hello there 321")
-                    pushNewPostCommentedActivity(commentId, _postId, userId)
+                    pushCommentedActivity(commentId, _postId, userId, true)
                 }
             } else {
                 console.log("hello there 325")
-                pushNewPostCommentedActivity(commentId, _postId, userId)
+                pushCommentedActivity(commentId, _postId, userId, true)
             }
-
-            // const { comments } = activities;
-            // if (comments && (comments.length && checkIfValIsPresent(comments, postId))) {
-
-            // }
-
         })
-
-
-
-
-
         response.json(
-            "update completed"
+            "update completed, user activity tracked"
         );
+    } else if (name === "userRepliedToComment") {
+        const { userId } = request.body;
+        const { commentId, postId, replyId } = data;
+        console.log({
+            commentId,
+            postId,
+            replyId
+        })
+        // GOAL: check if the user already replied to the comment already in their activity field
+        User.find(
+            {
+                _id: userId,
+                "activities.replies": { $exists: true }
+            },
+            { activities: 1, _id: 0 }
+        ).then(results => {
+            // CHECKS: 
+            // CHECK 1) if user replies on a post that the user already replied on
+            // GOAL: if no, then push the following into user.activities.replies: {activities.replies: [{["id of the post"], replies:[{idOfCommentThatUserIsReplyingto, replyIdsArray}]]}
 
-        // User.updateOne(
-        //     {
-        //         _id: userId,
-        //     },
-        //     {
-        //         $push:
-        //         {
-        //             "activities.comments.$[comment].commentIds": newCommentId
-        //         }
-        //     },
-        //     {
-        //         arrayFilters: [{ "comment.postId": postId }]
-        //     },
-        //     (error, numbersAffected) => {
-        //         if (error) throw error;
-        //         else {
-        //             console.log("numbersAffected", numbersAffected);
-        //         }
-        //     }
-        // )
+            // CHECK 2) if user replies to a comment that the user already replied to
+            // if yes, then push the following into the replyIds array: {_id: the id of the reply}
+            //push the replyId into the array that is stored in replyIds
+            // find the comment that the user replied to by using the commentId
+            // find the post that the user replied on by using the postId
+            // access activities.replies
+            // find the user account by using the userId
+            // package received with the following: {commentId, postId, replyId, userId}
 
+
+            // GOAL: push the following into replySchema.comments: {_id of the comment, comments: [{id of the comment, replyIds: [{_id: the id of the reply}]}]}
+            // the post is found, the following is pushed into replySchema.comments: {_id of the comment, comments: [{id of the comment, replyIds: [{_id: the id of the reply}]}]}
+            // find the post that the user already commented on by using the postID 
+            // access the activities.replies 
+            // find the user profile by using the userId {_id: userId}
+            // package received with the following: {commentId, postId, replyId, userId} 
+            if (results.length) {
+
+
+
+                // user commented on: get the blog post 
+                // user replied to a comment: get the blog post and the comment id 
+                const { replies } = results[0].activities;
+                const post = replies.find(({ _id }) => _id === postId);
+                if (post) {
+                    console.log("user has commented on this post")
+                    const { repliedToCommentIds } = post;
+                    if (checkIfValIsInArray(repliedToCommentIds, commentId)) {
+                        console.log("user has replied to this comment already")
+                        User.updateOne(
+                            {
+                                _id: userId,
+                            },
+                            {
+                                $push:
+                                {
+                                    "activities.replies.$[reply].repliedToCommentIds.$[commentId].idsOfReplies": { _id: replyId }
+                                }
+                            },
+                            {
+                                multi: false,
+                                arrayFilters: [
+                                    { "commentId._id": commentId },
+                                    { "reply._id": postId }
+                                ],
+                                upsert: true
+                            },
+                            (error, numsAffected) => {
+                                if (error) throw error;
+                                else {
+                                    console.log({ numsAffected })
+                                }
+                            }
+                        )
+                    }
+                }
+            } else {
+                // GOAL: if the results are none, then push the follow nested field for the activities.replies: {activities.replies: [{["id of the post"], replies:[{idOfCommentThatUserIsReplyingto, replyIds}]]}
+                // the following is pushed into activities.replies, thus creating the field if it hasn't been created yet: {activities.replies: [{["id of the post"], replies:[{idOfCommentThatUserIsReplyingto, replyIds}]]}
+                // find the user by using the user's id
+                const newReply = {
+                    _id: commentId,
+                    idsOfReplies: [{ _id: replyId }]
+                }
+                const replies = {
+                    _id: postId,
+                    repliedToCommentIds: [newReply]
+                }
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $push:
+                        {
+                            "activities.replies": replies
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) throw error;
+                        else {
+                            console.log({ numsAffected })
+                        }
+                    }
+                )
+            }
+        })
+        response.json(
+            "update completed, user activity tracked"
+        );
     }
 })
 
