@@ -16,6 +16,7 @@ const commentAndReplyActivitySchema = new Schema(
 
 const commentSchema = new Schema(
     {
+        // the _id will be the id of the post
         _id: String,
         commentIds: [commentAndReplyActivitySchema],
     },

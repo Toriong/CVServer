@@ -3,7 +3,31 @@ const router = express.Router();
 const User = require("../models/user");
 
 
-// GOAL: receive draft from front-end, delete the draft from user.roughDrafts and push id into user.publishedDrafts
+const pushNewPostCommentedActivity = (commentId, postId, userId) => {
+    const activity = {
+        _id: postId,
+        commentIds: [{ _id: commentId }]
+    }
+    User.updateOne(
+        { _id: userId },
+        {
+            $push:
+            {
+                "activities.comments": activity
+            }
+        },
+        (error, numsAffect) => {
+            if (error) throw error;
+            else {
+                console.log("new comment on post was added.", numsAffect);
+            }
+        }
+    )
+};
+
+const checkIfValIsPresent = (array, comparison) => {
+    return array.find(val => val._id === comparison) !== undefined;
+}
 
 // creates user's account
 router.route("/users").post((request, response) => {
@@ -242,104 +266,77 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         })
     } else if (name === "userCommented") {
+        // GOAL: update the user activities.comments when the user comments on a post 
+        // receive thea package from the front end, that consist of postId, the userCommentItd
+        // do a find query and check if the postId is present in the array that is stored in activities.comments
+        // check if the user already commented on the post in activities.comments
+        // if the user already commented on the post, then--in activities.comments--find the post by way of the postId and push the new comment id into commentIds
+        // if the user hasn't commented on the post yet, then push the {postId, commentId} into activities.comments
         console.log("data userCommented", data)
-        // GOAL: store the id of the post and the user comment into user.activities field under the subfield of comments
-        // the user activities for comments is updated with the following: {locationPost: string, comments: [new comment id added]}
-        // if it doesn't exist, then create a new object with the with the following object added into the commentsId field: {locationPost: string, comments: [new comment id added]}
-        // if it exists, then push the new data into the commentsId field
-        // check if the postId already exists in the array that is stored activities.comments
-        // access the activities.comments field of the user profile
-        // using user's id, find the user's profile
-        // the following package is retrieved from the frontend: {name: "userCommented", userId: string, data: {locationPost: string, newComment: id of the comment}}
-        const { userId, postId } = request.body;
-        const { newCommentId, fieldName } = data;
-        // NOTES: 
-        // first check if the postId containing all of the comments ids exist already in the activities.comments field 
-        // if it exists, then push the new comment into the commentsId field in respects to the post that the comment is located in
-        // if the post doesn't exist, therefore the comment is the first comment onto the post by the user, create a new object with the following fields: {postId, commentIds:[]}
+        const { userId } = request.body;
+        const { newCommentId: commentId, postId: _postId } = data;
 
-        // GOAL:  find if the postId exists in the comments array of activities.comments
-        // NOTES: 
-        // handle situations when there is no activities field in the user's document
 
-        // CASES:
-        // CASE1:
-        // if the user already commented on a post, then first target the targeted field, find the user id in the nested targeted field, and push the new comment into that field
-        // if this is the first time that the user is commented on the post, check if within user.activities.comments.$[comment]._id is equal to the postId
-        // if the above is true, then locate its comments array--or the targeted field--and push the new comment
-        // if not, then push the new activity into the user.activities.targetField
-        const element = fieldName.slice(0, -1);
-        const activityField = `activities.${fieldName}`;
-        const activityFieldId = `activities.${fieldName}.$[${element}]._id`;
-        const activity = {
-            _id: postId,
-            commentIds: [{ _id: newCommentId }]
-        };
-        // GET THE IDS ARRAY OF THE TARGETED FIELD:
-        let fieldIds;
-        if (fieldName === "comments") {
-            fieldIds = "commentsId";
-        } else if (fieldName === "replies") {
-            fieldIds = "repliesId";
-        } else if (fieldName === "posts") {
-            fieldIds = "postIds"
-        }
-        // GOAL: get the commentIds, repliesId, or the postIds of the activities field
-        const targetField = `activities.${fieldName}.$[${element}].${fieldIds}`;
-        console.log(targetField)
         User.find(
-            { _id: userId },
+            {
+                _id: userId,
+                "activities.comments._id": _postId
+            },
             { activities: 1, _id: 0 }
         ).then(results => {
-            // GOAL: check if the post that the user commented on exists within the target field
-            // CASE1: if the activities field is empty, then create the activities field with the code below
-            // CASE2: if the activities field does exist, then check if the target field (comments, replies, or likes) exists. If the target field exists, then check if the user has already commented on the post. If the user already has, then locate the post and push the new activity--push its id. 
-            // GOAL: push the new comment into its respective post in the activities field  
-            const { activities } = results[0];
-            console.log({ activities })
-            console.log(activities[fieldName])
-            if (activities && (activities[fieldName] && activities[fieldName].length)) {
-                const isTargetPostPresent = activities[fieldName].find(activity => activity._id === postId);
-                console.log({ isTargetPostPresent })
-                if (isTargetPostPresent) {
+            // don't search through the results if the results are empty
+            if (results.length) {
+                const { activities } = results[0];
+                const { comments } = activities;
+                const isCommentPresent = comments.length && checkIfValIsPresent(comments, _postId)
+                if (isCommentPresent) {
+                    // const _comments = comments.map(comment => {
+                    //     const { _id, commentIds } = comment;
+                    //     if (_id === postId) {
+                    //         return {
+                    //             ...comment,
+                    //             commentIds: [...commentIds, commentId]
+                    //         }
+                    //     }
+                    //     return comment;
+                    // });
+                    console.log("user commented on post already, pushing new comment onto post")
                     User.updateOne(
                         { _id: userId },
                         {
-                            $push:
-                            {
-                                [targetField]: activity
+                            $push: {
+                                "activities.comments.$[comment].commentIds": commentId
                             }
                         },
                         {
-                            multi: false,
-                            arrayFilters: [{ [`${element}._id`]: postId }]
+                            arrayFilters: [{ "comment._id": _postId }]
                         },
-                        (error, numsAffected) => {
+                        (error, numsAffect) => {
                             if (error) throw error;
                             else {
-                                console.log({ numsAffected })
+                                console.log("user added another comment on the same post.", numsAffect);
                             }
                         }
                     )
+                } else {
+                    console.log("hello there 321")
+                    pushNewPostCommentedActivity(commentId, _postId, userId)
                 }
+            } else {
+                console.log("hello there 325")
+                pushNewPostCommentedActivity(commentId, _postId, userId)
             }
+
+            // const { comments } = activities;
+            // if (comments && (comments.length && checkIfValIsPresent(comments, postId))) {
+
+            // }
+
         })
 
 
 
-        // User.updateOne(
-        //     { _id: userId },
-        //     {
-        //         $push:
-        //         {
-        //             [activityField]: activity
-        //         }
-        //     },
-        //     (error, numsAffect) => {
-        //         if (error) throw error;
-        //         console.log(numsAffect);
-        //     }
-        // )
+
 
         response.json(
             "update completed"
