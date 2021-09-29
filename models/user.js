@@ -34,9 +34,9 @@ const likeSchema = new Schema(
 
 const activitiesSchema = new Schema(
     {
-        comments: [idSchema],
-        replies: [repliedToCommentsSchema],
-        likes: likeSchema
+        comments: Array,
+        replies: Array,
+        likes: Array
     }
 );
 

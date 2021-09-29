@@ -365,6 +365,7 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     } else if (name === "userRepliedToComment") {
+        // do the check on the front end
         const { userId } = request.body;
         const { commentId, postId, replyId } = data;
         const _commentId = { _id: commentId };
@@ -487,80 +488,81 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     } else if (name === "userLikedComment") {
-        const { signedInUserId: userId } = request.body
-        const { postId, commentId } = data;
-        User.find(
-            {
-                _id: userId,
-                "activities.comments": { $exists: true }
-            },
-            {
-                _id: 0,
-                "activities.likes": 1
-            }
-        )
-            .then(results => {
-                // GOAL: check if there is something in results and if there is something in likes.comments
-                console.log("results", results)
-                const { comments } = results[0].activities.likes;
-                if (comments && comments.length) {
-                    const post = comments.find(({ postId: _postId }) => _postId === postId);
-                    if (post) {
-                        console.log("post.idsOfCommentsLiked", post.idsOfCommentsLiked)
-                        const isCommentIdPresent = post.idsOfCommentsLiked.find(id => id === commentId);
-                        console.log("isCommentIdPresent: ", isCommentIdPresent)
-                        if (isCommentIdPresent) {
-                            // if the comment id is present then don't do anything
-                            console.log("comment id is present");
-                            response.json("Comment id is present. No modifications occurred with DB.")
-                        } else {
-                            console.log("commentId 558", commentId)
-                            User.updateOne(
-                                { _id: userId },
-                                {
-                                    $push:
-                                    {
-                                        "activities.likes.comments.$[val].idsOfCommentsLiked": commentId
-                                    }
-                                },
-                                {
-                                    multi: false,
-                                    arrayFilters: [{ "val.postId": postId }]
-                                },
-                                (error, numsAffected) => {
-                                    if (error) throw error;
-                                    else {
-                                        console.log(`User liked another comment in the same post. NumsAffectd: `, numsAffected);
-                                        response.json("User like for a comment in the same post is tracked and saved into DB.")
-                                    }
-                                }
-                            )
-                        }
+        const { signedInUserId: userId, postId, isSamePost } = request.body
+        const { commentId } = data;
+        // CASE1: user likes a comment in the same post where other comments have been liked
+        // the comment that was liked is pushed into idsOfCommentsLiked
+        // the the array that holds all of the liked comments is located by using the post id: arrayFilters: [{"post.id": postId}]
+        // the activities.likes.comments fields is accessed
+        // the user is found by using the userId
+        // the location is: "samePost"
+        // the following package is received: {name: "userCommentLiked", location: "samePost", postId, userId,data: {commentId}}
+        if (isSamePost) {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $push:
+                    {
+                        "activities.likes.comments.postIdsAndLikedCommentIds.$[postId].likedCommentIds": commentId
                     }
-
-                } else {
-                    User.updateOne(
-                        { _id: userId },
-                        {
-                            $push:
-                            {
-                                "activities.likes.comments":
-                                {
-                                    postId,
-                                    idsOfCommentsLiked: [commentId]
-                                }
-                            }
-                        },
-                        (error, numsAffected) => {
-                            if (error) throw error;
-                            else {
-                                console.log(`User liked a comment. NumsAffectd: `, numsAffected);
-                                response.json("User like tracked and saved into DB.")
-                            }
-                        }
-                    )
+                },
+                {
+                    multi: false,
+                    arrayFilters: [{ "postId.postId": postId }]
+                },
+                (error, numsAffected) => {
+                    if (error) throw error;
+                    else {
+                        console.log(`User liked a comment. NumsAffectd: `, numsAffected);
+                        User.find(
+                            { _id: userId },
+                            { activities: 1, _id: 0 }
+                        ).then(results => {
+                            console.log("results 521", results)
+                            const { activities } = results[0]
+                            response.json(activities);
+                        })
+                    }
                 }
-            })
+            )
+        } else {
+            // CASE2: USER starts liking comments in a completely different post where the user hasn't liked any comments before
+            // push the following into activities.likes.comments: {postId, idsOfCommentsLiked; [{string of the comment id}]} 
+            // the activities.likes.comments is accessed
+            // the userId is accessed by using the userId
+            // the location is: "newPost"
+            const { postId } = data;
+            const postIdAndLikedCommentsIds = { postId, likedCommentIds: [commentId] }
+            User.updateOne(
+                { _id: userId },
+                {
+                    $push:
+                    {
+                        "activities.likes.comments.postIdsAndLikedCommentIds": postIdAndLikedCommentsIds
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) throw error;
+                    else {
+                        console.log(`User liked a comment on a different post. NumsAffectd: ${numsAffected}`);
+                        User.find(
+                            { _id: userId },
+                            { activities: 1, _id: 0 }
+                        ).then(results => {
+                            console.log("results 552", results)
+                            const { activities } = results[0]
+                            response.json(activities);
+                        })
+                    }
+                }
+            )
+        }
+
+
+
+
+
+
     } else if (name === "userLikedReply") {
         // GOAL: store the id of the reply into its respective comment in the user.activities
         //CASE1: the user likes a reply for the first time, push the following into user.activities.likes.replies: [{postId, repliedToComments: [{commentId, likedRepliesIds}]}]
