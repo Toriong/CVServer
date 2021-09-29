@@ -3,69 +3,40 @@ const Schema = mongoose.Schema;
 
 
 
-const commentAndReplyIdSchema = new Schema(
+const idSchema = new Schema(
     {
         _id: String
-    },
-    {
-        autoIndexId: false
     }
 )
 
 
-const commentSchema = new Schema(
-    {
-        // the _id will be the id of the post
-        _id: String,
-        commentIds: [commentAndReplyIdSchema]
-    },
-    {
-        autoIndexId: false
-    }
-)
 
 
-const replyIdSchema = new Schema({
-    // GOAL: have the following fields:
-    // the _id will be the id of the comment that the user replied to
-    _id: String,
-    idsOfReplies: [commentAndReplyIdSchema]
-})
 
 // have the wasUpdated field be stored into every single element in the elements in the replyId field
-const replySchema = new Schema(
+const repliedToCommentsSchema = new Schema(
     {
         // the _id will be the post 
         _id: String,
-        repliedToCommentIds: [replyIdSchema]
+        idsOfCommentsRepliedTo: [idSchema]
     },
-    {
-        autoIndexId: false
-    }
 );
 
 const likeSchema = new Schema(
     {
-        type: String,
-        postId: String || Array,
-        commentId: String || Array,
-        replyId: String || Array
+        posts: Array,
+        comments: Array,
+        replies: Array
     },
-    {
-        autoIndexId: false
-    }
 )
 
 
 
 const activitiesSchema = new Schema(
     {
-        comments: [commentSchema],
-        replies: [replySchema],
-        likes: [likeSchema]
-    },
-    {
-        autoIndexId: false
+        comments: [idSchema],
+        replies: [repliedToCommentsSchema],
+        likes: likeSchema
     }
 );
 

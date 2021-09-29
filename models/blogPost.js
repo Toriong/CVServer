@@ -6,6 +6,7 @@ const ReplySchema = new Mongoose.Schema(
         _id: String,
         userId: String,
         comment: String,
+        userIdsOfLikes: Array,
         createdAt: Object,
         updatedAt: Object
     }
@@ -18,10 +19,14 @@ const CommentSchema = new Mongoose.Schema(
         comment: String,
         createdAt: Object,
         updatedAt: Object,
+        userIdsOfLikes: Array,
         replies: [ReplySchema]
     }
 )
 
+// const idSchema = new Mongoose.Schema({
+//     _id: String
+// })
 
 // how to created schema's with nested arrays
 const BlogPostSchema = new Mongoose.Schema(
@@ -34,7 +39,8 @@ const BlogPostSchema = new Mongoose.Schema(
         body: String,
         tags: Array,
         publicationDate: Object,
-        comments: [CommentSchema]
+        comments: [CommentSchema],
+        userIdsOfLikes: Array
     }
 )
 
