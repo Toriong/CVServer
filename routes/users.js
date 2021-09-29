@@ -460,54 +460,32 @@ router.route("/users/updateInfo").post((request, response) => {
             "update completed, user activity tracked"
         );
     } else if (name === "userLikedPost") {
+        // GOAL: have user like activity be only sent to the server once
         const { signedInUserId: userId } = request.body;
-        User.find({ _id: userId }, { activities: 1, _id: 0 })
-            .then(results => {
-                console.log(results[0].activities)
-                const { posts } = results.length && results[0].activities.likes;
-                if (results.length && (posts && posts.length)) {
-                    const { postId: _postId } = data;
-                    const wasPostLiked = posts.find(({ postId }) => postId === _postId) !== undefined;
-                    if (wasPostLiked) {
-                        response.json("Post was liked already");
-                    } else {
-                        User.updateOne(
-                            { _id: userId },
-                            {
-                                $push:
-                                {
-                                    "activities.likes.posts": { _postId }
-                                }
-                            },
-                            (error, numsAffected) => {
-                                if (error) throw error;
-                                else {
-                                    console.log(`User liked a post. NumsAffectd: ${numsAffected}`,);
-                                    response.json("User like saved into DB.")
-                                }
-                            }
-                        )
-                    }
-                } else {
-                    const { postId } = data;
-                    User.updateOne(
-                        { _id: userId },
-                        {
-                            $push:
-                            {
-                                "activities.likes.posts": { postId }
-                            }
-                        },
-                        (error, numsAffected) => {
-                            if (error) throw error;
-                            else {
-                                console.log(`User liked a post. NumsAffectd: `, numsAffected);
-                                response.json("User like saved into DB.")
-                            }
-                        }
-                    )
+        const { postId } = data;
+        User.updateOne(
+            { _id: userId },
+            {
+                $push:
+                {
+                    "activities.likes.posts": { postId }
                 }
-            })
+            },
+            (error, numsAffected) => {
+                if (error) throw error;
+                else {
+                    console.log(`User liked a post. NumsAffectd: `, numsAffected);
+                    User.find(
+                        { _id: userId },
+                        { activities: 1, _id: 0 }
+                    ).then(results => {
+                        console.log("results 482", results)
+                        const { activities } = results[0]
+                        response.json(activities);
+                    })
+                }
+            }
+        )
     } else if (name === "userLikedComment") {
         const { signedInUserId: userId } = request.body
         const { postId, commentId } = data;
@@ -609,7 +587,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 // check if the query works and what your get from it
                 console.log("results", results);
             })
-        res.json("post request received tracking user's activity.")
+        res.json("post request received tracking user's acetivity")
     }
 })
 
