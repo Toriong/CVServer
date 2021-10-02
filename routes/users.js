@@ -345,13 +345,13 @@ router.route("/users/updateInfo").post((request, response) => {
         })
     } else if (name === "userCommented") {
         const { userId } = request.body;
-        const { postId: _postId } = data;
+        const { postId } = data;
         console.log("tracking user activity")
         User.updateOne(
             { _id: userId },
             {
                 $push: {
-                    "activities.comments": { _id: _postId }
+                    "activities.comments": { postId }
                 }
             },
             (error, numsAffect) => {
@@ -467,7 +467,7 @@ router.route("/users/updateInfo").post((request, response) => {
         User.updateOne(
             { _id: userId },
             {
-                $push:
+                $addToSet:
                 {
                     "activities.likes.posts": { postId }
                 }
@@ -480,7 +480,7 @@ router.route("/users/updateInfo").post((request, response) => {
                         { _id: userId },
                         { activities: 1, _id: 0 }
                     ).then(results => {
-                        console.log("results 482", results)
+                        console.log("results 483", results)
                         const { activities } = results[0]
                         response.json(activities);
                     })
@@ -489,21 +489,14 @@ router.route("/users/updateInfo").post((request, response) => {
         )
     } else if (name === "userLikedComment") {
         const { signedInUserId: userId, postId, isSamePost } = request.body
-        const { commentId } = data;
-        // CASE1: user likes a comment in the same post where other comments have been liked
-        // the comment that was liked is pushed into idsOfCommentsLiked
-        // the the array that holds all of the liked comments is located by using the post id: arrayFilters: [{"post.id": postId}]
-        // the activities.likes.comments fields is accessed
-        // the user is found by using the userId
-        // the location is: "samePost"
-        // the following package is received: {name: "userCommentLiked", location: "samePost", postId, userId,data: {commentId}}
         if (isSamePost) {
+            const { commentId } = data;
             User.updateOne(
                 { _id: userId },
                 {
-                    $push:
+                    $addToSet:
                     {
-                        "activities.likes.comments.postIdsAndLikedCommentIds.$[postId].likedCommentIds": commentId
+                        "activities.likes.postIdsAndLikedComments.$[postId].likedCommentIds": commentId
                     }
                 },
                 {
@@ -518,7 +511,7 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 521", results)
+                            console.log("results 513", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -526,19 +519,14 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             )
         } else {
-            // CASE2: USER starts liking comments in a completely different post where the user hasn't liked any comments before
-            // push the following into activities.likes.comments: {postId, idsOfCommentsLiked; [{string of the comment id}]} 
-            // the activities.likes.comments is accessed
-            // the userId is accessed by using the userId
-            // the location is: "newPost"
-            const { postId } = data;
+            const { postId, commentId } = data;
             const postIdAndLikedCommentsIds = { postId, likedCommentIds: [commentId] }
             User.updateOne(
                 { _id: userId },
                 {
-                    $push:
+                    $addToSet:
                     {
-                        "activities.likes.comments.postIdsAndLikedCommentIds": postIdAndLikedCommentsIds
+                        "activities.likes.postIdsAndLikedComments": postIdAndLikedCommentsIds
                     }
                 },
                 (error, numsAffected) => {
@@ -549,7 +537,7 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 552", results)
+                            console.log("results 545", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -577,19 +565,114 @@ router.route("/users/updateInfo").post((request, response) => {
         // access the user.activities field
         // the user is found using the userId
         // the following is received from the front-end: {the name of te package: user liked a reply, userId, data: {postId, commentId, replyId} }
-        const { signedInUserId: userId } = req.body
-        const { commentId, replyId } = data;
-        User.find(
-            {
-                _id: userId,
-                "activities.likes.replies": { $exist: true }
+        const { signedInUserId: userId, isSamePost, isSameComment } = request.body
+        const { replyId } = data;
+        //GOAL: if isSamePost and isSameComment, then find the post postIdsCommentIdsAndLikedReplyIds and find the target comment in commetIdsAndLikedReplyIds and push the likedReplyId into LikedReplyIds
+        //GOAL: if isSamePost and isSameComment is undefined (therefore false, it is a liked reply in a new post), then push the following into activities.likes.replies {postId, commentIdsAndLikedReplys: [{commentId, likedReplyIds}]}
+        // GOAL: if isSamePost, then find the post activities.likes.replies and push the new liked reply and its comment into commentIdsAndLikedReplyIds 
+        console.log('isSameComment', isSameComment)
+        if (isSamePost && isSameComment) {
+            // GOAL: implement case3
+            console.log("lard");
+            const { commentId, postId } = request.body;
+            User.updateOne(
+                { _id: userId },
+                {
+                    $addToSet:
+                    {
+                        "activities.likes.postIdsCommentIdsAndLikedReplies.$[post].commentIdsAndLikedReplyIds.$[comment].likedReplyIds": replyId
+                    }
+                },
+                {
+                    multi: false,
+                    arrayFilters: [{ "post.postId": postId }, { "comment.commentId": commentId }]
+                },
+                (error, numsAffect) => {
+                    if (error) {
+                        console.error(`Error message 597: ${error}`)
+                    } else {
+                        console.log("user liked reply to the same comment on the same post.", numsAffect);
+                        User.find(
+                            { _id: userId },
+                            { activities: 1, _id: 0 }
+                        ).then(results => {
+                            console.log("results 604", results)
+                            const { activities } = results[0]
+                            response.json(activities);
+                        })
+                    }
+                }
+            )
+
+        } else if (isSamePost && (isSameComment === undefined)) {
+            console.log("potatoes yo")
+            const { postId } = request.body
+            const { commentId, replyId } = data;
+            const newReplyActivity = {
+                commentId,
+                likedReplyIds: [replyId]
             }
-        )
-            .then(results => {
-                // check if the query works and what your get from it
-                console.log("results", results);
-            })
-        res.json("post request received tracking user's acetivity")
+            User.updateOne(
+                { _id: userId },
+                {
+                    $addToSet:
+                    {
+                        "activities.likes.postIdsCommentIdsAndLikedReplies.$[post].commentIdsAndLikedReplyIds": newReplyActivity
+                    }
+                },
+                {
+                    multi: false,
+                    arrayFilters: [{ "post.postId": postId }]
+                },
+                (error, numsAffect) => {
+                    if (error) {
+                        console.error(`Error message 597: ${error}`)
+                    } else {
+                        console.log("user liked reply to a new comment on the same post.", numsAffect);
+                        User.find(
+                            { _id: userId },
+                            { activities: 1, _id: 0 }
+                        ).then(results => {
+                            console.log("results 604", results)
+                            const { activities } = results[0]
+                            response.json(activities);
+                        })
+                    }
+                }
+
+            )
+        } else {
+            const { commentId, postId } = data;
+            const newReplyActivity = {
+                postId,
+                commentIdsAndLikedReplyIds: [{ commentId, likedReplyIds: [replyId] }]
+            }
+            User.updateOne(
+                { _id: userId },
+                {
+                    $addToSet:
+                    {
+                        "activities.likes.postIdsCommentIdsAndLikedReplies": newReplyActivity
+                    }
+                },
+                (error, numsAffect) => {
+                    if (error) {
+                        console.error(`Error message 592: ${error}`)
+                    } else {
+                        console.log("user liked reply on new post.", numsAffect);
+                        User.find(
+                            { _id: userId },
+                            { activities: 1, _id: 0 }
+                        ).then(results => {
+                            console.log("results 604", results)
+                            const { activities } = results[0]
+                            response.json(activities);
+                        })
+                    }
+                }
+
+            )
+        }
     }
 })
 

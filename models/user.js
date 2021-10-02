@@ -1,3 +1,4 @@
+const { ObjectID } = require('mongodb');
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -36,7 +37,7 @@ const activitiesSchema = new Schema(
     {
         comments: Array,
         replies: Array,
-        likes: Array
+        likes: Object
     }
 );
 

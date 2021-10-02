@@ -130,7 +130,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 if (error) {
                     console.error(`Error message: ${error}`);
                 }
-                console.log("numbersAffected: ", numbersAffected)
+                console.log("User replied to a comment. NumbersAffected: ", numbersAffected)
             }
         )
         res.json("post requested received, reply added to comment");
