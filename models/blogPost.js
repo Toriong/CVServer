@@ -5,7 +5,7 @@ const ReplySchema = new Mongoose.Schema(
     {
         _id: String,
         userId: String,
-        comment: String,
+        _reply: String,
         userIdsOfLikes: Array,
         createdAt: Object,
         updatedAt: Object
@@ -20,7 +20,7 @@ const CommentSchema = new Mongoose.Schema(
         createdAt: Object,
         updatedAt: Object,
         userIdsOfLikes: Array,
-        replies: [ReplySchema]
+        replies: Array
     }
 )
 

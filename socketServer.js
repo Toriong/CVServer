@@ -7,7 +7,8 @@ const io = require("socket.io")(server, {
 
 const PORT = 4000;
 const messageEventName = "newChatMessage";
-const likeEventName = "userClicksLikeBtn"
+const likeEventName = "userClicksLikeBtn";
+const commentNumEvent = "commentNumChanged";
 
 
 io.on("connection", socket => {
@@ -20,15 +21,16 @@ io.on("connection", socket => {
 
     // Listen for new messages
     socket.on(messageEventName, data => {
-        // make a conditional based upon the room id
-        // console.log("data", data.body.input);
-        console.log("DATA", data)
         io.in(roomId).emit(messageEventName, data);
     });
 
     socket.on(likeEventName, data => {
-        console.log("DATA", data)
         io.in(roomId).emit(likeEventName, data);
+    });
+
+    socket.on(commentNumEvent, data => {
+        console.log({ data })
+        io.in(roomId).emit(commentNumEvent, data);
     })
 
     // Leave the room if the user closes the socket

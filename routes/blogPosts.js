@@ -71,8 +71,6 @@ router.route("/blogPosts").post((req, res) => {
 
 router.route("/blogPosts/updatePost").post((req, res) => {
     const { name, postId, data } = req.body;
-    console.log("new data comment", data);
-    console.log("name", name)
     // GOAL: update the target blog post by getting the blog post and pushing the new comment into the field of comments
     if (name === "newComment") {
         BlogPost.updateOne(
@@ -92,11 +90,12 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         res.json("post requested received, new comment added");
     } else if (name === "commentEdited") {
         console.log("data", data)
-        const { _id, edits, updatedAt } = data;
+        const { commentId } = req.body;
+        const { edits, updatedAt } = data;
         BlogPost.updateOne(
             {
                 _id: postId,
-                "comments._id": _id
+                "comments._id": commentId
             },
             {
                 $set: {
@@ -114,7 +113,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         res.json("post requested received, commented updated");
     } else if (name === "newReply") {
         const { commentId } = req.body;
-        console.log("data._id", data._id);
         BlogPost.updateOne(
             {
                 _id: postId,
@@ -145,7 +143,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             {
                 $set:
                 {
-                    "comments.$.replies.$[reply].comment": editedReply,
+                    "comments.$.replies.$[reply]._reply": editedReply,
                     "comments.$.replies.$[reply].updatedAt": updatedAt,
                 }
             },
@@ -156,7 +154,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             (error, numbersAffected) => {
                 if (error) throw error;
                 else {
-                    console.log("numbersAffected: ", numbersAffected);
+                    console.log("reply edited, numbersAffected: ", numbersAffected);
                 }
             }
         )
@@ -224,7 +222,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         )
     } else if (name === "userUnlikedPost") {
         const { signedInUserId: userId } = req.body
-        console.log("userId", userId);
         // GOAL: push the id of the user into blogPost.likes
         BlogPost.updateOne(
             { _id: postId },
@@ -286,7 +283,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             }
         )
     } else if (name === "replyLiked") {
-        console.log("req.body", req.body)
         const { commentId, replyId } = req.body
         const { signedInUserId: userId, likedAt } = data;
         BlogPost.updateOne(
@@ -349,9 +345,9 @@ router.route("/blogPosts/updatePost").post((req, res) => {
 
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts")
-    const package = JSON.parse(req.params.package);
-    if (package.name === "getPublishedDrafts") {
-        BlogPost.find({ username: package.username }).then(posts => {
+    const { name, signedInUserId: userId, username, draftId } = JSON.parse(req.params.package);
+    if (name === "getPublishedDrafts") {
+        BlogPost.find({ username: username }).then(posts => {
             if (posts.length) {
                 res.json(
                     {
@@ -367,8 +363,8 @@ router.route("/blogPosts/:package").get((req, res) => {
                 )
             }
         })
-    } else if (package.name === "getPost") {
-        BlogPost.find({ _id: package.draftId }).then(post => {
+    } else if (name === "getPost") {
+        BlogPost.find({ _id: draftId }).then(post => {
             res.json(post[0]);
         })
     }

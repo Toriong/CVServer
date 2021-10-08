@@ -345,121 +345,94 @@ router.route("/users/updateInfo").post((request, response) => {
         })
     } else if (name === "userCommented") {
         const { userId } = request.body;
-        const { postId } = data;
+        const { postId: postIdOfComment } = data;
         console.log("tracking user activity")
         User.updateOne(
             { _id: userId },
             {
-                $push: {
-                    "activities.comments": { postId }
+                $addToSet: {
+                    "activities.comments": { postIdOfComment }
                 }
             },
-            (error, numsAffect) => {
+            (error, numsAffected) => {
                 if (error) throw error;
                 else {
-                    console.log("user added another comment on the same post.", numsAffect);
-                    response.json(
-                        "user comment activity updated"
-                    )
+                    console.log(`User commented, 360: ${numsAffected}`);
+                    User.find(
+                        { _id: userId },
+                        { activities: 1, _id: 0 }
+                    ).then(results => {
+                        console.log("results 416", results)
+                        const { activities } = results[0]
+                        response.json(activities);
+                    })
                 }
             }
         )
     } else if (name === "userRepliedToComment") {
-        // do the check on the front end
-        const { userId } = request.body;
-        const { commentId, postId, replyId } = data;
-        const _commentId = { _id: commentId };
-        console.log({
-            commentId,
-            postId,
-            replyId
-        })
-        User.find(
-            {
-                _id: userId,
-                "activities.replies": { $exists: true }
-            },
-            { activities: 1, _id: 0 }
-        ).then(results => {
-            console.log("results", results)
-            const { replies } = results.length && results[0].activities;
-            if (results.length && replies.length) {
-                const post = replies.find(({ _id }) => _id === postId);
-                if (post) {
-                    console.log("user replied to a different comment.")
-                    User.updateOne(
-                        {
-                            _id: userId,
-                        },
-                        {
-                            $push:
-                            {
-                                "activities.replies.$[comment].idsOfCommentsRepliedTo": _commentId
-                            }
-                        },
-                        {
-                            multi: false,
-                            arrayFilters: [
-                                { "comment._id": postId }
-                            ],
-                            upsert: true
-                        },
-                        (error, numsAffected) => {
-                            if (error) throw error;
-                            else {
-                                console.log({ numsAffected })
-                            }
-                        }
-                    );
-                } else {
-                    console.log("first reply by user on new post.");
-                    User.updateOne(
-                        {
-                            _id: userId,
-                        },
-                        {
-                            $push:
-                            {
-                                "activities.replies": {
-                                    _id: postId,
-                                    idsOfCommentsRepliedTo: [_commentId]
-                                }
-                            }
-                        },
-                        (error, numsAffected) => {
-                            if (error) throw error;
-                            else {
-                                console.log({ numsAffected })
-                            }
-                        }
-                    );
-                }
-            } else {
-                console.log("executed, berries")
-                const replies = {
-                    _id: postId,
-                    idsOfCommentsRepliedTo: [_commentId]
-                }
-                User.updateOne(
-                    { _id: userId },
+        const { signedInUserId: userId, isSamePost } = request.body;
+        const { commentId } = data;
+        if (isSamePost) {
+            const { postId } = request.body;
+            User.updateOne(
+                { _id: userId },
+                {
+                    $addToSet:
                     {
-                        $push:
-                        {
-                            "activities.replies": replies
-                        }
-                    },
-                    (error, numsAffected) => {
-                        if (error) throw error;
-                        else {
-                            console.log({ numsAffected })
-                        }
+                        "activities.replies.$[postId].repliedToCommentIds": commentId
                     }
-                )
+                },
+                {
+                    multi: false,
+                    arrayFilters: [{ "postId.postId": postId }]
+                },
+                (error, numsAffected) => {
+                    if (error) throw error;
+                    else {
+                        console.log(`User replied to a comment, 411: ${numsAffected}`);
+                        User.find(
+                            { _id: userId },
+                            { activities: 1, _id: 0 }
+                        ).then(results => {
+                            console.log("results 416", results)
+                            const { activities } = results[0]
+                            response.json(activities);
+                        })
+                    }
+                }
+            );
+        } else {
+            const { postId } = data;
+            const newReplyActivity = {
+                postId,
+                repliedToCommentIds: [commentId]
             }
-        })
-        response.json(
-            "update completed, user activity tracked"
-        );
+            User.updateOne(
+                { _id: userId },
+                {
+                    $addToSet:
+                    {
+                        "activities.replies": newReplyActivity
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) throw error;
+                    else {
+                        console.log(`User replied to a comment, 411: ${numsAffected}`);
+                        User.find(
+                            { _id: userId },
+                            { activities: 1, _id: 0 }
+                        ).then(results => {
+                            console.log("results 416", results)
+                            const { activities } = results[0]
+                            response.json(activities);
+                        })
+                    }
+                }
+            );
+        }
+
+
     } else if (name === "userLikedPost") {
         // GOAL: have user like activity be only sent to the server once
         const { signedInUserId: userId } = request.body;
@@ -469,7 +442,7 @@ router.route("/users/updateInfo").post((request, response) => {
             {
                 $addToSet:
                 {
-                    "activities.likes.posts": { postId }
+                    "activities.likes.likedPostIds": postId
                 }
             },
             (error, numsAffected) => {
