@@ -1,6 +1,11 @@
 const express = require('express');
+const { useImperativeHandle } = require('react');
 const router = express.Router();
 const User = require("../models/user");
+
+
+
+const getId = () => JSON.stringify(Math.floor(Math.random() * 10000000000000000000000000000));
 
 
 const pushCommentedActivity = (commentId, postId, userId, isCommentOnNewPost) => {
@@ -105,7 +110,7 @@ const pushReplyActivity = (commentId, postId, replyId, userId, isReplyOnNewPost,
 
 const checkIfValIsInArray = (array, comparison) => {
     return array.find(val => val._id === comparison) !== undefined;
-}
+};
 
 // creates user's account
 router.route("/users").post((request, response) => {
@@ -140,7 +145,7 @@ router.route("/users").post((request, response) => {
 // don't need to use the params
 // don't use username, use the id of the user 
 router.route("/users/updateInfo").post((request, response) => {
-    const { name, username, data } = request.body
+    const { name, username, data, userId } = request.body
     if (name === "add bio, icon, topics, and social media") {
         console.log("updating user's account")
         const { bio, icon, topics, socialMedia } = data
@@ -177,7 +182,7 @@ router.route("/users/updateInfo").post((request, response) => {
         if (introPic || introPic === null) {
             User.updateOne(
                 {
-                    userName: username,
+                    _id: userId,
                     "roughDrafts.id": draftId
                 },
                 {
@@ -204,7 +209,7 @@ router.route("/users/updateInfo").post((request, response) => {
             console.log("non-pic update");
             User.updateOne(
                 {
-                    userName: username,
+                    _id: userId,
                     "roughDrafts.id": draftId
                 },
                 {
@@ -234,7 +239,7 @@ router.route("/users/updateInfo").post((request, response) => {
         const { draftId, data: tags } = request.body;
         User.updateOne(
             {
-                userName: username,
+                _id: userId,
                 "roughDrafts.id": draftId
             },
             {
@@ -256,16 +261,15 @@ router.route("/users/updateInfo").post((request, response) => {
         );
     } else if (name === "addNewDraft") {
         console.log("user wants to write a new rough draft.");
-        const { data: draftId } = request.body;
+        const { data: newDraft } = request.body;
         User.updateOne(
-            { userName: username },
-            { $push: { roughDrafts: draftId } },
-            { multi: true },
-            (err, data) => {
+            { _id: userId },
+            { $push: { roughDrafts: newDraft } },
+            (err, numsAffected) => {
                 if (err) {
                     console.error("error message: ", err);
                 } else {
-                    console.log("data", data);
+                    console.log("user started a new draft: ", numsAffected);
                 }
             });
         response.json({
@@ -295,10 +299,14 @@ router.route("/users/updateInfo").post((request, response) => {
         // how to check if a value is present in the database?
         console.log("check if draft is ok to be published")
         User.find({
-            userName: username
+            _id: userId
         }).then(user => {
             // REFACTOR THIS CODE
             // draft sent from the front end
+            // get everything from the db and stringify it
+            // send the data from the front-end in a stringify form 
+            // compare the two
+            // if the two are the same, then go ahead with posting the data
             const { _id, _title, _subtitle, _introPic, _body, _tags } = data;
             const drafts = user[0].roughDrafts;
             const draftInDB = drafts.find(_draft => _draft.id === _id);
@@ -316,7 +324,7 @@ router.route("/users/updateInfo").post((request, response) => {
             ) {
                 console.log("moving user draft to published field");
                 User.updateOne(
-                    { userName: username },
+                    { _id: userId },
                     {
                         $push: {
                             publishedDrafts: _id
@@ -435,7 +443,7 @@ router.route("/users/updateInfo").post((request, response) => {
 
     } else if (name === "userLikedPost") {
         // GOAL: have user like activity be only sent to the server once
-        const { signedInUserId: userId } = request.body;
+        const { userId } = request.body;
         const { postId } = data;
         User.updateOne(
             { _id: userId },
@@ -546,7 +554,6 @@ router.route("/users/updateInfo").post((request, response) => {
         console.log('isSameComment', isSameComment)
         if (isSamePost && isSameComment) {
             // GOAL: implement case3
-            console.log("lard");
             const { commentId, postId } = request.body;
             User.updateOne(
                 { _id: userId },
@@ -569,7 +576,6 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 604", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -578,7 +584,6 @@ router.route("/users/updateInfo").post((request, response) => {
             )
 
         } else if (isSamePost && (isSameComment === undefined)) {
-            console.log("potatoes yo")
             const { postId } = request.body
             const { commentId, replyId } = data;
             const newReplyActivity = {
@@ -606,7 +611,6 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 604", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -637,7 +641,6 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 604", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -646,48 +649,252 @@ router.route("/users/updateInfo").post((request, response) => {
 
             )
         }
+    } else if (name === "followUser") {
+        const { newFollowingUserId, signedInUserId, followedUserAt } = data;
+        User.findByIdAndUpdate(signedInUserId,
+            {
+                $push:
+                {
+                    "activities.following": { userId: newFollowingUserId, followedUserAt }
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error(`Error message 667: ${error}`)
+                } else {
+                    console.log(`New following added, numsAffected: ${numsAffected}`)
+                }
+            }
+        );
+        // IN DISPLAYING THE notifications, show the follower and the time of the follow
+        User.findByIdAndUpdate(newFollowingUserId,
+            {
+                $addToSet:
+                {
+                    followers: { userId: signedInUserId, wasFollowedAt: followedUserAt },
+                    notifications:
+                    {
+                        newFollower: signedInUserId,
+                        wasSeen: false
+                    }
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error(`Error message 687: ${error}`)
+                } else {
+                    console.log(`User is being followed by ${signedInUserId}. numsAffected: ${numsAffected}`)
+                    response.json({ newFollowingUserId, signedInUserId, wasDbUpdated: true });
+                }
+            }
+        );
+    } else if (name === "unFollowUser") {
+        const { unFollowUser, signedInUserId: userId_ } = request.body;
+        User.findByIdAndUpdate(userId_,
+            {
+                $pull:
+                {
+                    "activities.following": { userId: unFollowUser }
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error(`Error message 667: ${error}`)
+                } else {
+                    console.log(`New following added, numsAffected: ${numsAffected}`)
+                }
+            }
+        );
+        // how to tell if an element was seen on the UI?
+        User.findByIdAndUpdate(unFollowUser,
+            {
+                $pull:
+                {
+                    followers: { userId: userId_ },
+                    notifications: { newFollower: userId_ }
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error(`Error message 687: ${error}`)
+                } else {
+                    console.log(`User was unFollowed. numsAffected: ${numsAffected}`)
+                    response.json("User was unFollowed")
+                }
+            }
+        );
+    } else if (name === "saveIntoReadingList") {
+        const { type, userId, wasListCreated } = request.body;
+        const { newPostSaved, isPrivate: isPrivate_ } = data;
+        if (type === 'default') {
+            if (isPrivate_ || isPrivate_ === false) {
+                User.updateOne({ _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            "readingLists.default_.list": newPostSaved
+                        },
+                        $set:
+                        {
+                            "readingLists.default_.isPrivate": isPrivate_
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error(`Error message 719: ${error}`);
+                        }
+                        console.log("Post saved into reading list: ", numsAffected);
+                        response.json("post saved into user's reading list.");
+                    }
+                );
+            } else {
+                console.log("isPrivate: 752", isPrivate_);
+                User.updateOne({ _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            "readingLists.default_.list": newPostSaved
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error(`Error message 719: ${error}`);
+                        }
+                        console.log("Post saved into reading list: ", numsAffected);
+                        response.json("post saved into user's reading list.");
+                    }
+                );
+            }
+        } else if (type === 'custom') {
+            const { title } = data;
+            if ((isPrivate_ || isPrivate_ === false) && wasListCreated) {
+                // how to allow duplicate fields in MONGODB?
+                const { savedAt: listCreatedAt } = newPostSaved;
+                User.updateOne({ _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            [`readingLists.${title}.list`]: newPostSaved
+                        },
+                        $set:
+                        {
+                            [`readingLists.${title}.isPrivate`]: isPrivate_,
+                            [`readingLists.${title}.createdAt`]: listCreatedAt
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error(`Error message 719: ${error}`);
+                        }
+                        console.log("Custom post saved into DB, privacy changed. Custom reading list was created. NumsAffected: ", numsAffected);
+                        response.json("post saved into user's reading list.");
+                    }
+                );
+            } else if (isPrivate_ || isPrivate_ === false) {
+                User.updateOne({ _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            [`readingLists.${title}.list`]: newPostSaved
+                        },
+                        $set:
+                        {
+                            [`readingLists.${title}.isPrivate`]: isPrivate_
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error(`Error message 719: ${error}`);
+                        }
+                        console.log("Custom post saved into DB, privacy changed. NumsAffected: ", numsAffected);
+                        response.json("post saved into user's reading list.");
+                    }
+                );
+            } else {
+                console.log('new post saved')
+                User.updateOne({ _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            [`readingLists.${title}.list`]: newPostSaved
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error(`Error message 719: ${error}`);
+                        }
+                        console.log("Custom post saved into DB, numsAffected: ", numsAffected);
+                        response.json("post saved into user's reading list.");
+                    }
+                );
+            }
+        }
+    } else if (name === 'deleteFromReadingList') {
+        const { signedInUserId: userId, selectedPostId: postId_, listName: title } = request.body;
+        User.updateOne(
+            { _id: userId },
+            {
+                $pull:
+                {
+                    [`readingLists.${title}.list`]: { postId: postId_ }
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.log("deleteFromReadingList, error message: ", error)
+                };
+                console.log("User deleted post from reading list, numsAffected: ", numsAffected);
+                response.json("Post deleted from reading list.")
+            }
+        )
     }
 })
 
+// USE THE ID OF THE USER INSTEAD TO FIND THE USER
 router.route("/users/:package").get((request, response) => {
-    console.log("fetch received, get specific user");
-    console.log(request.params)
-    console.log(request.params.package);
     const package = JSON.parse(request.params.package);
-    // get the specific user account info when user signs in
-    if (package.password) {
-        User.find({ userName: package.username }).then(user_ => {
-            if (user_[0].password === package.password) {
+    const { password, name, userId, username } = package;
+    if (name === "signInAttempt") {
+        console.log("user wants to sign in")
+        User.find({ username: username }).then(user => {
+            console.log("user[0].username: ", user[0].username)
+            const { username: username_, firstName, lastName, icon, _id, password: password_ } = user[0];
+            console.log("password_: ", password_)
+            if (password === password_) {
                 console.log("user signed back in")
-                console.log(JSON.stringify(user_[0]));
                 response.json({
-                    message: `Welcome back ${user_[0].userName}!`,
+                    message: `Welcome back ${username_}!`,
                     user: {
-                        id: user_[0]._id,
-                        icon: user_[0].icon,
-                        userName: user_[0].userName,
-                        firstName: user_[0].firstName,
-                        lastName: user_[0].lastName,
+                        _id,
+                        icon,
+                        username_,
+                        firstName,
+                        lastName
                     }
-                })
+                });
             } else {
+                console.error("Sign-in attempt FAILED");
+                response.json({
+                    message: "Invalid username or password.",
+                })
+            }
+        }).catch(error => {
+            if (error) {
                 console.error("Sign-in attempt FAILED");
                 response.json({
                     message: "Invalid username or password."
                 })
             }
-        }).catch(() => {
-            console.error("Sign-in attempt FAILED");
-            response.json({
-                message: "Invalid username or password."
-            })
-        })
-    } else if (package.name === "getRoughDrafts") {
-        User.find({ userName: package.username }).then(user_ => {
+        });
+        console.log("wtf yo")
+    } else if (name === "getRoughDrafts") {
+        User.findById(userId).then(user_ => {
+            console.log("user_", user_)
             console.log("getting user's rough drafts")
-            response.json({
-                roughDrafts: user_[0].roughDrafts
-            })
+            const { roughDrafts } = user_
+            response.json(
+                roughDrafts
+            )
         }).catch(err => {
             console.error(`Something went wrong, error message: ${err}`);
             response.json({
@@ -709,6 +916,47 @@ router.route("/users/:package").get((request, response) => {
                 message: `Something went wrong, error message: ${err}`
             })
         });
+        // GOAL: get all of the tags that user likes
+    } else if (name === "getUsersTopicsFollowingAndReadingList") {
+        console.log("the user is on the feed page");
+        User.findById(
+            userId,
+            error => {
+                if (error) {
+                    console.error(`Error message: ${error}`);
+                }
+            }
+        ).then(user => {
+
+            console.log("following: ", user.activities.following);
+            const following = (user.activities && user.activities.following && user.activities.following.length) && user.activities.following;
+            const topics = (user && user.topics) && user.topics;
+            const readingLists = user.readingLists && user.readingLists;
+            console.log('readingLists: ', readingLists)
+            let _package = {};
+            if (following) {
+                _package = {
+                    following
+                }
+            }
+            if (readingLists) {
+                _package = {
+                    ..._package,
+                    readingLists
+                }
+            }
+            if (topics) {
+                _package = {
+                    ..._package,
+                    topics
+                };
+            };
+            if (_package !== {}) {
+                response.json({ _package })
+            } else {
+                response.json("no topics, following, nor reading list items are present")
+            }
+        })
     }
 });
 

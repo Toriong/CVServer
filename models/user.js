@@ -27,7 +27,8 @@ const likeSchema = new Schema(
     {
         posts: Array,
         comments: Array,
-        replies: Array
+        replies: Array,
+        following: Array
     },
 )
 
@@ -37,7 +38,8 @@ const activitiesSchema = new Schema(
     {
         comments: Array,
         replies: Array,
-        likes: Object
+        likes: Object,
+        following: Array
     }
 );
 
@@ -47,7 +49,7 @@ const userSchema = new Schema({
     id: String,
     firstName: String,
     lastName: String,
-    userName: String,
+    username: String,
     password: String,
     belief: String,
     sex: String,
@@ -59,11 +61,13 @@ const userSchema = new Schema({
     socialMedia: Array,
     icon: String,
     blogPosts: String,
-    isSignedIn: Boolean,
-    isUserNew: Boolean,
     roughDrafts: Array,
     publishedDrafts: Array,
-    activities: activitiesSchema
+    activities: activitiesSchema,
+    following: Array,
+    followers: Array,
+    notifications: Array,
+    readingLists: Object
 });
 
 

@@ -16,6 +16,7 @@ const multiparty = require('connect-multiparty');
 // this will enable the front-end to upload files/images to the server
 const multipartyMiddleware = multiparty({ uploadDir: './writingPostImageUploads' });
 
+// fix this bodyParser
 app.use(bodyParser.json({ limit: "1000mb" }));
 app.use(bodyParser.urlencoded({ limit: "1000mb", extended: true, parameterLimit: 500000 }));
 
@@ -38,7 +39,9 @@ mongoose.connect(dbconnection, {
     useNewUrlParser: true
 }).then(() => {
     console.log("connection to mongodb database is successful!")
-});
+}).catch(error => {
+    console.log(`Error message: ${error}`)
+})
 
 app.use("/", require("./routes/blogPosts"));
 

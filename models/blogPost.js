@@ -32,15 +32,15 @@ const CommentSchema = new Mongoose.Schema(
 const BlogPostSchema = new Mongoose.Schema(
     {
         _id: String,
-        username: String,
         title: String,
         subtitle: String,
         introPic: Object,
         body: String,
         tags: Array,
         publicationDate: Object,
-        comments: [CommentSchema],
-        userIdsOfLikes: Array
+        comments: Array,
+        userIdsOfLikes: Array,
+        authorId: String
     }
 )
 
