@@ -724,110 +724,67 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         );
     } else if (name === "saveIntoReadingList") {
-        const { type, userId, wasListCreated } = request.body;
-        const { newPostSaved, isPrivate: isPrivate_ } = data;
-        if (type === 'default') {
-            if (isPrivate_ || isPrivate_ === false) {
-                User.updateOne({ _id: userId },
+        const { signedInUserId: userId, wasListCreated, listName: title, isPrivate, newPostSaved } = request.body;
+        if ((isPrivate || isPrivate === false) && wasListCreated) {
+            // how to allow duplicate fields in MONGODB?
+            const { savedAt: listCreatedAt } = newPostSaved;
+            User.updateOne({ _id: userId },
+                {
+                    $addToSet:
                     {
-                        $addToSet:
-                        {
-                            "readingLists.default_.list": newPostSaved
-                        },
-                        $set:
-                        {
-                            "readingLists.default_.isPrivate": isPrivate_
-                        }
+                        [`readingLists.${title}.list`]: newPostSaved
                     },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error(`Error message 719: ${error}`);
-                        }
-                        console.log("Post saved into reading list: ", numsAffected);
-                        response.json("post saved into user's reading list.");
-                    }
-                );
-            } else {
-                console.log("isPrivate: 752", isPrivate_);
-                User.updateOne({ _id: userId },
+                    $set:
                     {
-                        $addToSet:
-                        {
-                            "readingLists.default_.list": newPostSaved
-                        }
-                    },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error(`Error message 719: ${error}`);
-                        }
-                        console.log("Post saved into reading list: ", numsAffected);
-                        response.json("post saved into user's reading list.");
+                        [`readingLists.${title}.isPrivate`]: isPrivate,
+                        [`readingLists.${title}.createdAt`]: listCreatedAt
                     }
-                );
-            }
-        } else if (type === 'custom') {
-            const { title } = data;
-            if ((isPrivate_ || isPrivate_ === false) && wasListCreated) {
-                // how to allow duplicate fields in MONGODB?
-                const { savedAt: listCreatedAt } = newPostSaved;
-                User.updateOne({ _id: userId },
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error(`Error message 719: ${error}`);
+                    }
+                    console.log("Custom post saved into DB, privacy changed. Custom reading list was created. NumsAffected: ", numsAffected);
+                    response.json("post saved into user's reading list.");
+                }
+            );
+        } else if (isPrivate || isPrivate === false) {
+            User.updateOne({ _id: userId },
+                {
+                    $addToSet:
                     {
-                        $addToSet:
-                        {
-                            [`readingLists.${title}.list`]: newPostSaved
-                        },
-                        $set:
-                        {
-                            [`readingLists.${title}.isPrivate`]: isPrivate_,
-                            [`readingLists.${title}.createdAt`]: listCreatedAt
-                        }
+                        [`readingLists.${title}.list`]: newPostSaved
                     },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error(`Error message 719: ${error}`);
-                        }
-                        console.log("Custom post saved into DB, privacy changed. Custom reading list was created. NumsAffected: ", numsAffected);
-                        response.json("post saved into user's reading list.");
-                    }
-                );
-            } else if (isPrivate_ || isPrivate_ === false) {
-                User.updateOne({ _id: userId },
+                    $set:
                     {
-                        $addToSet:
-                        {
-                            [`readingLists.${title}.list`]: newPostSaved
-                        },
-                        $set:
-                        {
-                            [`readingLists.${title}.isPrivate`]: isPrivate_
-                        }
-                    },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error(`Error message 719: ${error}`);
-                        }
-                        console.log("Custom post saved into DB, privacy changed. NumsAffected: ", numsAffected);
-                        response.json("post saved into user's reading list.");
+                        [`readingLists.${title}.isPrivate`]: isPrivate
                     }
-                );
-            } else {
-                console.log('new post saved')
-                User.updateOne({ _id: userId },
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error(`Error message 719: ${error}`);
+                    }
+                    console.log("Custom post saved into DB, privacy changed. NumsAffected: ", numsAffected);
+                    response.json("post saved into user's reading list.");
+                }
+            );
+        } else {
+            console.log('new post saved')
+            User.updateOne({ _id: userId },
+                {
+                    $addToSet:
                     {
-                        $addToSet:
-                        {
-                            [`readingLists.${title}.list`]: newPostSaved
-                        }
-                    },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error(`Error message 719: ${error}`);
-                        }
-                        console.log("Custom post saved into DB, numsAffected: ", numsAffected);
-                        response.json("post saved into user's reading list.");
+                        [`readingLists.${title}.list`]: newPostSaved
                     }
-                );
-            }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error(`Error message 719: ${error}`);
+                    }
+                    console.log("Custom post saved into DB, numsAffected: ", numsAffected);
+                    response.json("post saved into user's reading list.");
+                }
+            );
         }
     } else if (name === 'deleteFromReadingList') {
         const { signedInUserId: userId, selectedPostId: postId_, listName: title } = request.body;
