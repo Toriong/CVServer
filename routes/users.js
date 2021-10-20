@@ -177,56 +177,97 @@ router.route("/users/updateInfo").post((request, response) => {
         //     // updates only the title, subtitle, introPic, and the body of the user's draft
     } else if (name === "updateDraft") {
         console.log("updating draft")
-        const { draftId, data } = request.body;
+        const { draftId, data, type } = request.body;
+        console.log("data: ", data);
         const { title, subtitle, introPic, timeOfLastEdit, body } = data;
-        if (introPic || introPic === null) {
+        if (type === 'body') {
             User.updateOne(
                 {
                     _id: userId,
-                    "roughDrafts.id": draftId
+                    "roughDrafts._id": draftId
                 },
                 {
                     $set: {
-                        "roughDrafts.$.title": title,
-                        "roughDrafts.$.subtitle": subtitle,
                         "roughDrafts.$.body": body,
-                        "roughDrafts.$.introPic": introPic,
                         "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
                     }
                 },
-                (error, data) => {
+                (error, numsAffected) => {
                     if (error) {
                         console.error("error message: ", error);
                     } else {
-                        console.log("data", data);
+                        console.log("Body updated, draft saved. NumsAffected:", numsAffected);
                         response.json(
-                            "Draft saved."
+                            "Body updated, draft saved."
                         );
                     }
                 }
             )
-        } else {
-            console.log("non-pic update");
+        } else if (type === 'title') {
             User.updateOne(
                 {
                     _id: userId,
-                    "roughDrafts.id": draftId
+                    "roughDrafts._id": draftId
                 },
                 {
                     $set: {
                         "roughDrafts.$.title": title,
-                        "roughDrafts.$.subtitle": subtitle,
-                        "roughDrafts.$.body": body,
                         "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
                     }
                 },
-                (error, data) => {
+                (error, numsAffected) => {
                     if (error) {
                         console.error("error message: ", error);
                     } else {
-                        console.log("data", data);
+                        console.log("title updated, draft saved. NumsAffected:", numsAffected);
                         response.json(
-                            "Draft saved."
+                            "title updated, draft saved."
+                        );
+                    }
+                }
+            )
+        } else if (type === 'subtitle') {
+            User.updateOne(
+                {
+                    _id: userId,
+                    "roughDrafts._id": draftId
+                },
+                {
+                    $set: {
+                        "roughDrafts.$.subtitle": subtitle,
+                        "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                    } else {
+                        console.log("subtitle updated, draft saved. NumsAffected:", numsAffected);
+                        response.json(
+                            "subtitle updated, draft saved."
+                        );
+                    }
+                }
+            );
+        } else if (type === 'introPic') {
+            User.updateOne(
+                {
+                    _id: userId,
+                    "roughDrafts._id": draftId
+                },
+                {
+                    $set: {
+                        "roughDrafts.$.introPic": introPic,
+                        "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                    } else {
+                        console.log("IntroPic updated, draft saved. NumsAffected:", numsAffected);
+                        response.json(
+                            "IntroPic updated, draft saved."
                         );
                     }
                 }
@@ -240,7 +281,7 @@ router.route("/users/updateInfo").post((request, response) => {
         User.updateOne(
             {
                 _id: userId,
-                "roughDrafts.id": draftId
+                "roughDrafts._id": draftId
             },
             {
                 $set:
@@ -301,55 +342,28 @@ router.route("/users/updateInfo").post((request, response) => {
         User.find({
             _id: userId
         }).then(user => {
-            // REFACTOR THIS CODE
-            // draft sent from the front end
-            // get everything from the db and stringify it
-            // send the data from the front-end in a stringify form 
-            // compare the two
-            // if the two are the same, then go ahead with posting the data
-            const { _id, _title, _subtitle, _introPic, _body, _tags } = data;
+            const { _id: draftId } = data;
+            const { introPic: introPicFromFront, subtitle: subtitleFromFront, ...draftFromFrontEnd } = data;
             const drafts = user[0].roughDrafts;
-            const draftInDB = drafts.find(_draft => _draft.id === _id);
-            const { title: draftInDbTitle, subtitle: draftInDbSubtitle, introPic: draftInDbIntroPic, tags: draftInDBTags, body: draftInDbBody } = draftInDB
-            const isTitleSame = draftInDbTitle === _title;
-            const isSubTitleSame = _subtitle ? _subtitle === draftInDbSubtitle : undefined;
-            const isIntroPicSame = _introPic ? ((_introPic.src === draftInDbIntroPic.src) && (_introPic.name === draftInDbIntroPic.name)) : undefined;
-            const isBodySame = _body === draftInDbBody;
-            const areTagsSame = JSON.stringify(_tags) === JSON.stringify(draftInDBTags);
-            if (
-                (isTitleSame && isSubTitleSame && isIntroPicSame && isBodySame && areTagsSame) ||
-                (isTitleSame && (isSubTitleSame === undefined) && isIntroPicSame && isBodySame && areTagsSame) ||
-                (isTitleSame && isSubTitleSame && (isIntroPicSame === undefined) && isBodySame && areTagsSame) ||
-                (isTitleSame && (isSubTitleSame === undefined) && (isIntroPicSame === undefined) && isBodySame && areTagsSame)
-            ) {
-                console.log("moving user draft to published field");
-                User.updateOne(
-                    { _id: userId },
-                    {
-                        $push: {
-                            publishedDrafts: _id
-                        },
-                        $pull: {
-                            roughDrafts: { id: _id }
-                        }
-                    },
-                    (error, numbersAffected) => {
-                        if (error) throw error;
-                        else {
-                            console.log("numbersAffected", numbersAffected);
-                            response.json({
-                                message: "success"
-                            });
-                        }
-                    }
-                );
+            const draftInDB = drafts.find(({ _id: _draftId }) => _draftId === draftId);
+            const { introPic, defaultTitle, timeOfLastEdit, creation, subtitle, ...draftInDB_ } = draftInDB;
+            const isIntroPicSame = !((introPic === null) && (introPicFromFront === undefined)) ? JSON.stringify(introPic) === JSON.stringify(introPicFromFront) : 'noIntroPicChosen'
+            const isSubtitleSame = !((subtitle === '') && (subtitleFromFront === undefined)) ? (subtitle === subtitleFromFront) : 'noSubtitleChosen';
+            const isTheRestOfDraftDataSame = JSON.stringify(draftInDB_) === JSON.stringify(draftFromFrontEnd);
+            console.log({ isIntroPicSame, isSubtitleSame, isTheRestOfDraftDataSame })
+            if ((isIntroPicSame === 'noIntroPicChosen') && (isSubtitleSame === 'noSubtitleChosen') && isTheRestOfDraftDataSame) {
+                console.log("same draft data, neither subtitle nor introPic has been chosen");
+            } else if (isIntroPicSame && (isSubtitleSame === 'noSubtitleChosen') && isTheRestOfDraftDataSame) {
+                console.log("same draft data, subtitle has not been chosen");
+            } else if ((isIntroPicSame === 'noIntroPicChosen') && isSubtitleSame && isTheRestOfDraftDataSame) {
+                console.log("same draft data, introPic has not been chosen");
+            } else if (isIntroPicSame && isSubtitleSame && isTheRestOfDraftDataSame) {
+                console.log("same draft data, introPic and subtitle has been chosen.");
             } else {
-                // if the any of the criteria returns to be false, then tell the user that an error has occurred
-                console.log("data that was received doesn't match with the data stored in DB.")
-                response.json({
-                    message: "ERROR"
-                })
-            }
+                console.log("Check completed. Drafts are not the same.")
+            };
+
+
         })
     } else if (name === "userCommented") {
         const { userId } = request.body;
@@ -913,6 +927,26 @@ router.route("/users/:package").get((request, response) => {
             } else {
                 response.json("no topics, following, nor reading list items are present")
             }
+        })
+    } else if (name === 'getTargetDraft') {
+        const { draftId } = package;
+        // console.log({
+        // userId,
+        // draftId
+        // })
+        User.findById(
+            {
+                _id: userId,
+            },
+            {
+                roughDrafts: 1,
+                _id: 0
+            }
+        ).then(result => {
+            const { roughDrafts } = result;
+            const { _id, ...targetedDraft } = roughDrafts.find(({ _id }) => _id === draftId);
+            response.json(targetedDraft);
+
         })
     }
 });
