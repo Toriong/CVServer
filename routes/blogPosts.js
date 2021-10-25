@@ -9,58 +9,57 @@ const BlogPost = require('../models/blogPost');
 
 //get the blogPost from the database and sends it to the Feed.js component
 router.route("/blogPosts").get((req, res) => {
-    console.log("get all blog posts")
     BlogPost.find()
-        .then(blogPost => res.json(blogPost))
+        .then(blogPost => { res.json(blogPost) })
 });
 
 
 router.route("/blogPosts").post((req, res) => {
     const { name, data } = req.body;
-    const { _id: postId, _title, _authorId, _subtitle, _introPic, _body, _tags } = data
+    const { _id, title, authorId, subtitle, introPic, body, tags } = data
     if (name === "publishDraft") {
         let newPost;
-        if (_subtitle && _introPic) {
+        if (subtitle && introPic) {
             console.log("I was executed")
             newPost = new BlogPost({
-                _id: postId,
-                title: _title,
-                authorId: _authorId,
-                subtitle: _subtitle,
-                introPic: _introPic,
-                body: _body,
-                tags: _tags,
+                _id,
+                title,
+                authorId,
+                subtitle,
+                introPic,
+                body,
+                tags,
                 publicationDate: getTime()
             });
-        } else if (!data._subtitle && data._introPic) {
+        } else if (!subtitle && introPic) {
             console.log("no subtitle present, publishing post")
             newPost = new BlogPost({
-                _id: postId,
-                title: _title,
-                authorId: _authorId,
-                introPic: _introPic,
-                body: _body,
-                tags: _tags,
+                _id,
+                title,
+                authorId,
+                introPic,
+                body,
+                tags,
                 publicationDate: getTime()
             });
-        } else if (data._subtitle && !data._introPic) {
+        } else if (subtitle && !introPic) {
             console.log("no intro pic present, publishing post");
             newPost = new BlogPost({
-                _id: postId,
-                title: _title,
-                authorId: _authorId,
-                subtitle: _subtitle,
-                body: _body,
-                tags: _tags,
+                _id,
+                title,
+                authorId,
+                subtitle,
+                body,
+                tags,
                 publicationDate: getTime()
             });
         } else {
             newPost = new BlogPost({
-                _id: postId,
-                title: _title,
-                authorId: _authorId,
-                body: _body,
-                tags: _tags,
+                _id,
+                title,
+                authorId,
+                body,
+                tags,
                 publicationDate: getTime()
             });
         };
@@ -93,7 +92,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         );
         res.json("post requested received, new comment added");
     } else if (name === "commentEdited") {
-        console.log("data", data)
         const { commentId } = req.body;
         const { _editedComment, updatedAt } = data;
         BlogPost.updateOne(
@@ -351,7 +349,9 @@ router.route("/blogPosts/updatePost").post((req, res) => {
 
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts")
-    const { name, signedInUserId: userId, draftId } = JSON.parse(req.params.package);
+    const { package } = req.params;
+    console.log('package: ', package);
+    const { name, signedInUserId: userId, draftId } = JSON.parse(package);
     if (name === "getPublishedDrafts") {
         BlogPost.find({ authorId: userId }).then(posts => {
             if (posts.length) {

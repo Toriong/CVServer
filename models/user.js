@@ -64,7 +64,6 @@ const userSchema = new Schema({
     roughDrafts: Array,
     publishedDrafts: Array,
     activities: activitiesSchema,
-    following: Array,
     followers: Array,
     notifications: Array,
     readingLists: Object

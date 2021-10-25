@@ -115,18 +115,19 @@ const checkIfValIsInArray = (array, comparison) => {
 // creates user's account
 router.route("/users").post((request, response) => {
     console.log("request received from the frontend")
-    if (request.body.packageName === "newUser") {
+    const { data, name } = request.body;
+    const { _id: userId, firstName, lastName, username, password, belief, sex, reasonsToJoin, email, phoneNum } = data;
+    if (name === "newUser") {
         const newUser = new User({
-            firstName: request.body.data.firstName,
-            lastName: request.body.data.lastName,
-            userName: request.body.data.userName,
-            password: request.body.data.password,
-            belief: request.body.data.belief,
-            sex: request.body.data.sex,
-            reasonsToJoin: request.body.data.reasonsToJoin,
-            email: request.body.data.email,
-            phoneNum: request.body.data.phoneNum,
-            isSignIn: request.body,
+            firstName,
+            lastName,
+            username,
+            password,
+            belief,
+            sex,
+            reasonsToJoin,
+            email,
+            phoneNum
         });
         console.log(newUser);
         response.json({
@@ -151,22 +152,21 @@ router.route("/users/updateInfo").post((request, response) => {
         const { bio, icon, topics, socialMedia } = data
         User.updateOne(
             {
-                userName: username
+                _id: userId
             },
             {
                 // EDIT
                 bio: bio,
                 icon: icon,
-                // why did I stringify these two?
-                topics: JSON.stringify(topics),
-                socialMedia: JSON.stringify(socialMedia)
+                topics: topics,
+                socialMedia: socialMedia
             },
             { multi: true },
             (error, data) => {
                 if (error) {
                     console.error("error message: ", error);
                 } else {
-                    console.log("data", data);
+                    console.log("User added bio, icon, and reading topics. NumsAffected: ", data);
                 }
             }
         );
@@ -196,7 +196,6 @@ router.route("/users/updateInfo").post((request, response) => {
                     if (error) {
                         console.error("error message: ", error);
                     } else {
-                        console.log("Body updated, draft saved. NumsAffected:", numsAffected);
                         response.json(
                             "Body updated, draft saved."
                         );
@@ -219,7 +218,6 @@ router.route("/users/updateInfo").post((request, response) => {
                     if (error) {
                         console.error("error message: ", error);
                     } else {
-                        console.log("title updated, draft saved. NumsAffected:", numsAffected);
                         response.json(
                             "title updated, draft saved."
                         );
@@ -242,7 +240,6 @@ router.route("/users/updateInfo").post((request, response) => {
                     if (error) {
                         console.error("error message: ", error);
                     } else {
-                        console.log("subtitle updated, draft saved. NumsAffected:", numsAffected);
                         response.json(
                             "subtitle updated, draft saved."
                         );
@@ -265,7 +262,6 @@ router.route("/users/updateInfo").post((request, response) => {
                     if (error) {
                         console.error("error message: ", error);
                     } else {
-                        console.log("IntroPic updated, draft saved. NumsAffected:", numsAffected);
                         response.json(
                             "IntroPic updated, draft saved."
                         );
@@ -293,7 +289,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) {
                     console.error("error message: ", error);
                 } else {
-                    console.log("data", data)
                     response.json(
                         "post request successful, tags updated"
                     );
@@ -319,7 +314,7 @@ router.route("/users/updateInfo").post((request, response) => {
     } else if (name === "deleteDraft") {
         const { data: draftId } = request.body;
         User.updateOne(
-            { userName: username },
+            { _id: userId },
             {
                 $pull: { roughDrafts: { id: draftId } }
             },
@@ -327,7 +322,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) {
                     console.error("error message: ", error);
                 } else {
-                    console.log("data", data);
                     response.json({
                         message: "Successfully deleted draft.",
                         updatedDrafts: data
@@ -351,19 +345,17 @@ router.route("/users/updateInfo").post((request, response) => {
             const isSubtitleSame = !((subtitle === '') && (subtitleFromFront === undefined)) ? (subtitle === subtitleFromFront) : 'noSubtitleChosen';
             const isTheRestOfDraftDataSame = JSON.stringify(draftInDB_) === JSON.stringify(draftFromFrontEnd);
             console.log({ isIntroPicSame, isSubtitleSame, isTheRestOfDraftDataSame })
-            if ((isIntroPicSame === 'noIntroPicChosen') && (isSubtitleSame === 'noSubtitleChosen') && isTheRestOfDraftDataSame) {
-                console.log("same draft data, neither subtitle nor introPic has been chosen");
-            } else if (isIntroPicSame && (isSubtitleSame === 'noSubtitleChosen') && isTheRestOfDraftDataSame) {
-                console.log("same draft data, subtitle has not been chosen");
-            } else if ((isIntroPicSame === 'noIntroPicChosen') && isSubtitleSame && isTheRestOfDraftDataSame) {
-                console.log("same draft data, introPic has not been chosen");
-            } else if (isIntroPicSame && isSubtitleSame && isTheRestOfDraftDataSame) {
-                console.log("same draft data, introPic and subtitle has been chosen.");
+            if (((isIntroPicSame === 'noIntroPicChosen') && (isSubtitleSame === 'noSubtitleChosen') && isTheRestOfDraftDataSame) ||
+                (isIntroPicSame && (isSubtitleSame === 'noSubtitleChosen') && isTheRestOfDraftDataSame) ||
+                ((isIntroPicSame === 'noIntroPicChosen') && isSubtitleSame && isTheRestOfDraftDataSame) ||
+                (isIntroPicSame && isSubtitleSame && isTheRestOfDraftDataSame)
+            ) {
+                console.log("Draft check completed. Draft check PASSED.");
+                response.json({ didCheckPass: true })
             } else {
                 console.log("Check completed. Drafts are not the same.")
+                response.json({ didCheckPass: false })
             };
-
-
         })
     } else if (name === "userCommented") {
         const { userId } = request.body;
@@ -384,7 +376,6 @@ router.route("/users/updateInfo").post((request, response) => {
                         { _id: userId },
                         { activities: 1, _id: 0 }
                     ).then(results => {
-                        console.log("results 416", results)
                         const { activities } = results[0]
                         response.json(activities);
                     })
@@ -416,7 +407,6 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 416", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -445,7 +435,6 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 416", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -506,7 +495,6 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 513", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -532,7 +520,6 @@ router.route("/users/updateInfo").post((request, response) => {
                             { _id: userId },
                             { activities: 1, _id: 0 }
                         ).then(results => {
-                            console.log("results 545", results)
                             const { activities } = results[0]
                             response.json(activities);
                         })
@@ -664,8 +651,9 @@ router.route("/users/updateInfo").post((request, response) => {
             )
         }
     } else if (name === "followUser") {
+        console.log('data: ', data);
         const { newFollowingUserId, signedInUserId, followedUserAt } = data;
-        User.findByIdAndUpdate(signedInUserId,
+        User.updateOne({ _id: signedInUserId },
             {
                 $push:
                 {
@@ -676,12 +664,12 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) {
                     console.error(`Error message 667: ${error}`)
                 } else {
-                    console.log(`New following added, numsAffected: ${numsAffected}`)
+                    console.log(`New following added, numsAffected: `, numsAffected)
                 }
             }
         );
         // IN DISPLAYING THE notifications, show the follower and the time of the follow
-        User.findByIdAndUpdate(newFollowingUserId,
+        User.updateOne({ _id: newFollowingUserId },
             {
                 $addToSet:
                 {
@@ -697,7 +685,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) {
                     console.error(`Error message 687: ${error}`)
                 } else {
-                    console.log(`User is being followed by ${signedInUserId}. numsAffected: ${numsAffected}`)
+                    console.log(`User is being followed by ${signedInUserId}. `, numsAffected)
                     response.json({ newFollowingUserId, signedInUserId, wasDbUpdated: true });
                 }
             }
@@ -824,24 +812,30 @@ router.route("/users/updateInfo").post((request, response) => {
 // USE THE ID OF THE USER INSTEAD TO FIND THE USER
 router.route("/users/:package").get((request, response) => {
     const package = JSON.parse(request.params.package);
-    const { password, name, userId, username } = package;
+    const { password: passwordAttempt, name, userId, username } = package;
+    console.log('username: ', username);
     if (name === "signInAttempt") {
         console.log("user wants to sign in")
         User.find({ username: username }).then(user => {
-            console.log("user[0].username: ", user[0].username)
-            const { username: username_, firstName, lastName, icon, _id, password: password_ } = user[0];
-            console.log("password_: ", password_)
-            if (password === password_) {
+            const [_user] = user;
+            if ((_user && _user.password) === passwordAttempt) {
+                const { username, firstName, lastName, icon, _id, readingLists, topics, activities } = user[0];
+                console.log('password matches user signed backed in.')
                 console.log("user signed back in")
+                let user_;
+                if (activities && (activities.following && activities.following.length)) {
+                    const { following } = activities;
+                    user_ = { _id, icon, username, firstName, lastName, following }
+                }
+                if (readingLists && Object.keys(readingLists).length) {
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { _id, icon, username, firstName, lastName, readingLists }
+                }
+                if (topics && topics.length) {
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, topics } : { _id, icon, username, firstName, lastName, topics }
+                };
                 response.json({
-                    message: `Welcome back ${username_}!`,
-                    user: {
-                        _id,
-                        icon,
-                        username_,
-                        firstName,
-                        lastName
-                    }
+                    message: `Welcome back ${username}!`,
+                    user: user_ ?? { username, firstName, lastName, icon, _id }
                 });
             } else {
                 console.error("Sign-in attempt FAILED");
@@ -851,17 +845,15 @@ router.route("/users/:package").get((request, response) => {
             }
         }).catch(error => {
             if (error) {
-                console.error("Sign-in attempt FAILED");
+                console.log("error message: ", error);
                 response.json({
-                    message: "Invalid username or password."
+                    message: "Something went wrong, please try again."
                 })
             }
         });
         console.log("wtf yo")
     } else if (name === "getRoughDrafts") {
         User.findById(userId).then(user_ => {
-            console.log("user_", user_)
-            console.log("getting user's rough drafts")
             const { roughDrafts } = user_
             response.json(
                 roughDrafts
@@ -873,7 +865,7 @@ router.route("/users/:package").get((request, response) => {
             })
         });
     } else if (package.name === "getTags") {
-        User.find({ userName: package.username }).then(user => {
+        User.find({ _id: userId }).then(user => {
             console.log("sending tags to the front-end");
             const roughDrafts = user[0].roughDrafts;
             const draft = roughDrafts.find(draft => draft.id === package.draftId);
@@ -898,13 +890,10 @@ router.route("/users/:package").get((request, response) => {
                 }
             }
         ).then(user => {
-
-            console.log("following: ", user.activities.following);
-            const following = (user.activities && user.activities.following && user.activities.following.length) && user.activities.following;
+            const following = (user.activities && user.activities.following && user.activities.following.length) && user.activities.following.map(({ userId }) => userId);
             const topics = (user && user.topics) && user.topics;
             const readingLists = user.readingLists && user.readingLists;
-            console.log('readingLists: ', readingLists)
-            let _package = {};
+            let _package;
             if (following) {
                 _package = {
                     following
@@ -922,7 +911,7 @@ router.route("/users/:package").get((request, response) => {
                     topics
                 };
             };
-            if (_package !== {}) {
+            if (_package) {
                 response.json({ _package })
             } else {
                 response.json("no topics, following, nor reading list items are present")
@@ -930,10 +919,6 @@ router.route("/users/:package").get((request, response) => {
         })
     } else if (name === 'getTargetDraft') {
         const { draftId } = package;
-        // console.log({
-        // userId,
-        // draftId
-        // })
         User.findById(
             {
                 _id: userId,
@@ -948,13 +933,36 @@ router.route("/users/:package").get((request, response) => {
             response.json(targetedDraft);
 
         })
+    } else if ((name === 'getUserId') && username) {
+        User.find({ username: username }).then(user => {
+            console.log('user: ', user);
+            const { _id } = user[0];
+            response.json({
+                _id
+            })
+        })
+    } else if (name === 'getAllUsers') {
+        console.log('getting all users')
+        User.find({}).then(users => {
+            // console.log("user received, here's one: ", users[0])
+            response.json(
+                users
+            )
+        }).catch(err => {
+            console.log(`Error in getting all users, line 960: ${err}`)
+        })
     }
 });
 
 router.route("/users").get((req, res) => {
     console.log("getting all users");
-    User.find()
-        .then(users => res.json(users))
+    User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 })
+        .then(users => {
+            res.json(users)
+        })
+        .catch(err => {
+            console.log(`Error in getting all users, line 972: ${err}`)
+        })
 })
 
 

@@ -10,6 +10,18 @@ router.route("/tags").get((req, res) => {
         .then(tag => res.json(tag))
 })
 
+router.route("/tags/:package").get((req, res) => {
+    console.log("getting all tag names");
+    const { package } = req.params;
+    const { name } = JSON.parse(package);
+    if (name === "getTagNames") {
+        Tag.find({}, { description: 0 })
+            .then(tags => {
+                res.json(tags)
+            });
+    };
+})
+
 
 // what does module.exports doing?
 module.exports = router

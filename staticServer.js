@@ -1,5 +1,4 @@
 require('dotenv').config();
-
 const mongoose = require('mongoose');
 const express = require('express');
 const cors = require('cors');
@@ -32,7 +31,6 @@ app.use(cors());
 app.use(express.json());
 
 // store all of the static files (in this case, images) into /writingPostImageUploads
-app.use(express.static("writingPostImageUploads"));
 
 mongoose.connect(dbconnection, {
     useUnifiedTopology: true,
@@ -49,6 +47,7 @@ app.use("/", require("./routes/users"));
 
 app.use("/", require("./routes/tags"));
 
+app.use(express.static("writingPostImageUploads"));
 // upload and present the image that the user uploads to the text editor
 app.post("/writePostImages", multipartyMiddleware, (req, res) => {
     console.log("req.files.upload", req.files.upload);
