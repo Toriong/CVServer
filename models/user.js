@@ -1,4 +1,3 @@
-const { ObjectID } = require('mongodb');
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -44,6 +43,11 @@ const activitiesSchema = new Schema(
 );
 
 
+const iconSchema = new Schema({
+    img: String
+});
+
+
 // schema: allows us to define the field in a document that will be stored in the collection of the database
 const userSchema = new Schema({
     id: String,
@@ -59,7 +63,7 @@ const userSchema = new Schema({
     bio: String,
     topics: Array,
     socialMedia: Array,
-    icon: String,
+    icon: iconSchema,
     blogPosts: String,
     roughDrafts: Array,
     publishedDrafts: Array,

@@ -1,11 +1,47 @@
 const express = require('express');
-const { useImperativeHandle } = require('react');
 const router = express.Router();
 const User = require("../models/user");
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const { promisify } = require('util');
+const pipeline = promisify(require('stream').pipeline)
+const upload = multer()
+
+
+// let gfs;
+// const conn = mongoose.createConnection(dbconnection, {
+//     useUnifiedTopology: true,
+//     useNewUrlParser: true
+// });
+// conn.once('open', () => {
+//     gfs = Grid(conn.db, mongoose.mongo)
+//     gfs.collection('uploads')
+// });
 
 
 
-const getId = () => JSON.stringify(Math.floor(Math.random() * 10000000000000000000000000000));
+// const storage = new GridFsStorage({
+//     url: dbconnection,
+//     file: (req, file) => {
+//         return new Promise((resolve, reject) => {
+//             crypto.randomBytes(16, (err, buf) => {
+//                 if (err) {
+//                     return reject(err);
+//                 }
+//                 const filename = buf.toString('hex') + path.extname(file.originalname);
+//                 const fileInfo = {
+//                     filename: filename,
+//                     bucketName: 'uploads'
+//                 };
+//                 resolve(fileInfo);
+//             });
+//         });
+//     }
+// });
+
+
+
 
 
 const pushCommentedActivity = (commentId, postId, userId, isCommentOnNewPost) => {
@@ -116,7 +152,7 @@ const checkIfValIsInArray = (array, comparison) => {
 router.route("/users").post((request, response) => {
     console.log("request received from the frontend")
     const { data, name } = request.body;
-    const { _id: userId, firstName, lastName, username, password, belief, sex, reasonsToJoin, email, phoneNum } = data;
+    const { firstName, lastName, username, password, belief, sex, reasonsToJoin, email, phoneNum } = data;
     if (name === "newUser") {
         const newUser = new User({
             firstName,
@@ -133,7 +169,6 @@ router.route("/users").post((request, response) => {
         response.json({
             status: "backend successfully received your request, user added to database",
         });
-        // WHAT IS HAPPENING HERE?
         newUser.save();
     };
 
@@ -141,44 +176,60 @@ router.route("/users").post((request, response) => {
 
 })
 
+
+
 // update the user's profile
 // CAN rename route to "/users/updateUserInfo"
 // don't need to use the params
 // don't use username, use the id of the user 
 router.route("/users/updateInfo").post((request, response) => {
-    const { name, username, data, userId } = request.body
-    if (name === "add bio, icon, topics, and social media") {
+    const { name, data, userId } = request.body
+    if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
-        const { bio, icon, topics, socialMedia } = data
-        User.updateOne(
-            {
-                _id: userId
-            },
-            {
-                // EDIT
-                bio: bio,
-                icon: icon,
-                topics: topics,
-                socialMedia: socialMedia
-            },
-            { multi: true },
-            (error, data) => {
-                if (error) {
-                    console.error("error message: ", error);
-                } else {
-                    console.log("User added bio, icon, and reading topics. NumsAffected: ", data);
+        const { topics, socialMedia } = data
+        if (socialMedia) {
+            User.updateOne(
+                {
+                    _id: userId
+                },
+                {
+                    topics: topics,
+                    socialMedia: socialMedia
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                        response.json("User added social media and reading topics");
+                    } else {
+                        console.log("User added social media and reading topics. NumsAffected: ", numsAffected);
+                    }
                 }
-            }
-        );
+            );
+        } else {
+            User.updateOne(
+                {
+                    _id: userId
+                },
+                {
+                    topics: topics
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                        response.json("User added topics");
+                    } else {
+                        console.log("User added social media and reading topics. NumsAffected: ", numsAffected);
+                    }
+                }
+            );
+        }
 
         response.json({
             message: "backend successfully updated user's profile"
         });
         //     // updates only the title, subtitle, introPic, and the body of the user's draft
     } else if (name === "updateDraft") {
-        console.log("updating draft")
         const { draftId, data, type } = request.body;
-        console.log("data: ", data);
         const { title, subtitle, introPic, timeOfLastEdit, body } = data;
         if (type === 'body') {
             User.updateOne(
@@ -534,24 +585,8 @@ router.route("/users/updateInfo").post((request, response) => {
 
 
     } else if (name === "userLikedReply") {
-        // GOAL: store the id of the reply into its respective comment in the user.activities
-        //CASE1: the user likes a reply for the first time, push the following into user.activities.likes.replies: [{postId, repliedToComments: [{commentId, likedRepliesIds}]}]
-        // CASE2: the user likes a reply, but they are other replies that user liked as well for the same comment. Push the id of the reply into likedRepliesIds.
-        // CASE3: the use likes a reply, but for a different comment in the same post. find the post id and push the following into repliedToComments: {commentId, likedRepliesIds: {the id of the liked reply}}
-        // CASE4: THE user likes a reply in a different post that no replies were liked in that post. Push into user.activities.likes.replies: {postId, repliedToComments: [{commentId, likedRepliesIds}]}
-
-        // GOAL: when the user likes a reply for the first time, push the following into activities.likes.replies: {postId, repliedToComments: [{commentId, likedRepliesIds}]}
-        // if all of the checks passes, then the following is pushed into activities.likes.replies: {postId, repliedToComments: [{commentId, likedRepliesIds}]}
-        // check if the results are empty
-        // check if there is nothing in "activities.likes.replies"
-        // access the user.activities field
-        // the user is found using the userId
-        // the following is received from the front-end: {the name of te package: user liked a reply, userId, data: {postId, commentId, replyId} }
         const { signedInUserId: userId, isSamePost, isSameComment } = request.body
         const { replyId } = data;
-        //GOAL: if isSamePost and isSameComment, then find the post postIdsCommentIdsAndLikedReplyIds and find the target comment in commetIdsAndLikedReplyIds and push the likedReplyId into LikedReplyIds
-        //GOAL: if isSamePost and isSameComment is undefined (therefore false, it is a liked reply in a new post), then push the following into activities.likes.replies {postId, commentIdsAndLikedReplys: [{commentId, likedReplyIds}]}
-        // GOAL: if isSamePost, then find the post activities.likes.replies and push the new liked reply and its comment into commentIdsAndLikedReplyIds 
         console.log('isSameComment', isSameComment)
         if (isSamePost && isSameComment) {
             // GOAL: implement case3
@@ -807,7 +842,96 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     }
-})
+});
+
+const userIconStorage = multer.diskStorage({
+    destination: 'userIcons',
+    filename: (req, file, cb) => {
+        const { userId } = req.body;
+        cb(null, userId + path.extname(file.originalname))
+    }
+});
+
+const userIconUpload = multer({
+    storage: userIconStorage,
+    limits: {
+        fileSize: 1000000
+    },
+    fileFilter(req, file, cb) {
+        if (!file.originalname.match(/\.(jpeg)$/)) {
+            return cb(new Error('Please upload a jpeg Image'))
+        }
+        cb(null, true)
+    }
+});
+
+router.route('/users/updateUserIcon').post(userIconUpload.single('file'), (req, res) => {
+    const { bio, userId, name } = req.body;
+    if (name === 'insertNewUserInfo') {
+        User.updateOne(
+            { _id: userId },
+            {
+                $set:
+                {
+                    bio: bio
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.log("Error in updating bio. Error message: ", error)
+                };
+                console.log("Bio updated, numsAffected: ", numsAffected);
+            }
+        )
+    }
+    res.status(200).json({ message: 'Image upload successful!' });
+}, (error, req, res, next) => {
+    const { status } = res;
+    if (status === 400 || error) {
+        res.json({ message: "Something went wrong" });
+        console.error("Error message: ", error);
+    }
+});
+
+const postIntroPicStorage = multer.diskStorage({
+    destination: 'postIntroPics',
+    filename: (req, file, cb) => {
+        console.log("file: ", file);
+        console.log("req, postIntroPicStorage: ", req)
+        // const { userId } = req.body;
+        // cb(null, userId + path.extname(file.originalname))
+    }
+});
+
+const postIntroPicUpload = multer({
+    storage: postIntroPicStorage,
+    limits: {
+        fileSize: 1000000
+    },
+    fileFilter(req, file, cb) {
+        console.log("file: ", file);
+        if (!file.originalname.match(/\.(jpeg)$/)) {
+            return cb(new Error('Please upload a jpeg Image'))
+        }
+        cb(null, true)
+    }
+});
+
+router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req, res) => {
+    console.log("req: ", req);
+    res.status(200).json({ message: 'Draft update successful!' });
+}, (error, req, res, next) => {
+    const { status } = res;
+    if (status === 400 || error) {
+        res.json({ message: "Something went wrong" });
+        console.error("Error message: ", error);
+    }
+});
+
+
+
+
+
 
 // USE THE ID OF THE USER INSTEAD TO FIND THE USER
 router.route("/users/:package").get((request, response) => {
@@ -934,6 +1058,7 @@ router.route("/users/:package").get((request, response) => {
 
         })
     } else if ((name === 'getUserId') && username) {
+        console.log('username: ', username);
         User.find({ username: username }).then(user => {
             console.log('user: ', user);
             const { _id } = user[0];

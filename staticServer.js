@@ -7,9 +7,20 @@ const dbconnection = "mongodb+srv://gtorio:simba1997@clustercv.blvqa.mongodb.net
 const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        console.log('file: ', file)
+        cb(null, 'uploads');
+    },
+    filename: (req, file, cb) => {
+        console.log("file: ", file);
+        // cb(null, Date.now() + path.extname(file.originalFilename))
+    }
+});
 
 
-// will create temporary files on my server and will never clean them up
+// will create temporary files on my server
 const multiparty = require('connect-multiparty');
 
 // this will enable the front-end to upload files/images to the server
@@ -18,6 +29,7 @@ const multipartyMiddleware = multiparty({ uploadDir: './writingPostImageUploads'
 // fix this bodyParser
 app.use(bodyParser.json({ limit: "1000mb" }));
 app.use(bodyParser.urlencoded({ limit: "1000mb", extended: true, parameterLimit: 500000 }));
+app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (request, response) => {
     response.status(200).json({
@@ -32,14 +44,28 @@ app.use(express.json());
 
 // store all of the static files (in this case, images) into /writingPostImageUploads
 
+
+
+
+
+
+
 mongoose.connect(dbconnection, {
     useUnifiedTopology: true,
     useNewUrlParser: true
 }).then(() => {
     console.log("connection to mongodb database is successful!")
 }).catch(error => {
-    console.log(`Error message: ${error}`)
-})
+    console.log(`Error in connecting to DB: ${error}`)
+});
+
+
+
+
+
+
+
+// conn.once('open',)
 
 app.use("/", require("./routes/blogPosts"));
 
@@ -47,6 +73,10 @@ app.use("/", require("./routes/users"));
 
 app.use("/", require("./routes/tags"));
 
+
+
+app.use("/userIcons", express.static("userIcons"));
+app.use("/postIntroPics", express.static("postIntroPics"))
 app.use(express.static("writingPostImageUploads"));
 // upload and present the image that the user uploads to the text editor
 app.post("/writePostImages", multipartyMiddleware, (req, res) => {
@@ -54,23 +84,35 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
     const imageTempFile = req.files.upload;
     const imageTempFilePath = imageTempFile.path
     // 'path' module provides utilities for working with file and directory paths
+    console.log("path: ", path);
     const targetPathUrl = path.join(__dirname, `./writingPostImageUploads/${imageTempFile.name}`);
-    console.log(path.extname(imageTempFile.originalFilename));
-    if (path.extname(imageTempFile.originalFilename).toLowerCase() === ".png" || ".jpg") {
+    // if (path.extname(imageTempFile.originalFilename).toLowerCase() === ".png" || ".jpg") {
 
-        // what is url doing?
-        res.status(200).json({
-            uploaded: true,
+    // what is url doing?
+    res.status(200).json({
+        uploaded: true,
 
-            //able to save the save the images, but the title, subtitle, and the intro pic gets deleted
-            url: `http://localhost:3005/${imageTempFile.originalFilename}`
-            // url: `${imageTempFile.originalFilename}`
-        })
-        // fs = a module that allows the user to access and interact with the file systems
-        // relocated the uploaded image into /writingPostImageUploads file
-        fs.rename(imageTempFilePath, targetPathUrl, err => { err && console.log(`Error message: ${err}`) })
-    }
-})
+        //able to save the save the images, but the title, subtitle, and the intro pic gets deleted
+        url: `http://localhost:3005/${imageTempFile.originalFilename}`
+        // url: `${imageTempFile.originalFilename}`
+    })
+    // fs = a module that allows the user to access and interact with the file systems
+    // relocated the uploaded image into /writingPostImageUploads file
+    fs.rename(imageTempFilePath, targetPathUrl, err => { console.log(`Error message: ${err}`) })
+    // fs.open(targetPathUrl, err => { console.log(`Error message: ${err}`) })
+    // }
+});
+
+
+// app.post('/uploadUserIcon', upload.single('file'), (req, res) => {
+
+// });
+
+
+
+
+
+
 
 
 app.listen(3005, () => {
