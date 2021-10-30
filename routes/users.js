@@ -8,6 +8,11 @@ const { promisify } = require('util');
 const pipeline = promisify(require('stream').pipeline)
 const upload = multer()
 
+// NOTES:
+// do you need the msOfCurrentYear?
+
+// GOAL: DELETE INTRO PIC FROM SERVER WHEN THE RED DELETE BUTTON IS PRESSED
+
 
 // let gfs;
 // const conn = mongoose.createConnection(dbconnection, {
@@ -841,14 +846,48 @@ router.route("/users/updateInfo").post((request, response) => {
                 response.json("Post deleted from reading list.")
             }
         )
+    } else if (name === 'deleteIntroPic') {
+        const { draftId } = request.body;
+        // HAVE THE IMG URL BE A UNIQUE ID EVERY TIME YOU UPLOAD THE IMAGE
+        const { imgUrl, timeOfLastEdit } = data;
+        fs.unlink(`./postIntroPics/${imgUrl}`, err => {
+            if (err) {
+                console.error("Failed to delete", err)
+            } else {
+                console.log('image deleted.')
+            }
+        });
+        User.updateOne(
+            {
+                _id: userId,
+                "roughDrafts._id": draftId
+            },
+            {
+                $set:
+                {
+                    "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
+                },
+                $unset:
+                {
+                    "roughDrafts.$.imgUrl": ""
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error("Error in deleting intro pic. Error message: ", error)
+                };
+                console.log("User deleted intro pic from draft, draft updated. NumsAffected: ", numsAffected);
+                response.json("Intro pic was deleted. Draft updated.")
+            }
+        )
+
     }
 });
 
 const userIconStorage = multer.diskStorage({
     destination: 'userIcons',
     filename: (req, file, cb) => {
-        const { userId } = req.body;
-        cb(null, userId + path.extname(file.originalname))
+        cb(null, req.body.userId + path.extname(file.originalname))
     }
 });
 
@@ -896,36 +935,66 @@ router.route('/users/updateUserIcon').post(userIconUpload.single('file'), (req, 
 const postIntroPicStorage = multer.diskStorage({
     destination: 'postIntroPics',
     filename: (req, file, cb) => {
-        console.log("file: ", file);
-        console.log("req, postIntroPicStorage: ", req)
-        // const { userId } = req.body;
-        // cb(null, userId + path.extname(file.originalname))
+        console.log('loading file');
+        const { userId, postId, miliSeconds } = req.body;
+        cb(null, miliSeconds + '_' + userId + '_' + postId + path.extname(file.originalname))
     }
 });
 
 const postIntroPicUpload = multer({
     storage: postIntroPicStorage,
     limits: {
-        fileSize: 1000000
+        fileSize: 100_000_000
     },
     fileFilter(req, file, cb) {
-        console.log("file: ", file);
-        if (!file.originalname.match(/\.(jpeg)$/)) {
-            return cb(new Error('Please upload a jpeg Image'))
-        }
-        cb(null, true)
+        // if (!file.originalname.match(/\.(jpeg|png)$/)) {
+        //     return cb(new Error('Please upload a jpeg Image'))
+        // }
+        cb(null, true);
     }
 });
 
 router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req, res) => {
-    console.log("req: ", req);
-    res.status(200).json({ message: 'Draft update successful!' });
+    console.log("req.body: ", req.body);
+    const extname = path.extname(req.file.originalname);
+    const { postId, userId, date, msOfCurrentYear, miliSeconds, time, timeOfLastEdit } = req.body;
+    const timeOfLastEdit_ = JSON.parse(timeOfLastEdit);
+    console.log({ timeOfLastEdit_ });
+    const introPicUrl = miliSeconds + '_' + userId + '_' + postId + extname;
+    User.updateOne(
+        {
+            _id: userId,
+            "roughDrafts._id": postId
+        },
+        {
+            $set: {
+                "roughDrafts.$.timeOfLastEdit": timeOfLastEdit_,
+                "roughDrafts.$.imgUrl": introPicUrl
+            }
+        },
+        (error, numsAffected) => {
+            if (error) {
+                console.error("error message: ", error);
+            }
+            console.log("Non-intro pic update. NumsAffected: ", numsAffected);
+            res.status(200).json({ imgUrl: introPicUrl });
+        }
+    )
 }, (error, req, res, next) => {
     const { status } = res;
-    if (status === 400 || error) {
-        res.json({ message: "Something went wrong" });
+    // if (error && error === "MulterError: File too large") {
+    // console.error("Error message: ", error);
+    // res.json({ message: "Image too large, please choice another image." })
+    // } else if (error) {
+    // console.error("Error message: ", error);
+    // res.json({ message: "Something went wrong, please try again." });
+    // };
+    if (status === 400 && error) {
         console.error("Error message: ", error);
-    }
+        res.json({ message: "An error has occurred. Your image may be too large. Please try again and upload a different image." })
+    };
+
+    console.log('Request completed')
 });
 
 
