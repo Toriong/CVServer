@@ -234,98 +234,62 @@ router.route("/users/updateInfo").post((request, response) => {
         });
         //     // updates only the title, subtitle, introPic, and the body of the user's draft
     } else if (name === "updateDraft") {
-        const { draftId, data, type } = request.body;
-        const { title, subtitle, introPic, timeOfLastEdit, body } = data;
-        if (type === 'body') {
+        const { draftId, field, userId, wasPicDeleted, imgUrl } = request.body;
+        const { timeOfLastEdit, data: draftUpdate } = data;
+        console.log("request.body: ", request.body);
+        if (wasPicDeleted) {
+            fs.unlink(`./postIntroPics/${imgUrl}`, err => {
+                if (err) {
+                    console.error("Failed to delete", err)
+                } else {
+                    console.log('image deleted.')
+                }
+            });
             User.updateOne(
                 {
                     _id: userId,
                     "roughDrafts._id": draftId
                 },
                 {
-                    $set: {
-                        "roughDrafts.$.body": body,
+                    $set:
+                    {
                         "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
+                    },
+                    $unset:
+                    {
+                        "roughDrafts.$.imgUrl": ""
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("Error in deleting intro pic. Error message: ", error)
+                    };
+                    console.log("User deleted intro pic from draft, draft updated. NumsAffected: ", numsAffected);
+                }
+            );
+        } else {
+            User.updateOne(
+                {
+                    _id: userId,
+                    "roughDrafts._id": draftId
+                },
+                {
+                    $set:
+                    {
+                        [`roughDrafts.$.${field}`]: draftUpdate,
+                        "roughDrafts.$.timeOfLastEdit": timeOfLastEdit
                     }
                 },
                 (error, numsAffected) => {
                     if (error) {
                         console.error("error message: ", error);
                     } else {
-                        response.json(
-                            "Body updated, draft saved."
-                        );
+                        console.log(`${field} was updated, numsAffected: `, numsAffected);
                     }
                 }
             )
-        } else if (type === 'title') {
-            User.updateOne(
-                {
-                    _id: userId,
-                    "roughDrafts._id": draftId
-                },
-                {
-                    $set: {
-                        "roughDrafts.$.title": title,
-                        "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
-                    }
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error("error message: ", error);
-                    } else {
-                        response.json(
-                            "title updated, draft saved."
-                        );
-                    }
-                }
-            )
-        } else if (type === 'subtitle') {
-            User.updateOne(
-                {
-                    _id: userId,
-                    "roughDrafts._id": draftId
-                },
-                {
-                    $set: {
-                        "roughDrafts.$.subtitle": subtitle,
-                        "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
-                    }
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error("error message: ", error);
-                    } else {
-                        response.json(
-                            "subtitle updated, draft saved."
-                        );
-                    }
-                }
-            );
-        } else if (type === 'introPic') {
-            User.updateOne(
-                {
-                    _id: userId,
-                    "roughDrafts._id": draftId
-                },
-                {
-                    $set: {
-                        "roughDrafts.$.introPic": introPic,
-                        "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
-                    }
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error("error message: ", error);
-                    } else {
-                        response.json(
-                            "IntroPic updated, draft saved."
-                        );
-                    }
-                }
-            );
-        }
-
+        };
+        response.json({ message: field ? `${field} was updated.` : 'introPic was deleted' })
         // add tags to the draft that the user is trying to post
     } else if (name === "addTagsToDraft") {
         console.log("updating tags of draft");
@@ -850,36 +814,6 @@ router.route("/users/updateInfo").post((request, response) => {
         const { draftId } = request.body;
         // HAVE THE IMG URL BE A UNIQUE ID EVERY TIME YOU UPLOAD THE IMAGE
         const { imgUrl, timeOfLastEdit } = data;
-        fs.unlink(`./postIntroPics/${imgUrl}`, err => {
-            if (err) {
-                console.error("Failed to delete", err)
-            } else {
-                console.log('image deleted.')
-            }
-        });
-        User.updateOne(
-            {
-                _id: userId,
-                "roughDrafts._id": draftId
-            },
-            {
-                $set:
-                {
-                    "roughDrafts.$.timeOfLastEdit": timeOfLastEdit,
-                },
-                $unset:
-                {
-                    "roughDrafts.$.imgUrl": ""
-                }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.error("Error in deleting intro pic. Error message: ", error)
-                };
-                console.log("User deleted intro pic from draft, draft updated. NumsAffected: ", numsAffected);
-                response.json("Intro pic was deleted. Draft updated.")
-            }
-        )
 
     }
 });
@@ -936,8 +870,9 @@ const postIntroPicStorage = multer.diskStorage({
     destination: 'postIntroPics',
     filename: (req, file, cb) => {
         console.log('loading file');
-        const { userId, postId, miliSeconds } = req.body;
-        cb(null, miliSeconds + '_' + userId + '_' + postId + path.extname(file.originalname))
+        const { userId, postId, timeOfLastEdit } = req.body;
+        const timeOfLastEdit_ = JSON.parse(timeOfLastEdit);
+        cb(null, timeOfLastEdit_.miliSeconds + '_' + userId + '_' + postId + path.extname(file.originalname))
     }
 });
 
@@ -957,10 +892,10 @@ const postIntroPicUpload = multer({
 router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req, res) => {
     console.log("req.body: ", req.body);
     const extname = path.extname(req.file.originalname);
-    const { postId, userId, date, msOfCurrentYear, miliSeconds, time, timeOfLastEdit } = req.body;
+    const { postId, userId, timeOfLastEdit } = req.body;
     const timeOfLastEdit_ = JSON.parse(timeOfLastEdit);
     console.log({ timeOfLastEdit_ });
-    const introPicUrl = miliSeconds + '_' + userId + '_' + postId + extname;
+    const introPicUrl = timeOfLastEdit_.miliSeconds + '_' + userId + '_' + postId + extname;
     User.updateOne(
         {
             _id: userId,
