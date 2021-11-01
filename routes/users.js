@@ -168,7 +168,8 @@ router.route("/users").post((request, response) => {
             sex,
             reasonsToJoin,
             email,
-            phoneNum
+            phoneNum,
+            isUserNew: true
         });
         console.log(newUser);
         response.json({
@@ -199,7 +200,8 @@ router.route("/users/updateInfo").post((request, response) => {
                 },
                 {
                     topics: topics,
-                    socialMedia: socialMedia
+                    socialMedia: socialMedia,
+                    isUserNew: false
                 },
                 (error, numsAffected) => {
                     if (error) {
@@ -356,26 +358,49 @@ router.route("/users/updateInfo").post((request, response) => {
         User.find({
             _id: userId
         }).then(user => {
-            const { _id: draftId } = data;
-            const { introPic: introPicFromFront, subtitle: subtitleFromFront, ...draftFromFrontEnd } = data;
+            const { _id: draftId, subtitle: subtitleFromClient, imgUrl: imgUrlFromClient, ...draftFromFrontEnd } = data;
             const drafts = user[0].roughDrafts;
             const draftInDB = drafts.find(({ _id: _draftId }) => _draftId === draftId);
-            const { introPic, defaultTitle, timeOfLastEdit, creation, subtitle, ...draftInDB_ } = draftInDB;
-            const isIntroPicSame = !((introPic === null) && (introPicFromFront === undefined)) ? JSON.stringify(introPic) === JSON.stringify(introPicFromFront) : 'noIntroPicChosen'
-            const isSubtitleSame = !((subtitle === '') && (subtitleFromFront === undefined)) ? (subtitle === subtitleFromFront) : 'noSubtitleChosen';
-            const isTheRestOfDraftDataSame = JSON.stringify(draftInDB_) === JSON.stringify(draftFromFrontEnd);
-            console.log({ isIntroPicSame, isSubtitleSame, isTheRestOfDraftDataSame })
-            if (((isIntroPicSame === 'noIntroPicChosen') && (isSubtitleSame === 'noSubtitleChosen') && isTheRestOfDraftDataSame) ||
-                (isIntroPicSame && (isSubtitleSame === 'noSubtitleChosen') && isTheRestOfDraftDataSame) ||
-                ((isIntroPicSame === 'noIntroPicChosen') && isSubtitleSame && isTheRestOfDraftDataSame) ||
-                (isIntroPicSame && isSubtitleSame && isTheRestOfDraftDataSame)
-            ) {
-                console.log("Draft check completed. Draft check PASSED.");
-                response.json({ didCheckPass: true })
+            const { _id, defaultTitle, timeOfLastEdit, subtitle: subtitleInDb, imgUrl: imgUrlInDb, creation, ...draftInDB_ } = draftInDB;
+            console.log({
+                draftInDB_,
+                draftFromFrontEnd
+            })
+            const isDraftSame = JSON.stringify(draftInDB_) === JSON.stringify(draftFromFrontEnd);
+            const wasNoSubtitleChosen = (subtitleFromClient === undefined) && (subtitleInDb === '' || subtitleInDb === undefined)
+            const isSubtitleSame = wasNoSubtitleChosen ? undefined : subtitleFromClient === subtitleInDb;
+            const wasNoImageChosen = (imgUrlInDb === undefined) && (imgUrlFromClient === undefined);
+            const isImgUrlSame = wasNoImageChosen ? undefined : imgUrlInDb === imgUrlFromClient;
+            console.log({
+                isDraftSame,
+                wasNoImageChosen,
+                isImgUrlSame,
+                wasNoSubtitleChosen,
+                isSubtitleSame,
+            })
+            if (isDraftSame && (((!wasNoImageChosen && isImgUrlSame) && (!wasNoSubtitleChosen && isSubtitleSame)) || (wasNoImageChosen && (!wasNoSubtitleChosen && isSubtitleSame)) || (wasNoImageChosen && wasNoSubtitleChosen) || ((!wasNoImageChosen && isImgUrlSame) && wasNoSubtitleChosen))) {
+                console.log('pass')
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $pull: { roughDrafts: { _id: draftId } },
+                        $push: { publishedDrafts: draftId }
+                    },
+                    (error, numsAffected) => {
+                        if (error) console.error("Error in updating user.roughDrafts: ", error);
+                        else {
+                            console.log("User has been updated. numsAffected: ", numsAffected);
+                            response.sendStatus(200)
+                        }
+                    }
+                );
             } else {
-                console.log("Check completed. Drafts are not the same.")
-                response.json({ didCheckPass: false })
-            };
+                console.error('Draft check Failed!');
+                response.sendStatus(404)
+            }
+        }).catch(error => {
+            console.log("Query failed, message: ", error)
+            response.sendStatus(400)
         })
     } else if (name === "userCommented") {
         const { userId } = request.body;
@@ -396,8 +421,10 @@ router.route("/users/updateInfo").post((request, response) => {
                         { _id: userId },
                         { activities: 1, _id: 0 }
                     ).then(results => {
-                        const { activities } = results[0]
-                        response.json(activities);
+                        // WHY DO I NEED THIS CODE BELOW?
+                        // const { activities } = results[0]
+                        // response.json(activities);
+
                     })
                 }
             }
@@ -831,9 +858,9 @@ const userIconUpload = multer({
         fileSize: 1000000
     },
     fileFilter(req, file, cb) {
-        if (!file.originalname.match(/\.(jpeg)$/)) {
-            return cb(new Error('Please upload a jpeg Image'))
-        }
+        // if (!file.originalname.match(/\.(jpeg)$/)) {
+        //     return cb(new Error('Please upload a jpeg Image'))
+        // }
         cb(null, true)
     }
 });
@@ -846,7 +873,8 @@ router.route('/users/updateUserIcon').post(userIconUpload.single('file'), (req, 
             {
                 $set:
                 {
-                    bio: bio
+                    bio: bio,
+                    iconPath: userId + path.extname(req.file.originalname)
                 }
             },
             (error, numsAffected) => {
@@ -857,7 +885,7 @@ router.route('/users/updateUserIcon').post(userIconUpload.single('file'), (req, 
             }
         )
     }
-    res.status(200).json({ message: 'Image upload successful!' });
+    res.status(200).json({ message: 'Image upload successful!', iconPath: userId + path.extname(req.file.originalname) });
 }, (error, req, res, next) => {
     const { status } = res;
     if (status === 400 || error) {
@@ -947,23 +975,23 @@ router.route("/users/:package").get((request, response) => {
         User.find({ username: username }).then(user => {
             const [_user] = user;
             if ((_user && _user.password) === passwordAttempt) {
-                const { username, firstName, lastName, icon, _id, readingLists, topics, activities } = user[0];
+                const { username, firstName, lastName, iconPath, _id, readingLists, topics, activities, isUserNew } = user[0];
                 console.log('password matches user signed backed in.')
                 console.log("user signed back in")
                 let user_;
                 if (activities && (activities.following && activities.following.length)) {
                     const { following } = activities;
-                    user_ = { _id, icon, username, firstName, lastName, following }
+                    user_ = { _id, iconPath, username, isUserNew, firstName, lastName, following }
                 }
                 if (readingLists && Object.keys(readingLists).length) {
-                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { _id, icon, username, firstName, lastName, readingLists }
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { _id, iconPath, isUserNew, username, firstName, lastName, readingLists }
                 }
                 if (topics && topics.length) {
-                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, topics } : { _id, icon, username, firstName, lastName, topics }
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, topics } : { _id, iconPath, isUserNew, username, firstName, lastName, topics }
                 };
                 response.json({
                     message: `Welcome back ${username}!`,
-                    user: user_ ?? { username, firstName, lastName, icon, _id }
+                    user: user_ ?? { username, firstName, lastName, iconPath, _id, isUserNew }
                 });
             } else {
                 console.error("Sign-in attempt FAILED");

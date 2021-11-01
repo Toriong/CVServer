@@ -43,14 +43,12 @@ const activitiesSchema = new Schema(
 );
 
 
-const iconSchema = new Schema({
-    img: String
-});
 
 
 // schema: allows us to define the field in a document that will be stored in the collection of the database
 const userSchema = new Schema({
     id: String,
+    isUserNew: Boolean,
     firstName: String,
     lastName: String,
     username: String,
@@ -63,14 +61,14 @@ const userSchema = new Schema({
     bio: String,
     topics: Array,
     socialMedia: Array,
-    icon: iconSchema,
+    iconPath: String,
     blogPosts: String,
     roughDrafts: Array,
     publishedDrafts: Array,
     activities: activitiesSchema,
     followers: Array,
     notifications: Array,
-    readingLists: Object
+    readingLists: Object,
 });
 
 

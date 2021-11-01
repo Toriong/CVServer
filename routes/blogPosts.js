@@ -16,33 +16,33 @@ router.route("/blogPosts").get((req, res) => {
 
 router.route("/blogPosts").post((req, res) => {
     const { name, data } = req.body;
-    const { _id, title, authorId, subtitle, introPic, body, tags } = data
+    const { _id, title, authorId, subtitle, imgUrl, body, tags } = data
     if (name === "publishDraft") {
         let newPost;
-        if (subtitle && introPic) {
+        if (subtitle && imgUrl) {
             console.log("I was executed")
             newPost = new BlogPost({
                 _id,
                 title,
                 authorId,
                 subtitle,
-                introPic,
+                imgUrl,
                 body,
                 tags,
                 publicationDate: getTime()
             });
-        } else if (!subtitle && introPic) {
+        } else if (!subtitle && imgUrl) {
             console.log("no subtitle present, publishing post")
             newPost = new BlogPost({
                 _id,
                 title,
                 authorId,
-                introPic,
+                imgUrl,
                 body,
                 tags,
                 publicationDate: getTime()
             });
-        } else if (subtitle && !introPic) {
+        } else if (subtitle && !imgUrl) {
             console.log("no intro pic present, publishing post");
             newPost = new BlogPost({
                 _id,

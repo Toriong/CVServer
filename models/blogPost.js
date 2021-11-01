@@ -34,7 +34,7 @@ const BlogPostSchema = new Mongoose.Schema(
         _id: String,
         title: String,
         subtitle: String,
-        introPic: Object,
+        imgUrl: String,
         body: String,
         tags: Array,
         publicationDate: Object,
