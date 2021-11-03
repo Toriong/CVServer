@@ -349,9 +349,8 @@ router.route("/blogPosts/updatePost").post((req, res) => {
 
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts")
-    const { package } = req.params;
-    console.log('package: ', package);
-    const { name, signedInUserId: userId, draftId } = JSON.parse(package);
+    const package = JSON.parse(req.params.package);
+    const { name, signedInUserId: userId, draftId } = package;
     if (name === "getPublishedDrafts") {
         BlogPost.find({ authorId: userId }).then(posts => {
             if (posts.length) {
@@ -370,9 +369,66 @@ router.route("/blogPosts/:package").get((req, res) => {
             }
         })
     } else if (name === "getPost") {
-        BlogPost.find({ _id: draftId }).then(post => {
-            res.json(post[0]);
+        const { authorId } = package;
+        // WHAT I WANT: I want to get the first five documents but the document must include the post the the current use wants to read 
+        // GOAL: get all of the posts that is written by the author that the current user wants to read along with the three most recent articles that are written by the author excluding the current post that is being read by the current user 
+        // use the authorId to find all of the posts that is written by the author
+        // only get the first five 
+        // have the query include the draftId as well 
+        console.log({
+            draftId,
+            authorId
         })
+        BlogPost.find(
+            { $or: [{ _id: draftId }, { authorId: authorId }] },
+            error => {
+                if (error) {
+                    console.error("error in finding the draft: ", error)
+                }
+            }
+        ).then(posts => {
+            // between each draft, if the publication date is greater, then include it in the array
+            // if there is an edit date, then use that instead to make the comparison
+            const targetPost = posts.find(({ _id }) => _id === draftId);
+            const restsOfPosts = posts.filter(({ _id }) => _id !== draftId)
+            let _posts;
+            if (restsOfPosts.length > 3) {
+                const postsByTime = restsOfPosts.sort((postA, postB) => {
+                    const { miliSeconds: miliSecondsPostA } = postA.publicationDate;
+                    const { miliSeconds: miliSecondsPostB } = postB.publicationDate;
+                    if (postA.editDate && postB.editDate) {
+                        if (postA.editDate.miliSeconds > postB.editDate.miliSeconds) return -1;
+                        if (postA.editDate.miliSeconds < postB.editDate.miliSeconds) return 1;
+                        return 0;
+                    } else if (postA.editDate && !postB.editDate) {
+                        if (postA.editDate.miliSeconds > miliSecondsPostB) return -1;
+                        if (postA.editDate.miliSeconds < miliSecondsPostB) return 1;
+                        return 0;
+                    } else if (!postA.editDate && postB.editDate) {
+                        if (miliSecondsPostA > postB.editDate.miliSeconds) return -1;
+                        if (miliSecondsPostA < postB.editDate.miliSeconds) return 1;
+                        return 0;
+                    } else {
+                        if (miliSecondsPostA > miliSecondsPostB) return -1;
+                        if (miliSecondsPostA < miliSecondsPostB) return 1;
+                        return 0;
+                    }
+                });
+                console.log('postsByTime: ', postsByTime)
+                _posts = {
+                    moreFromAuthor: [...postsByTime.slice(0, 3)],
+                    targetPost
+                }
+            } else if (restsOfPosts.length > 1 && restsOfPosts.length < 3) {
+                _posts = {
+                    moreFromAuthor: [...posts.filter(({ _id }) => _id !== draftId)],
+                    targetPost
+                };
+            } else {
+                _posts = { targetPost };
+            }
+            res.json(_posts);
+        });
     }
 });
 
