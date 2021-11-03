@@ -979,9 +979,9 @@ router.route("/users/:package").get((request, response) => {
                 console.log('password matches user signed backed in.')
                 console.log("user signed back in")
                 let user_;
-                if (activities && (activities.following && activities.following.length)) {
-                    const { following } = activities;
-                    user_ = { _id, iconPath, username, isUserNew, firstName, lastName, following }
+                if (activities) {
+                    delete (activities._id);
+                    user_ = { _id, iconPath, username, isUserNew, firstName, lastName, activities: activities }
                 }
                 if (readingLists && Object.keys(readingLists).length) {
                     user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { _id, iconPath, isUserNew, username, firstName, lastName, readingLists }
