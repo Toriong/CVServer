@@ -10,6 +10,8 @@ const messageEventName = "newChatMessage";
 const likeEventName = "userClicksLikeBtn";
 const commentNumEvent = "commentNumChanged";
 
+// save User data in when the user send the data through this server?
+
 
 io.on("connection", socket => {
     // console.log(socket.handshake)

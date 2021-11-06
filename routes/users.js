@@ -518,6 +518,32 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             }
         )
+    } else if (name === 'userUnLikedPost') {
+        const { userId } = request.body;
+        const { postId } = data;
+        User.updateOne(
+            { _id: userId },
+            {
+                $pull:
+                {
+                    "activities.likes.likedPostIds": postId
+                }
+            },
+            (error, numsAffected) => {
+                if (error) throw error;
+                else {
+                    console.log(`User unliked a post, deleted activity. NumsAffectd: `, numsAffected);
+                    User.find(
+                        { _id: userId },
+                        { activities: 1, _id: 0 }
+                    ).then(results => {
+                        console.log("results 483", results)
+                        const { activities } = results[0]
+                        response.json(activities);
+                    })
+                }
+            }
+        )
     } else if (name === "userLikedComment") {
         const { signedInUserId: userId, postId, isSamePost } = request.body
         if (isSamePost) {
@@ -574,12 +600,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             )
         }
-
-
-
-
-
-
     } else if (name === "userLikedReply") {
         const { signedInUserId: userId, isSamePost, isSameComment } = request.body
         const { replyId } = data;
@@ -614,7 +634,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 }
             )
-
+            // same post, but different comment
         } else if (isSamePost && (isSameComment === undefined)) {
             const { postId } = request.body
             const { commentId, replyId } = data;
@@ -722,8 +742,9 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         );
     } else if (name === "unFollowUser") {
+        console.log('request.body: ', request.body);
         const { unFollowUser, signedInUserId: userId_ } = request.body;
-        User.findByIdAndUpdate(userId_,
+        User.updateOne({ _id: userId_ },
             {
                 $pull:
                 {
@@ -734,12 +755,12 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) {
                     console.error(`Error message 667: ${error}`)
                 } else {
-                    console.log(`New following added, numsAffected: ${numsAffected}`)
+                    console.log(`User unFollowed, numsAffected: `, numsAffected)
                 }
             }
         );
         // how to tell if an element was seen on the UI?
-        User.findByIdAndUpdate(unFollowUser,
+        User.updateOne({ _id: unFollowUser },
             {
                 $pull:
                 {
@@ -751,7 +772,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) {
                     console.error(`Error message 687: ${error}`)
                 } else {
-                    console.log(`User was unFollowed. numsAffected: ${numsAffected}`)
+                    console.log(`User was unFollowed. numsAffected: `, numsAffected)
                     response.json("User was unFollowed")
                 }
             }
@@ -837,10 +858,22 @@ router.route("/users/updateInfo").post((request, response) => {
                 response.json("Post deleted from reading list.")
             }
         )
-    } else if (name === 'deleteIntroPic') {
-        const { draftId } = request.body;
-        // HAVE THE IMG URL BE A UNIQUE ID EVERY TIME YOU UPLOAD THE IMAGE
-        const { imgUrl, timeOfLastEdit } = data;
+    } else if (name === 'updateUserProfile') {
+        const { field } = request.body;
+        User.updateOne(
+            { _id: userId },
+            {
+                $set: { [`${field}`]: data }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.log("deleteFromReadingList, error message: ", error);
+                    response.json("Something went wrong: ", error);
+                };
+                console.log(`User changed their ${field}. numsAffected: `, numsAffected);
+                response.json("User profile updated.")
+            }
+        )
 
     }
 });
@@ -975,23 +1008,26 @@ router.route("/users/:package").get((request, response) => {
         User.find({ username: username }).then(user => {
             const [_user] = user;
             if ((_user && _user.password) === passwordAttempt) {
-                const { username, firstName, lastName, iconPath, _id, readingLists, topics, activities, isUserNew } = user[0];
+                const { username, firstName, lastName, iconPath, _id, readingLists, topics, activities, isUserNew, bio, socialMedia } = user[0];
                 console.log('password matches user signed backed in.')
                 console.log("user signed back in")
                 let user_;
                 if (activities) {
                     delete (activities._id);
-                    user_ = { _id, iconPath, username, isUserNew, firstName, lastName, activities: activities }
+                    user_ = { _id, iconPath, username, isUserNew, firstName, lastName, activities: activities, bio }
                 }
                 if (readingLists && Object.keys(readingLists).length) {
-                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { _id, iconPath, isUserNew, username, firstName, lastName, readingLists }
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { _id, iconPath, isUserNew, username, firstName, lastName, readingLists, bio }
                 }
                 if (topics && topics.length) {
-                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, topics } : { _id, iconPath, isUserNew, username, firstName, lastName, topics }
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, topics } : { _id, iconPath, isUserNew, username, firstName, lastName, topics, bio }
                 };
+                if (socialMedia && socialMedia.length) {
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, socialMedia } : { _id, iconPath, isUserNew, username, firstName, lastName, socialMedia, bio }
+                }
                 response.json({
                     message: `Welcome back ${username}!`,
-                    user: user_ ?? { username, firstName, lastName, iconPath, _id, isUserNew }
+                    user: user_ ?? { username, firstName, lastName, iconPath, _id, isUserNew, bio }
                 });
             } else {
                 console.error("Sign-in attempt FAILED");
@@ -1108,6 +1144,21 @@ router.route("/users/:package").get((request, response) => {
         }).catch(err => {
             console.log(`Error in getting all users, line 960: ${err}`)
         })
+    } else if (name === 'getFollowers') {
+        User.find(
+            { _id: userId },
+            { followers: 1, _id: 0 }
+        )
+            .then(result => {
+                if (result.length && result[0].followers && result[0].followers.length) {
+                    response.json({ followers: result[0].followers })
+                }
+            })
+            .catch(error => {
+                if (error) {
+                    console.error("ERROR in finding user's account and followers: ", error)
+                }
+            })
     }
 });
 

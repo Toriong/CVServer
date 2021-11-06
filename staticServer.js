@@ -7,17 +7,6 @@ const dbconnection = "mongodb+srv://gtorio:simba1997@clustercv.blvqa.mongodb.net
 const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
-const multer = require('multer');
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        console.log('file: ', file)
-        cb(null, 'uploads');
-    },
-    filename: (req, file, cb) => {
-        console.log("file: ", file);
-        // cb(null, Date.now() + path.extname(file.originalFilename))
-    }
-});
 
 
 // will create temporary files on my server
@@ -104,9 +93,6 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
 });
 
 
-// app.post('/uploadUserIcon', upload.single('file'), (req, res) => {
-
-// });
 
 
 
