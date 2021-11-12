@@ -313,12 +313,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             }
         )
     } else if (name === "replyUnliked") {
-        // GOAL: pull the id of the user that unliked the reply in activities.likes.replies
-        // the user id is found and is pulled from the activities.likes.replies by using the userId
-        // the reply is found by using the replyId, array filter ["reply.id": replyId]
-        // the comment that the user replied is found: array filter ["comment.id": commentId]
-        // the post is found by using the post id 
-        // the following package is received from the front-end: {postId, commentId, replyId, userId}
         const { signedInUserId: _userId, commentId, replyId } = req.body;
         BlogPost.updateOne(
             {
@@ -346,7 +340,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
     }
 })
 
-
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts")
     const package = JSON.parse(req.params.package);
@@ -369,18 +362,8 @@ router.route("/blogPosts/:package").get((req, res) => {
             }
         })
     } else if (name === "getPost") {
-        const { authorId } = package;
-        // WHAT I WANT: I want to get the first five documents but the document must include the post the the current use wants to read 
-        // GOAL: get all of the posts that is written by the author that the current user wants to read along with the three most recent articles that are written by the author excluding the current post that is being read by the current user 
-        // use the authorId to find all of the posts that is written by the author
-        // only get the first five 
-        // have the query include the draftId as well 
-        console.log({
-            draftId,
-            authorId
-        })
         BlogPost.find(
-            { $or: [{ _id: draftId }, { authorId: authorId }] },
+            { $or: [{ _id: draftId }, { authorId: package.authorId }] },
             error => {
                 if (error) {
                     console.error("error in finding the draft: ", error)
@@ -429,6 +412,8 @@ router.route("/blogPosts/:package").get((req, res) => {
             }
             res.json(_posts);
         });
+    } else if (name === 'getAll') {
+
     }
 });
 

@@ -69,6 +69,7 @@ const userSchema = new Schema({
     followers: Array,
     notifications: Array,
     readingLists: Object,
+    blockedUsers: Array
 });
 
 

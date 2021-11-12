@@ -918,6 +918,52 @@ router.route("/users/updateInfo").post((request, response) => {
                 )
             });
         }
+    } else if (name === "blockOrRemoveFollower") {
+        const { deleteUser, isBlock } = request.body;
+        console.log('request.body: ', request.body);
+        if (isBlock) {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull:
+                    {
+                        followers: { userId: deleteUser }
+                    },
+                    $push:
+                    {
+                        blockedUsers: deleteUser
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in deleting and blocking follower: ', error);
+                        response.status(404).send('Failed to block and deleted')
+                    } else {
+                        console.log('Update was successful. User was deleted as a follower and blocked, numsAffected: ', numsAffected);
+                        response.json('Follower was deleted and blocked.')
+                    };
+                }
+            )
+        } else {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull:
+                    {
+                        followers: { userId: deleteUser }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in deleting and blocking follower: ', error);
+                        response.status(404).send('Failed to block and deleted')
+                    } else {
+                        console.log('Update was successful. User was deleted as a follower, numsAffected: ', numsAffected);
+                        response.json('Follower was deleted.')
+                    };
+                }
+            )
+        }
     }
 }, (error, req, res, next) => {
     if (error) {
