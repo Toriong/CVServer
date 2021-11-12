@@ -859,24 +859,73 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     } else if (name === 'updateUserProfile') {
-        const { field } = request.body;
-        User.updateOne(
-            { _id: userId },
-            {
-                $set: { [`${field}`]: data }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.log("deleteFromReadingList, error message: ", error);
-                    response.json("Something went wrong: ", error);
-                };
-                console.log(`User changed their ${field}. numsAffected: `, numsAffected);
-                response.json("User profile updated.")
-            }
-        )
-
+        const { iconPath, userId, field } = request.body
+        if (iconPath) {
+            fs.unlink(`./userIcons/${iconPath}`, err => {
+                if (err) {
+                    console.error("Failed to delete", err)
+                } else {
+                    response.json("old icon deleted")
+                }
+            });
+        } else if (field === 'socialMedia' || field === 'topics') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        [`${field}`]: data
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in updating social media info of user: ', error);
+                    } else {
+                        console.log(`${field} was updated`, numsAffected);
+                        response.json(`${field} was successfully updated.`)
+                    }
+                }
+            )
+        } else if (!field) {
+            let isError;
+            console.log('data: ', data);
+            data.forEach((val, index) => {
+                const { field, data: newData } = val;
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $set:
+                        {
+                            [`${field}`]: newData
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error('Error in updating profile info of user: ', error);
+                            isError = true
+                        };
+                        console.log(`${field} updated, numsAffected: `, numsAffected)
+                        if (((data.length - 1) === index) && isError) {
+                            console.log('AN ERROR HAS OCCURRED.');
+                            console.error(error)
+                            response.sendStatus(404)
+                        } else if (((data.length - 1) === index)) {
+                            console.log('NO ERROR HAS OCCURRED.');
+                            console.log('Update completed: ', numsAffected);
+                            response.sendStatus(200);
+                        };
+                    }
+                )
+            });
+        }
     }
+}, (error, req, res, next) => {
+    if (error) {
+        res.json('An error has occurred. Please try again later.')
+    };
 });
+
+
 
 const userIconStorage = multer.diskStorage({
     destination: 'userIcons',
@@ -891,16 +940,13 @@ const userIconUpload = multer({
         fileSize: 1000000
     },
     fileFilter(req, file, cb) {
-        // if (!file.originalname.match(/\.(jpeg)$/)) {
-        //     return cb(new Error('Please upload a jpeg Image'))
-        // }
         cb(null, true)
     }
 });
 
 router.route('/users/updateUserIcon').post(userIconUpload.single('file'), (req, res) => {
     const { bio, userId, name } = req.body;
-    if (name === 'insertNewUserInfo') {
+    if (bio) {
         User.updateOne(
             { _id: userId },
             {
@@ -917,13 +963,33 @@ router.route('/users/updateUserIcon').post(userIconUpload.single('file'), (req, 
                 console.log("Bio updated, numsAffected: ", numsAffected);
             }
         )
-    }
+    } else {
+        User.updateOne(
+            { _id: userId },
+            {
+                $set:
+                {
+                    iconPath: userId + path.extname(req.file.originalname)
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.log("Error in updating bio. Error message: ", error)
+                } else {
+                    console.log("Bio updated, numsAffected: ", numsAffected);
+                }
+            }
+        )
+    };
     res.status(200).json({ message: 'Image upload successful!', iconPath: userId + path.extname(req.file.originalname) });
 }, (error, req, res, next) => {
     const { status } = res;
     if (status === 400 || error) {
-        res.json({ message: "Something went wrong" });
-        console.error("Error message: ", error);
+        console.error("ERROR! Can't upload image: ", error);
+        console.log("error.code: ", error.code);
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            res.status(413).send('Image is too large. Please choose a smaller image and try again.')
+        };
     }
 });
 
@@ -943,9 +1009,6 @@ const postIntroPicUpload = multer({
         fileSize: 100_000_000
     },
     fileFilter(req, file, cb) {
-        // if (!file.originalname.match(/\.(jpeg|png)$/)) {
-        //     return cb(new Error('Please upload a jpeg Image'))
-        // }
         cb(null, true);
     }
 });
@@ -978,13 +1041,6 @@ router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req,
     )
 }, (error, req, res, next) => {
     const { status } = res;
-    // if (error && error === "MulterError: File too large") {
-    // console.error("Error message: ", error);
-    // res.json({ message: "Image too large, please choice another image." })
-    // } else if (error) {
-    // console.error("Error message: ", error);
-    // res.json({ message: "Something went wrong, please try again." });
-    // };
     if (status === 400 && error) {
         console.error("Error message: ", error);
         res.json({ message: "An error has occurred. Your image may be too large. Please try again and upload a different image." })
@@ -1006,8 +1062,7 @@ router.route("/users/:package").get((request, response) => {
     if (name === "signInAttempt") {
         console.log("user wants to sign in")
         User.find({ username: username }).then(user => {
-            const [_user] = user;
-            if ((_user && _user.password) === passwordAttempt) {
+            if ((user[0] && user[0].password) === passwordAttempt) {
                 const { username, firstName, lastName, iconPath, _id, readingLists, topics, activities, isUserNew, bio, socialMedia } = user[0];
                 console.log('password matches user signed backed in.')
                 console.log("user signed back in")
@@ -1031,16 +1086,12 @@ router.route("/users/:package").get((request, response) => {
                 });
             } else {
                 console.error("Sign-in attempt FAILED");
-                response.json({
-                    message: "Invalid username or password.",
-                })
+                response.status(401).send('Invalid username or password.');
             }
         }).catch(error => {
             if (error) {
-                console.log("error message: ", error);
-                response.json({
-                    message: "Something went wrong, please try again."
-                })
+                console.error("error message: ", error);
+                response.status(401).send({ message: 'Something went wrong. Please try again later.' });
             }
         });
         console.log("wtf yo")
@@ -1137,7 +1188,6 @@ router.route("/users/:package").get((request, response) => {
     } else if (name === 'getAllUsers') {
         console.log('getting all users')
         User.find({}).then(users => {
-            // console.log("user received, here's one: ", users[0])
             response.json(
                 users
             )
@@ -1159,6 +1209,20 @@ router.route("/users/:package").get((request, response) => {
                     console.error("ERROR in finding user's account and followers: ", error)
                 }
             })
+    } else if (name === 'checkIfUserNameWasTaken') {
+        console.log('checking if username was taken...')
+        User.find({ username: username, _id: { $ne: userId } }).countDocuments().then(results => {
+            console.log("results: ", results);
+            if (results > 0) {
+                // username was taken
+                console.log('username was taken')
+                response.status(406).send(true)
+            } else {
+                // username wasn't taken
+                console.log('username was not taken')
+                response.status(200).send(false)
+            }
+        });
     }
 });
 
