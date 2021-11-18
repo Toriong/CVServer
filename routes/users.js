@@ -5,46 +5,12 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { promisify } = require('util');
-const pipeline = promisify(require('stream').pipeline)
-const upload = multer()
+
+
+// GOAL: if the current user is following the user that they want to block, delete that user from their following list  
 
 // NOTES:
 // do you need the msOfCurrentYear?
-
-// GOAL: DELETE INTRO PIC FROM SERVER WHEN THE RED DELETE BUTTON IS PRESSED
-
-
-// let gfs;
-// const conn = mongoose.createConnection(dbconnection, {
-//     useUnifiedTopology: true,
-//     useNewUrlParser: true
-// });
-// conn.once('open', () => {
-//     gfs = Grid(conn.db, mongoose.mongo)
-//     gfs.collection('uploads')
-// });
-
-
-
-// const storage = new GridFsStorage({
-//     url: dbconnection,
-//     file: (req, file) => {
-//         return new Promise((resolve, reject) => {
-//             crypto.randomBytes(16, (err, buf) => {
-//                 if (err) {
-//                     return reject(err);
-//                 }
-//                 const filename = buf.toString('hex') + path.extname(file.originalname);
-//                 const fileInfo = {
-//                     filename: filename,
-//                     bucketName: 'uploads'
-//                 };
-//                 resolve(fileInfo);
-//             });
-//         });
-//     }
-// });
-
 
 
 
@@ -183,11 +149,6 @@ router.route("/users").post((request, response) => {
 })
 
 
-
-// update the user's profile
-// CAN rename route to "/users/updateUserInfo"
-// don't need to use the params
-// don't use username, use the id of the user 
 router.route("/users/updateInfo").post((request, response) => {
     const { name, data, userId } = request.body
     if (name === "addBioTagsAndSocialMedia") {
@@ -404,28 +365,21 @@ router.route("/users/updateInfo").post((request, response) => {
         })
     } else if (name === "userCommented") {
         const { userId } = request.body;
-        const { postId: postIdOfComment } = data;
         console.log("tracking user activity")
         User.updateOne(
             { _id: userId },
             {
                 $addToSet: {
-                    "activities.comments": { postIdOfComment }
+                    "activities.comments": { postIdOfComment: data.postId }
                 }
             },
             (error, numsAffected) => {
-                if (error) throw error;
-                else {
-                    console.log(`User commented, 360: ${numsAffected}`);
-                    User.find(
-                        { _id: userId },
-                        { activities: 1, _id: 0 }
-                    ).then(results => {
-                        // WHY DO I NEED THIS CODE BELOW?
-                        // const { activities } = results[0]
-                        // response.json(activities);
-
-                    })
+                if (error) {
+                    console.log('An error has occurred in updating the comment activity of user: ', error);
+                    response.status(404).json('An error has occurred, please try again.');
+                } else {
+                    console.log(`User commented. Will send status 200. NumsAffected: `, numsAffected);
+                    response.sendStatus(200);
                 }
             }
         )
@@ -449,14 +403,8 @@ router.route("/users/updateInfo").post((request, response) => {
                 (error, numsAffected) => {
                     if (error) throw error;
                     else {
-                        console.log(`User replied to a comment, 411: ${numsAffected}`);
-                        User.find(
-                            { _id: userId },
-                            { activities: 1, _id: 0 }
-                        ).then(results => {
-                            const { activities } = results[0]
-                            response.json(activities);
-                        })
+                        console.log(`User replied to a new comment. Will send status 200. NumsAffected: `, numsAffected);
+                        response.sendStatus(200)
                     }
                 }
             );
@@ -507,14 +455,15 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) throw error;
                 else {
                     console.log(`User liked a post. NumsAffectd: `, numsAffected);
-                    User.find(
-                        { _id: userId },
-                        { activities: 1, _id: 0 }
-                    ).then(results => {
-                        console.log("results 483", results)
-                        const { activities } = results[0]
-                        response.json(activities);
-                    })
+                    // User.find(
+                    //     { _id: userId },
+                    //     { activities: 1, _id: 0 }
+                    // ).then(results => {
+                    //     console.log("results 483", results)
+                    //     const { activities } = results[0]
+                    //     response.json(activities);
+                    // })
+                    response.status(200).json({ isLiked: true })
                 }
             }
         )
@@ -533,14 +482,15 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) throw error;
                 else {
                     console.log(`User unliked a post, deleted activity. NumsAffectd: `, numsAffected);
-                    User.find(
-                        { _id: userId },
-                        { activities: 1, _id: 0 }
-                    ).then(results => {
-                        console.log("results 483", results)
-                        const { activities } = results[0]
-                        response.json(activities);
-                    })
+                    // User.find(
+                    //     { _id: userId },
+                    //     { activities: 1, _id: 0 }
+                    // ).then(results => {
+                    //     console.log("results 483", results)
+                    //     const { activities } = results[0]
+                    //     response.json(activities);
+                    // })
+                    response.status(200).json({ isLiked: false })
                 }
             }
         )
@@ -624,13 +574,14 @@ router.route("/users/updateInfo").post((request, response) => {
                         console.error(`Error message 597: ${error}`)
                     } else {
                         console.log("user liked reply to the same comment on the same post.", numsAffect);
-                        User.find(
-                            { _id: userId },
-                            { activities: 1, _id: 0 }
-                        ).then(results => {
-                            const { activities } = results[0]
-                            response.json(activities);
-                        })
+                        // User.find(
+                        //     { _id: userId },
+                        //     { activities: 1, _id: 0 }
+                        // ).then(results => {
+                        //     const { activities } = results[0]
+                        //     response.json(activities);
+                        // })
+                        response.sendStatus(200);
                     }
                 }
             )
@@ -659,13 +610,14 @@ router.route("/users/updateInfo").post((request, response) => {
                         console.error(`Error message 597: ${error}`)
                     } else {
                         console.log("user liked reply to a new comment on the same post.", numsAffect);
-                        User.find(
-                            { _id: userId },
-                            { activities: 1, _id: 0 }
-                        ).then(results => {
-                            const { activities } = results[0]
-                            response.json(activities);
-                        })
+                        // User.find(
+                        //     { _id: userId },
+                        //     { activities: 1, _id: 0 }
+                        // ).then(results => {
+                        //     const { activities } = results[0]
+                        //     response.json(activities);
+                        // })
+                        response.sendStatus(200);
                     }
                 }
 
@@ -704,6 +656,7 @@ router.route("/users/updateInfo").post((request, response) => {
     } else if (name === "followUser") {
         console.log('data: ', data);
         const { newFollowingUserId, signedInUserId, followedUserAt } = data;
+        console.log('dta ', data);
         User.updateOne({ _id: signedInUserId },
             {
                 $push:
@@ -918,52 +871,142 @@ router.route("/users/updateInfo").post((request, response) => {
                 )
             });
         }
-    } else if (name === "blockOrRemoveFollower") {
-        const { deleteUser, isBlock } = request.body;
-        console.log('request.body: ', request.body);
-        if (isBlock) {
+        // deleting the blocked user from the current user's followers list or just removing the user 
+    } else if (name === "blockOrDelFollower") {
+        const { deletedUser, isBlocked, blockedAt, isFollowing } = request.body;
+        let wasError;
+        let wasRemovedOnly;
+        if (isBlocked && isFollowing) {
+            console.log('user is being removed, blocked, and unFollowed.')
             User.updateOne(
                 { _id: userId },
                 {
                     $pull:
                     {
-                        followers: { userId: deleteUser }
+                        followers: { userId: deletedUser },
+                        "activities.following": { userId: deletedUser }
                     },
                     $push:
                     {
-                        blockedUsers: deleteUser
+                        blockedUsers: { userId: deletedUser, blockedAt }
                     }
                 },
                 (error, numsAffected) => {
                     if (error) {
                         console.error('Error in deleting and blocking follower: ', error);
-                        response.status(404).send('Failed to block and deleted')
+                        wasError = true;
                     } else {
-                        console.log('Update was successful. User was deleted as a follower and blocked, numsAffected: ', numsAffected);
-                        response.json('Follower was deleted and blocked.')
+                        console.log('User was deleted as a follower and blocked, numsAffected: ', numsAffected);
                     };
                 }
-            )
-        } else {
+            );
+            User.updateOne(
+                { _id: deletedUser },
+                {
+                    $pull:
+                    {
+                        followers: { userId: userId }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in deleting following: ', error);
+                        wasError = true;
+                    } else {
+                        console.log('Current use was deleted as a follower from the blocked and deleted user, numsAffected: ', numsAffected);
+                    };
+                }
+            );
+        } else if (isBlocked) {
+            console.log('user is being removed and blocked.')
             User.updateOne(
                 { _id: userId },
                 {
                     $pull:
                     {
-                        followers: { userId: deleteUser }
+                        followers: { userId: deletedUser }
+                    },
+                    $push:
+                    {
+                        blockedUsers: { userId: deletedUser, blockedAt }
                     }
                 },
                 (error, numsAffected) => {
                     if (error) {
                         console.error('Error in deleting and blocking follower: ', error);
-                        response.status(404).send('Failed to block and deleted')
+                        wasError = true;
                     } else {
-                        console.log('Update was successful. User was deleted as a follower, numsAffected: ', numsAffected);
-                        response.json('Follower was deleted.')
+                        console.log('User was deleted as a follower and blocked, numsAffected: ', numsAffected);
                     };
                 }
-            )
+            );
+        } else {
+            console.log('user is being removed.')
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull:
+                    {
+                        followers: { userId: deletedUser }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in deleting and blocking follower: ', error);
+                        wasError = true;
+                    } else {
+                        console.log('User was deleted as a follower and blocked, numsAffected: ', numsAffected);
+                        wasRemovedOnly = true;
+                    };
+                }
+            );
         }
+        User.updateOne(
+            { _id: deletedUser },
+            {
+                $pull:
+                {
+                    "activities.following": { userId: userId }
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('Error in deleting following: ', error);
+                    wasError = true;
+                    if (wasError) {
+                        response.status(404).send('Something went wrong, please try again later.')
+                    }
+                } else {
+                    console.log('Update was successful. User was deleted as a follower and blocked, numsAffected: ', numsAffected);
+                    // response.json('User was deleted as a follower and blocked.')
+                    response.json({
+                        message: wasRemovedOnly ? 'User was removed as a follower.' : 'User was deleted as a follower and blocked.',
+                        isBlocked: isBlocked,
+                        isFollowing: isFollowing
+                    })
+                };
+            }
+        )
+    } else if (name === 'unblockUser') {
+        const { currentUserId, blockedUserId } = request.body;
+        User.updateOne(
+            { _id: currentUserId },
+            {
+                $pull:
+                {
+                    blockedUsers: { userId: blockedUserId }
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('Error in deleting user from block list: ', error);
+                    response.status(404).send('Something went wrong, please try again later.')
+                } else {
+                    console.log('Update was successful. User was deleted from block list, numsAffected: ', numsAffected);
+                    response.json(' was removed from blocked list')
+                };
+            }
+        )
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -1109,26 +1152,32 @@ router.route("/users/:package").get((request, response) => {
         console.log("user wants to sign in")
         User.find({ username: username }).then(user => {
             if ((user[0] && user[0].password) === passwordAttempt) {
-                const { username, firstName, lastName, iconPath, _id, readingLists, topics, activities, isUserNew, bio, socialMedia } = user[0];
+                const { username, firstName, lastName, iconPath, _id, readingLists, topics, activities, isUserNew, bio, socialMedia, blockedUsers, publishedDrafts } = user[0];
                 console.log('password matches user signed backed in.')
                 console.log("user signed back in")
+                const defaultUserInfo = { username, firstName, lastName, iconPath, _id, isUserNew, bio };
                 let user_;
                 if (activities) {
-                    delete (activities._id);
-                    user_ = { _id, iconPath, username, isUserNew, firstName, lastName, activities: activities, bio }
+                    user_ = { activities: activities }
                 }
                 if (readingLists && Object.keys(readingLists).length) {
-                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { _id, iconPath, isUserNew, username, firstName, lastName, readingLists, bio }
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { readingLists }
                 }
                 if (topics && topics.length) {
-                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, topics } : { _id, iconPath, isUserNew, username, firstName, lastName, topics, bio }
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, topics } : { topics }
                 };
                 if (socialMedia && socialMedia.length) {
-                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, socialMedia } : { _id, iconPath, isUserNew, username, firstName, lastName, socialMedia, bio }
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, socialMedia } : { socialMedia }
+                }
+                if (blockedUsers && blockedUsers.length) {
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, blockedUsers } : { blockedUsers }
+                }
+                if (publishedDrafts && publishedDrafts.length) {
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, publishedDrafts } : { publishedDrafts }
                 }
                 response.json({
                     message: `Welcome back ${username}!`,
-                    user: user_ ?? { username, firstName, lastName, iconPath, _id, isUserNew, bio }
+                    user: user_ ? { ...user_, ...defaultUserInfo } : defaultUserInfo
                 });
             } else {
                 console.error("Sign-in attempt FAILED");
@@ -1137,7 +1186,7 @@ router.route("/users/:package").get((request, response) => {
         }).catch(error => {
             if (error) {
                 console.error("error message: ", error);
-                response.status(401).send({ message: 'Something went wrong. Please try again later.' });
+                response.status(404).send({ message: 'Something went wrong. Please try again later.' });
             }
         });
         console.log("wtf yo")
@@ -1269,6 +1318,15 @@ router.route("/users/:package").get((request, response) => {
                 response.status(200).send(false)
             }
         });
+    } else if (name === 'checkBlockStatus') {
+        const { authorId, currentUserId } = package;
+        User.find({ _id: authorId }, { blockedUsers: 1, _id: 0 }).then(results => {
+            let isBlocked = false;
+            if (results[0] && results[0].blockedUsers && results[0].blockedUsers.length) {
+                isBlocked = results[0].blockedUsers.map(({ userId }) => userId).includes(currentUserId);
+            };
+            response.json({ isBlocked });
+        }).catch(error => { error && console.error('Error in finding user and checking block status: ', error) })
     }
 });
 

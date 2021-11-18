@@ -1,8 +1,9 @@
-const { request } = require('express');
+const { request, response } = require('express');
 const express = require('express');
 const router = express.Router();
 const getTime = require("../functions/getTime");
 const BlogPost = require('../models/blogPost');
+const User = require('../models/user');
 
 // NOTES:
 // get 10 posts at a time
@@ -10,7 +11,7 @@ const BlogPost = require('../models/blogPost');
 //get the blogPost from the database and sends it to the Feed.js component
 router.route("/blogPosts").get((req, res) => {
     BlogPost.find()
-        .then(blogPost => { res.json(blogPost) })
+        .then(blogPosts => { res.json(blogPosts) })
 });
 
 
@@ -326,7 +327,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 }
             },
             {
-                multi: false,
                 arrayFilters: [{ "reply.replyId": replyId }]
             },
             (error, numbersAffected) => {
@@ -337,6 +337,27 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 }
             }
         )
+    } else if (name === 'deleteBlockUserActivity') {
+        // GOAL: get all of the comments 
+        const { authorId, blockedUser, commentActivity, replyActivity } = req.body;
+        BlogPost.updateMany(
+            { authorId: authorId },
+            {
+                $pull:
+                {
+                    userIdsOfLikes: { userId: blockedUser },
+                    comments: { userId: blockedUser },
+                    'comments.replies.$[reply].userIdsOfLikes': { userId: blockedUser }
+                    // GO THROUGH EACH comment.replies field and see if the blocked user made a reply to any of the comments on the user's post. If so, then delete the user's reply 
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('Error in deleting the the comments and post likes from blocked user: ', error);
+                }
+                console.log("Update for deleting blocked user's comments and post likes is done, numsAffected: ", numsAffected);
+            }
+        );
     }
 })
 
@@ -412,8 +433,89 @@ router.route("/blogPosts/:package").get((req, res) => {
             }
             res.json(_posts);
         });
-    } else if (name === 'getAll') {
-
+    } else if (name === 'getAllWithOutBlockedUsers') {
+        console.log('excluding posts from blocked users')
+        const { blockedUsers } = package;
+        BlogPost.find(
+            { authorId: { $nin: blockedUsers } },
+            error => {
+                if (error) {
+                    console.error('An error has occurred in getting all blog posts: ', error);
+                }
+            }
+        ).then(blogPosts => {
+            console.log('blog posts received')
+            res.json(blogPosts)
+        })
+    } else if (name === 'getCommentsAndRepliesOfUser') {
+        const { comments: commentsActivity, replies: repliesActivity } = package.activities;
+        let userCommentIds;
+        let userReplyIds;
+        if (commentsActivity || repliesActivity) {
+            commentsActivity && commentsActivity.forEach((comment, index) => {
+                BlogPost.find(
+                    {
+                        _id: comment.postIdOfComment
+                    },
+                    {
+                        _id: 0,
+                        comments: 1
+                    }
+                ).then(results => {
+                    const { comments: _comments } = results[0];
+                    _comments.forEach(comment => {
+                        const { userId: _userId, commentId, userIdsOfLikes: _userIdsOfLikes } = comment;
+                        const userIdsOfLikes = _userIdsOfLikes.map(({ userId }) => userId);
+                        if (userId === _userId) {
+                            userCommentIds = userCommentIds ? [...userCommentIds, { commentId, userIdsOfLikes }] : [{ commentId, userIdsOfLikes }]
+                        }
+                    });
+                    if ((index === commentsActivity.length - 1) && !repliesActivity) {
+                        response.json({
+                            userCommentIds
+                        });
+                    }
+                });
+            });
+            repliesActivity && repliesActivity.forEach((reply, index) => {
+                const { postId, repliedToCommentIds } = reply;
+                BlogPost.find(
+                    {
+                        _id: postId
+                    },
+                    {
+                        _id: 0,
+                        comments: 1
+                    }
+                ).then(results => {
+                    const { comments } = results[0];
+                    let repliesFromUser = []
+                    comments.forEach(comment => {
+                        comment.replies && comment.replies.forEach(reply => {
+                            const { userId: _userId, replyId, userIdsOfLikes: _userIdsOfLikes } = reply
+                            const userIdsOfLikes = _userIdsOfLikes.map(({ userId }) => userId);
+                            if (_userId === userId) {
+                                repliesFromUser.push({ replyId, userIdsOfLikes });
+                            }
+                        });
+                    });
+                    if (repliesFromUser.length) {
+                        userReplyIds = ((userReplyIds && userReplyIds.length) ? [...userReplyIds, ...repliesFromUser] : repliesFromUser)
+                    };
+                    if ((index === repliesActivity.length - 1) && (userCommentIds && userReplyIds)) {
+                        console.log('hello there')
+                        res.json({
+                            userCommentIds,
+                            userReplyIds
+                        });
+                    } else if ((index === repliesActivity.length - 1) && (userReplyIds)) {
+                        res.json({
+                            userReplyIds
+                        });
+                    }
+                });
+            })
+        }
     }
 });
 
