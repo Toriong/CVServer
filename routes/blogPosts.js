@@ -1,3 +1,4 @@
+const { ObjectId } = require('bson');
 const { request, response } = require('express');
 const express = require('express');
 const router = express.Router();
@@ -358,13 +359,51 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 console.log("Update for deleting blocked user's comments and post likes is done, numsAffected: ", numsAffected);
             }
         );
+    } else if (name === 'deleteBlockedUserContent') {
+        // GOAL: DELETE ALL REPLIES AND COMMENTS MADE BY THE BLOCKED USER
+        // CU = 'current user'
+        const { commentsOnCUPosts, repliesOnCUPosts, blockedUser } = req.body;
+        if (repliesOnCUPosts) {
+            const postIds = repliesOnCUPosts.map(({ postId }) => postId);
+            const commentIds = repliesOnCUPosts.map(({ repliedToComments }) => repliedToComments).flat();
+            BlogPost.updateMany(
+                { _id: { $in: postIds } },
+                {
+                    $pull:
+                    {
+                        'comments.$[comment].replies': { userId: blockedUser }
+                    }
+                },
+                {
+                    multi: true,
+                    arrayFilters: [{ 'comment.commentId': { $in: commentIds } }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in deleting blocked user replies on current user post.');
+                    } else {
+                        console.log('Attempt to delete replies o blocked user, results: ', numsAffected);
+                        !commentsOnCUPosts && res.json('Blocked user replies has been deleted on current user posts.')
+                    }
+                }
+            )
+        };
+
+
+        // once there is a match, access the replies field and the delete all replies that were written by the blocked user 
+        // go through each comment, and find the matching comment that is in the commentIds array
+        // update the blogPosts by using the array of the post ids as your search query 
+        // get all of the post Ids and put them into an array
+        // get all of the commentIds an put them into an array
+        res.json('Post requested received, will update user posts');
+
     }
 })
 
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts")
     const package = JSON.parse(req.params.package);
-    const { name, signedInUserId: userId, draftId } = package;
+    const { name, signedInUserId: userId, draftId, type } = package;
     if (name === "getPublishedDrafts") {
         BlogPost.find({ authorId: userId }).then(posts => {
             if (posts.length) {
@@ -384,6 +423,7 @@ router.route("/blogPosts/:package").get((req, res) => {
         })
     } else if (name === "getPost") {
         BlogPost.find(
+            // why I am using the or operator, use the $AND operator?
             { $or: [{ _id: draftId }, { authorId: package.authorId }] },
             error => {
                 if (error) {
@@ -447,74 +487,154 @@ router.route("/blogPosts/:package").get((req, res) => {
             console.log('blog posts received')
             res.json(blogPosts)
         })
-    } else if (name === 'getCommentsAndRepliesOfUser') {
-        const { comments: commentsActivity, replies: repliesActivity } = package.activities;
-        let userCommentIds;
-        let userReplyIds;
-        if (commentsActivity || repliesActivity) {
-            commentsActivity && commentsActivity.forEach((comment, index) => {
-                BlogPost.find(
-                    {
-                        _id: comment.postIdOfComment
+    } else if (name === 'commentsAndRepliesByUserAndCommentsOnUserPosts') {
+        let userPostData;
+        const { activitiesComments, activitiesReplies, type } = package;
+        if (type === 'getCommentsOnUserPosts') {
+            BlogPost.find({ authorId: userId }, { comments: 1 }).then(posts => {
+                if (posts.length) {
+                    let _posts = posts.filter(({ comments: postComments }) => !!postComments.length);
+                    _posts = _posts.length ?
+                        _posts.map(post => {
+                            const { _id, comments } = post;
+                            const _comments = comments.map(comment => {
+                                const { commentId, userId, replies } = comment;
+                                const _replies = (replies && replies.length) && replies.map(({ replyId, userId }) => { return { userId, replyId } });
+                                return _replies ?
+                                    {
+                                        commentId,
+                                        userId,
+                                        replies: _replies
+                                    }
+                                    :
+                                    {
+                                        commentId,
+                                        userId
+                                    }
+                            });
+                            return {
+                                postId: _id,
+                                comments: _comments
+                            }
+                        })
+                        :
+                        _posts
+
+                    if (_posts.length) {
+                        console.log('_posts: ', _posts);
+                        userPostData = {
+                            userPostsComments: _posts
+                        };
+                    };
+                }
+                userPostData ? res.json(userPostData) : res.json({ isEmpty: true, message: 'no post comment' })
+            })
+        };
+        if (activitiesComments || activitiesReplies) {
+            console.log('will get comments');
+            const postIdsOfComments = activitiesComments && activitiesComments.map(({ postIdOfComment }) => postIdOfComment);
+            const postIdsOfReplies = activitiesReplies && activitiesReplies.map(({ postId }) => postId);
+            const replyToCommentIds = activitiesReplies && activitiesReplies.map(({ repliedToCommentIds }) => repliedToCommentIds).flat();
+            console.log('activitiesComments: ', activitiesComments)
+            activitiesComments && BlogPost.aggregate([
+                {
+                    $match: {
+                        _id: { $in: postIdsOfComments },
+                        'comments.userId': userId
                     },
-                    {
-                        _id: 0,
-                        comments: 1
+                },
+                {
+                    $project: {
+                        comments: {
+                            $filter: {
+                                input: '$comments',
+                                as: 'comment',
+                                // look up eq conditional 
+                                cond: { $eq: ['$$comment.userId', userId] }
+                            }
+                        }
                     }
-                ).then(results => {
-                    const { comments: _comments } = results[0];
-                    _comments.forEach(comment => {
-                        const { userId: _userId, commentId, userIdsOfLikes: _userIdsOfLikes } = comment;
-                        const userIdsOfLikes = _userIdsOfLikes.map(({ userId }) => userId);
-                        if (userId === _userId) {
-                            userCommentIds = userCommentIds ? [...userCommentIds, { commentId, userIdsOfLikes }] : [{ commentId, userIdsOfLikes }]
+                }
+            ]).then(_userComments => {
+                console.log("_userComments: ", _userComments);
+                let userCommentsAll;
+                userCommentsAll = _userComments.map(comment => {
+                    const _comments = comment.comments.filter(({ userIdsOfLikes }) => userIdsOfLikes !== undefined).map(({ commentId, userIdsOfLikes }) => { return { commentId, userIdsOfLikes } });
+
+                    return {
+                        ...comment,
+                        comments: _comments
+                    }
+                });
+                console.log('userComments: ', userCommentsAll);
+                userCommentsAll = userCommentsAll.filter(({ comments }) => !!comments.length);
+                userCommentsAll.length ? res.json({ userCommentsAll }) : res.json({ isEmpty: true, message: 'no comments' });
+            })
+
+            activitiesReplies && BlogPost.find({
+                _id: {
+                    $in: postIdsOfReplies
+                }
+            },
+                {
+                    _id: 1,
+                    comments: 1
+                }
+            ).then(replyToComments => {
+                let userRepliesAll = [];
+                replyToComments.forEach(_comment => {
+                    const { comments: commentsOnPost, _id: _postId } = _comment;
+                    commentsOnPost.forEach(comment => {
+                        let userPostReplies;
+                        const { commentId, replies } = comment;
+                        if (replyToCommentIds.includes(commentId)) {
+                            userPostReplies = replies.filter(({ userId: _userId }) => userId === _userId);
+                            userPostReplies = userPostReplies.length && userPostReplies.map(({ replyId, userIdsOfLikes }) => { return { replyId, userIdsOfLikes } });
+                            const targetPost = userRepliesAll.find(({ postId }) => postId === _postId);
+                            if (targetPost && userPostReplies) {
+                                const isCommentRepliedPresent = targetPost.commentIdsAndUserReplyIds.find(({ commentId: _commentId }) => commentId === _commentId) !== undefined;
+                                if (isCommentRepliedPresent) {
+                                    userRepliesAll = userRepliesAll.map(post_comment_replies => {
+                                        const { postId, commentIdsAndUserReplyIds } = post_comment_replies;
+                                        let _commentIdsAndUserReplyIds;
+                                        if (postId === _postId) {
+                                            _commentIdsAndUserReplyIds = commentIdsAndUserReplyIds.map(commentIdAndUserReplyIds => {
+                                                const { commentId: _commentId, userReplyIds } = commentIdsAndUserReplyIds;
+                                                if (commentId === _commentId) {
+                                                    return {
+                                                        ...commentIdAndUserReplyIds,
+                                                        userReplyIds: userReplyIds.length ? [...userReplyIds, ...userPostReplies] : userPostReplies
+                                                    }
+                                                }
+
+                                                return commentIdAndUserReplyIds;
+                                            })
+                                        };
+
+                                        return _commentIdsAndUserReplyIds ? { ...post_comment_replies, commentIdsAndUserReplyIds: _commentIdsAndUserReplyIds } : post_comment_replies
+                                    })
+                                } else {
+                                    userRepliesAll = userRepliesAll.map(post_comment_replies => {
+                                        const { postId, commentIdsAndUserReplyIds } = post_comment_replies;
+                                        if (postId === _postId) {
+                                            return {
+                                                ...post_comment_replies,
+                                                commentIdsAndUserReplyIds: commentIdsAndUserReplyIds.length ? [...commentIdsAndUserReplyIds, { commentId, userReplyIds: userPostReplies }] : [{ commentId, userReplyIds: userPostReplies }]
+                                            }
+                                        };
+
+                                        return post_comment_replies
+                                    })
+                                }
+                            } else if (userPostReplies) {
+                                userRepliesAll.push({ postId: _postId, commentIdsAndUserReplyIds: [{ commentId, userReplyIds: userPostReplies }] })
+                            }
                         }
                     });
-                    if ((index === commentsActivity.length - 1) && !repliesActivity) {
-                        response.json({
-                            userCommentIds
-                        });
-                    }
                 });
+                console.log('hello there')
+                userRepliesAll.length ? res.json({ userRepliesAll }) : res.json({ isEmpty: true, message: 'no replies' });
             });
-            repliesActivity && repliesActivity.forEach((reply, index) => {
-                const { postId, repliedToCommentIds } = reply;
-                BlogPost.find(
-                    {
-                        _id: postId
-                    },
-                    {
-                        _id: 0,
-                        comments: 1
-                    }
-                ).then(results => {
-                    const { comments } = results[0];
-                    let repliesFromUser = []
-                    comments.forEach(comment => {
-                        comment.replies && comment.replies.forEach(reply => {
-                            const { userId: _userId, replyId, userIdsOfLikes: _userIdsOfLikes } = reply
-                            const userIdsOfLikes = _userIdsOfLikes.map(({ userId }) => userId);
-                            if (_userId === userId) {
-                                repliesFromUser.push({ replyId, userIdsOfLikes });
-                            }
-                        });
-                    });
-                    if (repliesFromUser.length) {
-                        userReplyIds = ((userReplyIds && userReplyIds.length) ? [...userReplyIds, ...repliesFromUser] : repliesFromUser)
-                    };
-                    if ((index === repliesActivity.length - 1) && (userCommentIds && userReplyIds)) {
-                        console.log('hello there')
-                        res.json({
-                            userCommentIds,
-                            userReplyIds
-                        });
-                    } else if ((index === repliesActivity.length - 1) && (userReplyIds)) {
-                        res.json({
-                            userReplyIds
-                        });
-                    }
-                });
-            })
         }
     }
 });
