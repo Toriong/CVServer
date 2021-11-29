@@ -150,7 +150,7 @@ router.route("/users").post((request, response) => {
 
 
 router.route("/users/updateInfo").post((request, response) => {
-    const { name, data, userId } = request.body
+    const { name, data, userId, username } = request.body
     if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
         const { topics, socialMedia } = data
@@ -731,6 +731,7 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         );
     } else if (name === "saveIntoReadingList") {
+        console.log('request.body: ', request.body);
         const { signedInUserId: userId, wasListCreated, listName: title, isPrivate, newPostSaved } = request.body;
         if ((isPrivate || isPrivate === false) && wasListCreated) {
             // how to allow duplicate fields in MONGODB?
@@ -794,13 +795,14 @@ router.route("/users/updateInfo").post((request, response) => {
             );
         }
     } else if (name === 'deleteFromReadingList') {
-        const { signedInUserId: userId, selectedPostId: postId_, listName: title } = request.body;
+        console.log('request.body: ', request.body);
+        const { signedInUserId: userId, postId, listName: title } = request.body;
         User.updateOne(
             { _id: userId },
             {
                 $pull:
                 {
-                    [`readingLists.${title}.list`]: { postId: postId_ }
+                    [`readingLists.${title}.list`]: { postId: postId }
                 }
             },
             (error, numsAffected) => {
@@ -1007,6 +1009,55 @@ router.route("/users/updateInfo").post((request, response) => {
                 };
             }
         )
+    } else if (name === 'updateReadingListInfo') {
+        const { listName } = request.body;
+        const { editedListName, description, isPrivate } = data;
+        // CASES:
+        // case1: listName, description, and privacy changed
+        // case2: listName, description changed
+        // case3: listName and privacy changed
+        // case4: description and privacy changed 
+        // case5: listName changed
+        // case6: description changed 
+        // case7: listName changed 
+        if (editedListName && description && (isPrivate || isPrivate === false)) {
+            console.log('editListName: ', editedListName);
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        [`readingLists.${listName}.description`]: description,
+                        [`readingLists.${listName}.isPrivate`]: isPrivate
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in updating reading list of user');
+                    } else {
+                        console.log('Reading list has been updated, numsAffected: ', numsAffected);
+                    }
+                }
+            );
+            User.updateOne(
+                { _id: userId },
+                {
+                    $rename:
+                    {
+                        [`readingLists.${listName}`]: `readingLists.${editedListName}`
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in updating reading list of user');
+                        response.status(404).send('An error has occurred. Please try again later.');
+                    } else {
+                        console.log('Reading list has been updated, numsAffected: ', numsAffected);
+                        response.status(200).send('List updated.');
+                    }
+                }
+            );
+        }
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -1327,6 +1378,28 @@ router.route("/users/:package").get((request, response) => {
             };
             response.json({ isBlocked });
         }).catch(error => { error && console.error('Error in finding user and checking block status: ', error) })
+    } else if (name === 'checkListName') {
+        console.log('checking if list name was taken');
+        const { listName } = package;
+        console.log('listName: ', listName);
+        User.findOne({ _id: userId }, { [`readingLists.${listName}`]: 1, _id: 0 }).then(result => {
+            const isListNameTaken = Object.keys(result.readingLists).length
+            if (isListNameTaken) {
+                // list name was taken
+                console.log('list name was taken');
+                response.status(406)
+            } else {
+                // list name wasn't taken
+                console.log('list name was not taken')
+                response.status(200)
+            }
+
+        }).catch(error => {
+            if (error) {
+                console.log(error)
+                response.status(500);
+            }
+        })
     }
 });
 
