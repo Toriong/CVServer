@@ -42,6 +42,16 @@ const activitiesSchema = new Schema(
     }
 );
 
+const notificationsSchema = new Schema(
+    {
+        replies: Array,
+        comments: Array,
+        likes: Object,
+        newFollower: Array,
+        followingNewPost: Array
+    }
+);
+
 
 
 
@@ -67,9 +77,9 @@ const userSchema = new Schema({
     publishedDrafts: Array,
     activities: activitiesSchema,
     followers: Array,
-    notifications: Array,
     readingLists: Object,
-    blockedUsers: Array
+    blockedUsers: Array,
+    notifications: Object
 });
 
 

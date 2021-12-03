@@ -5,9 +5,76 @@ const router = express.Router();
 const getTime = require("../functions/getTime");
 const BlogPost = require('../models/blogPost');
 const User = require('../models/user');
+// make an activities for all of the edits that the user did to comments replies and posts 
+
+// GOAL: display all notifications pertaining to the following: replies on user's post, replies to user comments, comments on user's posts, likes for the following: (comments, replies, posts)
+
+
+
+// FEATURES:
+// real time updates for notifications
+
+// store the notifications into the db 
+
+
+// MAIN GOAL: notify the author of the user when another user replies, get the time of that reply 
 
 // NOTES:
-// get 10 posts at a time
+// show the content of the reply on the user's notifications page 
+// notifications.replies
+// notifications.comments
+// notifications will be an object that will consist of the following:
+// comments
+// replies (consist of replies on user's post and replies to user's comments)
+// likes: {comments, replies, posts}
+// followingNewPosts
+// the storing for notifications.replies will be stored as follows: {postId, commentId, and the replyId}
+// when the user replies to another user notify the following: whoever the user replied to, the author of the post  
+// all replies and comments on user's post will notify the author of the post 
+// case one: the user replies to a user who is not the author of a post but has a commented on the post 
+// case two: the user replies to a user's comment who is the author of the post
+// before notify the user who wrote the reply, check first if the user who wrote the comment, also wrote the post. If the user 
+// when displaying the notifications for replies, check if the user wrote the post. If the user did wrote the post, then display the following, (userA replied to your comment on your post: 'comment data here');
+// using the array that has all of the ids of the articles that were posted by the current user, checked if the post that the user replied on was written by the current user 
+
+// GOAL FOR REPLY DISPLAY: display all of the replies that were made on the user's post: "userA replied to a comment on your post: 'the reply data here'"
+
+// GOAL FOR REPLY THAT WAS MADE TO THE CURRENT USER DISPLAY: display all of the replies that were made on the user's post when the comment was made by the author of the post: "userA replied to your comment on your post: 'the reply data here'"
+
+// GOAL: IF THE USER REPLIES TO A COMMENT THAT WAS MADE ON THE CURRENT USER'S POST AND THE COMMENT WAS MADE BY THE AUTHOR OF THE POST HAVE THE FOLLOWING DISPLAYED: "userA replied to your comment on your post: 'the reply data here'"
+// all that is in notifications.replies is sent to the client
+
+// GOAL: store the user replies notifications with the following format: [{postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]]
+
+// CASE #1: the userA replies again to userB's comment and the post is written by userB
+// the replyId is pushed into replyIds
+// the author is found in the array that is stored in replies 
+// the comment that userA replied to found by using the commentId in the array that is stored in repliesInfo
+// the post if found by using the postId of where the reply resides in. 
+// the following is sent to the backend: {name of package, postId, commentId, authorIdOfComment, authorId of reply, the id of the reply}
+// userA's id exists (the author of the reply has already made a reply to the target comment before)
+// check if userA's id exists in the commentsRepliedTo.replies array {authorId} 
+// the comment id exists 
+// check if the comment id that userA replied to exists in commentsRepliedTo  
+// the author id of the comment exists in the repliesInfo array 
+// check if the author id of the comment that userA replied to exists in repliesInfo
+// the post id exists in notifications.replies
+// check if the post id exists in notifications.replies
+// the notifications.replies array of userB is retrieved from the database
+// get the id of the post 
+// get the id of the comment 
+
+
+
+
+// GOAL:
+// when the user replies on a post, send a notification to the author of that post
+
+// the notification will be stored in the db as follows: {id of the notification, the id of the post, the id of the comment, [the id of the reply]: [{replyId, wasSeen}] }
+
+
+
+
 
 //get the blogPost from the database and sends it to the Feed.js component
 router.route("/blogPosts").get((req, res) => {

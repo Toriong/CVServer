@@ -12,6 +12,17 @@ const { promisify } = require('util');
 // NOTES:
 // do you need the msOfCurrentYear?
 
+// CASE #2: userA is the first reply to userB's comment and the post is written by userB. Store a reply notification for userB
+// the following is pushed into userB.notifications.replies: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]
+// the notifications.replies field is accessed 
+// userB is found by using the notifyUserId
+// the following is received from the front-end: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]}
+// the send the following: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]}
+// notifications.replies doesn't exist
+// if notifications.replies doesn't exist, then send the following to the server: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]}
+// get notifications.replies of userB. 
+// userA replies to userB's comment which is on userB's post.
+
 
 
 
@@ -150,7 +161,7 @@ router.route("/users").post((request, response) => {
 
 
 router.route("/users/updateInfo").post((request, response) => {
-    const { name, data, userId, username } = request.body
+    const { name, data, userId, username, listName } = request.body
     if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
         const { topics, socialMedia } = data
@@ -295,7 +306,7 @@ router.route("/users/updateInfo").post((request, response) => {
             message: "post request successful, new rough draft added"
         });
     } else if (name === "deleteDraft") {
-        const { data: draftId } = request.body;
+        const { draftId } = request.body;
         User.updateOne(
             { _id: userId },
             {
@@ -1010,25 +1021,14 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     } else if (name === 'updateReadingListInfo') {
-        const { listName } = request.body;
         const { editedListName, description, isPrivate } = data;
-        // CASES:
-        // case1: listName, description, and privacy changed
-        // case2: listName, description changed
-        // case3: listName and privacy changed
-        // case4: description and privacy changed 
-        // case5: listName changed
-        // case6: description changed 
-        // case7: listName changed 
-        if (editedListName && description && (isPrivate || isPrivate === false)) {
-            console.log('editListName: ', editedListName);
+        if (description) {
             User.updateOne(
                 { _id: userId },
                 {
                     $set:
                     {
-                        [`readingLists.${listName}.description`]: description,
-                        [`readingLists.${listName}.isPrivate`]: isPrivate
+                        [`readingLists.${listName}.description`]: description
                     }
                 },
                 (error, numsAffected) => {
@@ -1039,6 +1039,26 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 }
             );
+        }
+        if (isPrivate || (isPrivate === false)) {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        [`readingLists.${listName}.isPrivate`]: isPrivate
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in updating reading list of user has occurred: ', error);
+                    } else {
+                        console.log('Reading list has been updated, numsAffected: ', numsAffected);
+                    }
+                }
+            );
+        };
+        if (editedListName) {
             User.updateOne(
                 { _id: userId },
                 {
@@ -1049,18 +1069,179 @@ router.route("/users/updateInfo").post((request, response) => {
                 },
                 (error, numsAffected) => {
                     if (error) {
-                        console.error('Error in updating reading list of user');
-                        response.status(404).send('An error has occurred. Please try again later.');
+                        console.error('Error in updating reading list of user has occurred: ', error);
                     } else {
                         console.log('Reading list has been updated, numsAffected: ', numsAffected);
-                        response.status(200).send('List updated.');
                     }
                 }
             );
         }
+        response.status(200).send('List updated.');
+    } else if (name === 'deleteReadingList') {
+        User.updateOne(
+            { _id: userId },
+            {
+                $unset:
+                {
+                    [`readingLists.${listName}`]: ''
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('Error in updating reading list of user has occurred: ', error);
+                } else {
+                    console.log('Reading list has been updated, numsAffected: ', numsAffected);
+                    response.status(200).send('List was deleted.');
+                }
+            }
+        );
+    } else if (name === 'replyNotification') {
+        // CASE #2: userA is the first reply to userB's comment and the post is written by userB. Store a reply notification for userB
+        // the following is pushed into userB.notifications.replies: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]
+        // the notifications.replies field is accessed 
+        // userB is found by using the notifyUserId
+        // the following is true: !isSamePost && !isCommentAuthorPresent && !hasReplied
+        // if isNewPost, then push the following into userB.notifications.replies: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]
+        // the following is received from the front-end: {name of package, postId, isNewPost,author id of comment, comment id, reply id, author id of reply}
+        // the send the following: {name of package, postId, author id of comment, comment id, reply id, author id of reply}
+        // notifications.replies doesn't exist
+        // if notifications.replies doesn't exist or is empty, then send the following to the server: {name of package, postId, author id of comment, comment id, reply id, author id of reply}
+        // get notifications.replies of userB. 
+        // userA replies to userB's comment which is on userB's post.
+
+        // CASES NOTES:
+        // userY
+        // userX
+        // x and y will always be different
+
+        // GOAL: notify userY when userX replies to either a comment--by userY or not by userY--on userY's post or when userX replies to userY's comment on a post not written by userY
+
+        // userX has replied to a comment not written by userY but has replied to the comment before. The post is by userY.
+        // userX has replied to a comment not written by userY for the first time or hasn't replied to the comment before. The post is by userY.
+
+        // userX replies to a comment written by userY but has replied to the comment before. The post is written by userY
+        // userX replies to a comment written by userY but is the first reply or has not replied to the comment before. The post is written by userY
+
+        // userX replies to a comment written by userY but has replied to the comment before. The post is not written by userY
+        // userX replies to a comment written by userY but is the first reply or has not replied to the comment before. The post is not written by userY
+        const { isPostPresent, isCommentAuthorPresent, isCommentPresent, hasReplied, notifyUsers, notifyUserId } = request.body
+        const { postId, commentId, replyId, replyAuthorId, commentAuthorId } = data;
+        console.log('request.body: ', request.body);
+        if (isPostPresent && isCommentAuthorPresent && isCommentPresent && hasReplied) {
+            // the current user has replied to the comment before 
+            //GOAL: push the reply id into the replies array of the current user
+            // the following is pushed into replyIds of the object that contains the authorId that is equal to notifyUser
+            // the replyIds field is accessed
+            // the replyAuthor is equal to the replyAuthorId
+            // if the replyAuthor is equal to replyAuthorId then access the replIds field
+            // filter through the replies field
+            // replies field is accessed
+            // the commentId is equal to the commentId that was sent up to the server
+            // if the commentId that was sent up to the server is equal to the commentId of each object that is in commentsRepliedTo when filtering through commentsRepliedTo, then access the replies field
+            // filter through the array that is stored in commentsRepliedTo field
+            // access the commentsRepliedTo field 
+            // the commentAuthorId is equal to commentAuthorId or notifyUserId that was sent up to the server
+            // if the commentAuthorId is equal to commentAuthorId or notifyUserId that was sent up to the server, then access the commentsRepliedTo field
+            // filter through the array that is stored in repliesInfo
+            // the repliesInfo field is accessed
+            // the postId is equal to the postId that was sent up to the server
+            // if the postId is equal to the postId that was sent up to the server, the repliesInfo field is accessed and filter through the array that is stored in repliesInfo
+            User.updateOne(
+                { _id: notifyUserId },
+                {
+                    $push:
+                    {
+                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo.$[commentId].replies.$[replyAuthorId].replyIds': { id: replyId, wasSeen: false }
+                    }
+                },
+                {
+                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId ?? notifyUserId }, { 'commentId.id': commentId }, { 'replyAuthorId.authorId': replyAuthorId }],
+                    multi: true
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in notifying user: ', error);
+                    } else {
+                        console.log('User was notified. Case 1 was implemented. ', numsAffected);
+                    }
+                }
+            )
+        } else if (isPostPresent && isCommentAuthorPresent && isCommentPresent && !hasReplied) {
+            // the user has replied to the same author on the same post but to a different comment 
+            // GOAL: push the following into the 'replies' field: {authorId: the author id of the reply, replyIds: [{id: replyId, wasSeen: false}]}
+            User.updateOne(
+                { _id: notifyUserId },
+                {
+                    $push:
+                    {
+                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo.$[commentId].replies': { authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }
+                    }
+                },
+                {
+                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId ?? notifyUserId }, { 'commentId.id': commentId }],
+                    multi: true
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in notifying user: ', error);
+                    } else {
+                        console.log('User was notified. Case 2 was implemented, numsAffected: ', numsAffected);
+                    }
+                }
+            )
+        } else if (isPostPresent && isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
+            // the current user has replied to the same author on the same post, but to a different comment 
+            // GOAL: push the following into commentsRepliedTo: {id: commentId, replies: [{authorId: replyAuthorId, replyIds: [{id: replyId, wasSeen: false}]}]}
+            User.updateOne(
+                { _id: notifyUserId },
+                {
+                    $push:
+                    {
+                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo': { id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }
+                    }
+                },
+                {
+                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId ?? notifyUserId }],
+                    multi: true
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in notifying user: ', error);
+                    } else {
+                        console.log('User was notified. Case 3 was implemented, numsAffected: ', numsAffected);
+                    }
+                }
+            )
+            // CASE 4
+        } else if (isPostPresent && !isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
+            // the user has replied on the post before, but in this case, this is the first time that the current user has replied to this comment and author of the comment  
+        } else if (!isPostPresent && !isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
+            // this is the first reply notification that userY will get or this is a new reply on an new post 
+            // if data.commentId doesn't exist, then use the request.body.userId
+            // GOAL: insert the new reply notification when userX is the very first reply on userY's post
+            console.log("don't execute me");
+            User.updateOne(
+                { _id: notifyUserId },
+                {
+                    $push:
+                    {
+                        "notifications.replies": { postId, repliesInfo: [{ commentAuthorId: commentAuthorId ?? notifyUserId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in notifying user: ', error);
+                    } else {
+                        console.log('User was notified of new reply. Case 5 was implemented, numsAffected: ', numsAffected);
+                    }
+                }
+            )
+        }
+        response.json('Update was successful. User was notified.')
     }
 }, (error, req, res, next) => {
     if (error) {
+        res.status(404).send('An error has occurred. Please try again later.');
         res.json('An error has occurred. Please try again later.')
     };
 });
@@ -1400,8 +1581,34 @@ router.route("/users/:package").get((request, response) => {
                 response.status(500);
             }
         })
+    } else if (name === 'getReplyNotifications') {
+        const { userIds } = package;
+        User.find({ _id: { $in: userIds } }, { ["notifications.replies"]: 1, _id: 1 })
+            .then(results => {
+                console.log('results: ', results);
+                // let replies = results.length > 1 ? results : results[0].notifications.replies;
+                // if (replies.length) {
+                //     replies = replies.map(reply => {
+                //         const { replies } = reply.notifications;
+                //         let isRepliesEmpty;
+                //         isRepliesEmpty = (!replies || !replies.length) && true;
+                //         replies && replies.forEach(reply => {
+                //             isRepliesEmpty = !Object.keys(reply).length && true;
+                //         });
+
+                //         return isRepliesEmpty ? null : { _id: reply._id, replies }
+                //     })
+                // };
+                response.status(200)
+            })
+            .catch(error => {
+                if (error) {
+                    console.log(error)
+                    response.sendStatus(500);
+                }
+            })
     }
-});
+})
 
 router.route("/users").get((req, res) => {
     console.log("getting all users");
