@@ -26,47 +26,24 @@ const { promisify } = require('util');
 
 
 
-const pushCommentedActivity = (commentId, postId, userId, isCommentOnNewPost) => {
-    const activity = {
-        _id: postId,
-        commentIds: [{ _id: commentId }]
-    }
-    if (isCommentOnNewPost) {
-        User.updateOne(
-            { _id: userId },
-            {
-                $push:
-                {
-                    "activities.comments": activity
-                }
-            },
-            (error, numsAffect) => {
-                if (error) throw error;
-                else {
-                    console.log("new comment on post was added.", numsAffect);
-                }
+const pushUserCommentActivity = (userId, postId, res) => {
+    User.updateOne(
+        { _id: userId },
+        {
+            $addToSet: {
+                "activities.comments": { postIdOfComment: postId }
             }
-        )
-    } else {
-        User.updateOne(
-            { _id: userId },
-            {
-                $push: {
-                    "activities.comments.$[comment].commentIds": { _id: commentId }
-                }
-            },
-            {
-                arrayFilters: [{ "comment._id": postId }]
-            },
-            (error, numsAffect) => {
-                if (error) throw error;
-                else {
-                    console.log("user added another comment on the same post.", numsAffect);
-                }
+        },
+        (error, numsAffected) => {
+            if (error) {
+                console.log('An error has occurred in updating the comment activity of user: ', error);
+            } else {
+                console.log(`User comment will be tracked, numsAffected: `, numsAffected);
+                res.status(200).send('Update was successful.');
             }
-        )
-    }
-};
+        }
+    )
+}
 
 
 // NOTES:
@@ -161,7 +138,7 @@ router.route("/users").post((request, response) => {
 
 
 router.route("/users/updateInfo").post((request, response) => {
-    const { name, data, userId, username, listName } = request.body
+    const { name, data, userId, username, listName, isPostPresent, isCommentAuthorPresent, notifyUserId } = request.body
     if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
         const { topics, socialMedia } = data
@@ -376,24 +353,28 @@ router.route("/users/updateInfo").post((request, response) => {
         })
     } else if (name === "userCommented") {
         const { userId } = request.body;
+        const { postId } = data;
         console.log("tracking user activity")
-        User.updateOne(
-            { _id: userId },
-            {
-                $addToSet: {
-                    "activities.comments": { postIdOfComment: data.postId }
-                }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.log('An error has occurred in updating the comment activity of user: ', error);
-                    response.status(404).json('An error has occurred, please try again.');
+        User.findOne({ _id: userId }, { _id: 0, "activities.comments": 1 }).then(results => {
+            const commentsActivity_ = (results.activities && results.activities.comments && results.activities.comments.length) && results.activities.comments;
+            if (commentsActivity_) {
+                const { comments: commentsActivity } = results.activities;
+                const didUserComment = commentsActivity.map(({ postIdOfComment }) => postIdOfComment).includes(postId);
+                if (!didUserComment) {
+                    pushUserCommentActivity(userId, postId, response);
+                    console.log('Has commented before, but first comment on present post.')
                 } else {
-                    console.log(`User commented. Will send status 200. NumsAffected: `, numsAffected);
-                    response.sendStatus(200);
+                    console.log('user has already commented on this post.')
+                    response.status(200).send('User commented on this post already.');
                 }
+            } else {
+                pushUserCommentActivity(userId, postId, response);
+                console.log('First every comment.')
             }
-        )
+        }, error => {
+            console.error('An error has occurred in finding comment activity of user: ', error);
+            res.sendStatus(404);
+        });
     } else if (name === "userRepliedToComment") {
         const { signedInUserId: userId, isSamePost } = request.body;
         const { commentId } = data;
@@ -408,7 +389,6 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 },
                 {
-                    multi: false,
                     arrayFilters: [{ "postId.postId": postId }]
                 },
                 (error, numsAffected) => {
@@ -1096,56 +1076,11 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         );
     } else if (name === 'replyNotification') {
-        // CASE #2: userA is the first reply to userB's comment and the post is written by userB. Store a reply notification for userB
-        // the following is pushed into userB.notifications.replies: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]
-        // the notifications.replies field is accessed 
-        // userB is found by using the notifyUserId
-        // the following is true: !isSamePost && !isCommentAuthorPresent && !hasReplied
-        // if isNewPost, then push the following into userB.notifications.replies: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]
-        // the following is received from the front-end: {name of package, postId, isNewPost,author id of comment, comment id, reply id, author id of reply}
-        // the send the following: {name of package, postId, author id of comment, comment id, reply id, author id of reply}
-        // notifications.replies doesn't exist
-        // if notifications.replies doesn't exist or is empty, then send the following to the server: {name of package, postId, author id of comment, comment id, reply id, author id of reply}
-        // get notifications.replies of userB. 
-        // userA replies to userB's comment which is on userB's post.
-
-        // CASES NOTES:
-        // userY
-        // userX
-        // x and y will always be different
-
-        // GOAL: notify userY when userX replies to either a comment--by userY or not by userY--on userY's post or when userX replies to userY's comment on a post not written by userY
-
-        // userX has replied to a comment not written by userY but has replied to the comment before. The post is by userY.
-        // userX has replied to a comment not written by userY for the first time or hasn't replied to the comment before. The post is by userY.
-
-        // userX replies to a comment written by userY but has replied to the comment before. The post is written by userY
-        // userX replies to a comment written by userY but is the first reply or has not replied to the comment before. The post is written by userY
-
-        // userX replies to a comment written by userY but has replied to the comment before. The post is not written by userY
-        // userX replies to a comment written by userY but is the first reply or has not replied to the comment before. The post is not written by userY
-        const { isPostPresent, isCommentAuthorPresent, isCommentPresent, hasReplied, notifyUsers, notifyUserId } = request.body
+        const { isCommentPresent, hasReplied } = request.body
         const { postId, commentId, replyId, replyAuthorId, commentAuthorId } = data;
         console.log('request.body: ', request.body);
         if (isPostPresent && isCommentAuthorPresent && isCommentPresent && hasReplied) {
-            // the current user has replied to the comment before 
-            //GOAL: push the reply id into the replies array of the current user
-            // the following is pushed into replyIds of the object that contains the authorId that is equal to notifyUser
-            // the replyIds field is accessed
-            // the replyAuthor is equal to the replyAuthorId
-            // if the replyAuthor is equal to replyAuthorId then access the replIds field
-            // filter through the replies field
-            // replies field is accessed
-            // the commentId is equal to the commentId that was sent up to the server
-            // if the commentId that was sent up to the server is equal to the commentId of each object that is in commentsRepliedTo when filtering through commentsRepliedTo, then access the replies field
-            // filter through the array that is stored in commentsRepliedTo field
-            // access the commentsRepliedTo field 
-            // the commentAuthorId is equal to commentAuthorId or notifyUserId that was sent up to the server
-            // if the commentAuthorId is equal to commentAuthorId or notifyUserId that was sent up to the server, then access the commentsRepliedTo field
-            // filter through the array that is stored in repliesInfo
-            // the repliesInfo field is accessed
-            // the postId is equal to the postId that was sent up to the server
-            // if the postId is equal to the postId that was sent up to the server, the repliesInfo field is accessed and filter through the array that is stored in repliesInfo
+            console.log('case 1')
             User.updateOne(
                 { _id: notifyUserId },
                 {
@@ -1155,7 +1090,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 },
                 {
-                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId ?? notifyUserId }, { 'commentId.id': commentId }, { 'replyAuthorId.authorId': replyAuthorId }],
+                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }, { 'commentId.id': commentId }, { 'replyAuthorId.authorId': replyAuthorId }],
                     multi: true
                 },
                 (error, numsAffected) => {
@@ -1167,6 +1102,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             )
         } else if (isPostPresent && isCommentAuthorPresent && isCommentPresent && !hasReplied) {
+            console.log('case 2')
             // the user has replied to the same author on the same post but to a different comment 
             // GOAL: push the following into the 'replies' field: {authorId: the author id of the reply, replyIds: [{id: replyId, wasSeen: false}]}
             User.updateOne(
@@ -1178,7 +1114,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 },
                 {
-                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId ?? notifyUserId }, { 'commentId.id': commentId }],
+                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }, { 'commentId.id': commentId }],
                     multi: true
                 },
                 (error, numsAffected) => {
@@ -1190,6 +1126,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             )
         } else if (isPostPresent && isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
+            console.log('case 3')
             // the current user has replied to the same author on the same post, but to a different comment 
             // GOAL: push the following into commentsRepliedTo: {id: commentId, replies: [{authorId: replyAuthorId, replyIds: [{id: replyId, wasSeen: false}]}]}
             User.updateOne(
@@ -1201,7 +1138,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 },
                 {
-                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId ?? notifyUserId }],
+                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }],
                     multi: true
                 },
                 (error, numsAffected) => {
@@ -1214,23 +1151,41 @@ router.route("/users/updateInfo").post((request, response) => {
             )
             // CASE 4
         } else if (isPostPresent && !isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
+            console.log('case 4')
             // the user has replied on the post before, but in this case, this is the first time that the current user has replied to this comment and author of the comment  
-        } else if (!isPostPresent && !isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
-            // this is the first reply notification that userY will get or this is a new reply on an new post 
-            // if data.commentId doesn't exist, then use the request.body.userId
-            // GOAL: insert the new reply notification when userX is the very first reply on userY's post
-            console.log("don't execute me");
             User.updateOne(
                 { _id: notifyUserId },
                 {
                     $push:
                     {
-                        "notifications.replies": { postId, repliesInfo: [{ commentAuthorId: commentAuthorId ?? notifyUserId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] }
+                        'notifications.replies.$[postOfReply].repliesInfo': { commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }
+                    }
+                },
+                {
+                    arrayFilters: [{ 'postOfReply.postId': postId }],
+                    multi: true
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in notifying user: ', error);
+                    } else {
+                        console.log('User was notified. Case 3 was implemented, numsAffected: ', numsAffected);
+                    }
+                }
+            )
+        } else if (!isPostPresent && !isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
+            console.log("case 5");
+            User.updateOne(
+                { _id: notifyUserId },
+                {
+                    $push:
+                    {
+                        "notifications.replies": { postId, repliesInfo: [{ commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] }
                     }
                 },
                 (error, numsAffected) => {
                     if (error) {
-                        console.error('Error in notifying user: ', error);
+                        console.error('Error in notifying user, case 5: ', error);
                     } else {
                         console.log('User was notified of new reply. Case 5 was implemented, numsAffected: ', numsAffected);
                     }
@@ -1238,11 +1193,44 @@ router.route("/users/updateInfo").post((request, response) => {
             )
         }
         response.json('Update was successful. User was notified.')
-    }
+    } else if (name === 'commentNotifications') {
+        const { postId, commentId, commentAuthorId } = data;
+        // MAIN GOAL: when the current user leaves a comment on a post, notify the following users:
+        // all users who left a comment on the post if at least one of them isn't the current user 
+        // the author of the post, if the author of the post isn't the current user
+
+        // CASES: 
+        // CASE 1: if postPresent and commentAuthorPresent, then find the comment author and push the new comment notification for that author
+        // CASE 2: if postPresent and !commentAuthorPresent, then find the post in the notifications.comments and push the following into the commentsInfo field: {commentAuthorId: current user id goes here, commentIds: [{id: commentId, wasSeen: false}]} 
+        // CASE 3: if !postPresent and !commentAuthorPresent, then push the following into notifications.comments: {postId, commentsInfo: [{commentAuthorId, commentIds: [{id: commentId, wasSeen: false}]}]}
+        console.log('request.body: ', request.body);
+        if (isPostPresent && isCommentAuthorPresent) {
+
+        } else if (isPostPresent && !isCommentAuthorPresent) {
+
+        } else {
+            // User.updateOne(
+            //     { _id: notifyUserId },
+            //     {
+            //         $push:
+            //         {
+            //             "notifications.comments": { postId, commentsInfo: [{ commentAuthorId: commentAuthorId, commentIds: [{ id: commentId, wasSeen: false}] }] }
+            //         }
+            //     },
+            //     (error, numsAffected) => {
+            //         if (error) {
+            //             console.error('Error in notifying user of a new comment, case 3: ', error);
+            //         } else {
+            //             console.log('User was notified of new comment. Case 3 was implemented, numsAffected: ', numsAffected);
+            //         }
+            //     }
+            // )
+        }
+    };
+    response.json('Update was successful. User was notified of new comment.')
 }, (error, req, res, next) => {
     if (error) {
         res.status(404).send('An error has occurred. Please try again later.');
-        res.json('An error has occurred. Please try again later.')
     };
 });
 
@@ -1584,22 +1572,19 @@ router.route("/users/:package").get((request, response) => {
     } else if (name === 'getReplyNotifications') {
         const { userIds } = package;
         User.find({ _id: { $in: userIds } }, { ["notifications.replies"]: 1, _id: 1 })
-            .then(results => {
-                console.log('results: ', results);
+            .then(replies => {
                 // let replies = results.length > 1 ? results : results[0].notifications.replies;
-                // if (replies.length) {
-                //     replies = replies.map(reply => {
-                //         const { replies } = reply.notifications;
-                //         let isRepliesEmpty;
-                //         isRepliesEmpty = (!replies || !replies.length) && true;
-                //         replies && replies.forEach(reply => {
-                //             isRepliesEmpty = !Object.keys(reply).length && true;
-                //         });
+                console.log('replies: ', replies);
+                let _replies;
+                if (replies.length) {
+                    _replies = replies.map(reply => {
+                        const { notifications, _id: userId } = reply;
+                        const replies = (notifications && notifications.replies && notifications.replies.length) && notifications.replies;
 
-                //         return isRepliesEmpty ? null : { _id: reply._id, replies }
-                //     })
-                // };
-                response.status(200)
+                        return replies ? { userId: userId, replies } : { userId: userId };
+                    })
+                };
+                response.status(200).send(_replies);
             })
             .catch(error => {
                 if (error) {
@@ -1607,6 +1592,45 @@ router.route("/users/:package").get((request, response) => {
                     response.sendStatus(500);
                 }
             })
+    } else if (name === 'getCommentNotifications') {
+        const { userIds } = package;
+        User.find({ _id: { $in: userIds } }, { ["notifications.comments"]: 1, _id: 1 })
+            .then(comments => {
+                const comments_ = comments.map(reply => {
+                    const { notifications, _id: userId } = reply;
+                    const comments = (notifications && notifications.comments && notifications.comments.length) && notifications.comments;
+                    return comments ? { userId: userId, comments } : { userId: userId };
+                })
+                response.status(200).send(comments_);
+            })
+            .catch(error => {
+                if (error) {
+                    console.error("An error has occurred in getting user notifications for comments: ", error)
+                }
+            });
+    } else if (name === 'getUserCommentActivities') {
+        User.find({ _id: userId }, { ["activities.comments"]: 1, _id: 0 })
+            .then(commentsActivity => {
+                const _commentsActivity = (commentsActivity[0].activities && commentsActivity[0].activities.comments && commentsActivity[0].activities.comments.length) ? commentsActivity[0].activities.comments : null;
+                response.json(_commentsActivity);
+            })
+            .catch(error => {
+                if (error) {
+                    console.error("An error has occurred in getting user notifications for comments: ", error)
+                }
+            });
+    } else if (name === 'getReplyActivities') {
+        User.find({ _id: userId }, { ["activities.replies"]: 1, _id: 0 })
+            .then(replyActivities => {
+                const _replyActivities = (replyActivities[0].activities && replyActivities[0].activities.replies && replyActivities[0].activities.replies.length) ? replyActivities[0].activities.replies : null;
+                console.log('_replyActivities', _replyActivities);
+                response.json(_replyActivities);
+            })
+            .catch(error => {
+                if (error) {
+                    console.error("An error has occurred in getting user notifications for comments: ", error)
+                }
+            });
     }
 })
 

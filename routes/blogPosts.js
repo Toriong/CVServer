@@ -155,11 +155,12 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             (error, numbersAffected) => {
                 if (error) {
                     console.error(`Error message: ${error}`);
+                } else {
+                    console.log("User commented on post. NumbersAffected: ", numbersAffected)
+                    res.send("post requested received, new comment added");
                 }
-                console.log("User commented on post. NumbersAffected: ", numbersAffected)
             }
         );
-        res.json("post requested received, new comment added");
     } else if (name === "commentEdited") {
         const { commentId } = req.body;
         const { _editedComment, updatedAt } = data;
