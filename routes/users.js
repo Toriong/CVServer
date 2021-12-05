@@ -26,23 +26,71 @@ const { promisify } = require('util');
 
 
 
-const pushUserCommentActivity = (userId, postId, res) => {
+const addUserCommentActivity = (userId, postId, res) => {
     User.updateOne(
         { _id: userId },
         {
-            $addToSet: {
-                "activities.comments": { postIdOfComment: postId }
+            $addToSet:
+            {
+                'activities.comments': { postIdOfComment: postId }
             }
         },
         (error, numsAffected) => {
             if (error) {
                 console.log('An error has occurred in updating the comment activity of user: ', error);
             } else {
-                console.log(`User comment will be tracked, numsAffected: `, numsAffected);
-                res.status(200).send('Update was successful.');
+                console.log(`User comment or reply will be tracked, numsAffected: `, numsAffected);
+                res.send('Update was successful.');
             }
         }
     )
+}
+
+const addUserReplyActivity = (reqBody, res, isOnSamePost) => {
+    const { userId } = reqBody;
+    const { postId, commentId } = reqBody.data;
+    if (isOnSamePost) {
+        User.updateOne(
+            { _id: userId },
+            {
+                $addToSet:
+                {
+                    "activities.replies.$[replyInfo].commentsRepliedTo": commentId
+                }
+            },
+            {
+                arrayFilters: [{ 'replyInfo.postId': postId }]
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('An error has occurred: ', error)
+                    res.status(404).send('User reply is FAILED to be tracked.')
+                } else {
+                    console.log('user reply activity has been updated, numsAffected: ', numsAffected);
+                    res.status(200).send('User reply is being tracked.')
+                };
+            }
+        )
+    } else {
+        User.updateOne(
+            { _id: userId },
+            {
+                $addToSet:
+                {
+                    "activities.replies": { postId: postId, commentsRepliedTo: [commentId] }
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('An error has occurred: ', error)
+                    res.status(404).send('User reply is FAILED to be tracked.')
+                } else {
+                    console.log('user reply activity has been updated, numsAffected: ', numsAffected);
+                    res.status(200).send('User reply is being tracked.')
+                };
+            }
+        )
+    }
 }
 
 
@@ -359,16 +407,16 @@ router.route("/users/updateInfo").post((request, response) => {
             const commentsActivity_ = (results.activities && results.activities.comments && results.activities.comments.length) && results.activities.comments;
             if (commentsActivity_) {
                 const { comments: commentsActivity } = results.activities;
-                const didUserComment = commentsActivity.map(({ postIdOfComment }) => postIdOfComment).includes(postId);
-                if (!didUserComment) {
-                    pushUserCommentActivity(userId, postId, response);
-                    console.log('Has commented before, but first comment on present post.')
+                const didUserCommentOnPost = commentsActivity.map(({ postIdOfComment }) => postIdOfComment).includes(postId);
+                if (didUserCommentOnPost) {
+                    console.log('user already commented on this post.');
                 } else {
-                    console.log('user has already commented on this post.')
-                    response.status(200).send('User commented on this post already.');
+                    // The user replied to comment on a post which the user has already replied to other comments as well. 
+                    // push the following into activities.comments: {postId, commentsRepliedTo: [id of comment that the user replied to]}
+                    addUserCommentActivity(userId, postId);
                 }
             } else {
-                pushUserCommentActivity(userId, postId, response);
+                addUserCommentActivity(userId, postId);
                 console.log('First every comment.')
             }
         }, error => {
@@ -376,60 +424,24 @@ router.route("/users/updateInfo").post((request, response) => {
             res.sendStatus(404);
         });
     } else if (name === "userRepliedToComment") {
-        const { signedInUserId: userId, isSamePost } = request.body;
-        const { commentId } = data;
-        if (isSamePost) {
-            const { postId } = request.body;
-            User.updateOne(
-                { _id: userId },
-                {
-                    $addToSet:
-                    {
-                        "activities.replies.$[postId].repliedToCommentIds": commentId
-                    }
-                },
-                {
-                    arrayFilters: [{ "postId.postId": postId }]
-                },
-                (error, numsAffected) => {
-                    if (error) throw error;
-                    else {
-                        console.log(`User replied to a new comment. Will send status 200. NumsAffected: `, numsAffected);
-                        response.sendStatus(200)
-                    }
+        const { commentId, postId } = data;
+        User.findOne({ _id: userId }, { "activities.replies": 1, _id: 0 }).then(results => {
+            const _repliesActivity = (results.activities && results.activities.replies && results.activities.replies.length) && results.activities.replies;
+            if (_repliesActivity) {
+                const targetPost = _repliesActivity.find(({ postId: _postId }) => _postId === postId);
+                if (targetPost) {
+                    console.log('sup')
+                    const didRepliedToComment = targetPost.commentsRepliedTo.includes(commentId);
+                    !didRepliedToComment ? addUserReplyActivity(request.body, response, true) : console.log('Replied to comment already.')
+                } else {
+                    console.log('beans')
+                    addUserReplyActivity(request.body, response);
                 }
-            );
-        } else {
-            const { postId } = data;
-            const newReplyActivity = {
-                postId,
-                repliedToCommentIds: [commentId]
+            } else {
+                console.log('hello');
+                addUserReplyActivity(request.body, response);
             }
-            User.updateOne(
-                { _id: userId },
-                {
-                    $addToSet:
-                    {
-                        "activities.replies": newReplyActivity
-                    }
-                },
-                (error, numsAffected) => {
-                    if (error) throw error;
-                    else {
-                        console.log(`User replied to a comment, 411: ${numsAffected}`);
-                        User.find(
-                            { _id: userId },
-                            { activities: 1, _id: 0 }
-                        ).then(results => {
-                            const { activities } = results[0]
-                            response.json(activities);
-                        })
-                    }
-                }
-            );
-        }
-
-
+        })
     } else if (name === "userLikedPost") {
         // GOAL: have user like activity be only sent to the server once
         const { userId } = request.body;
@@ -608,7 +620,6 @@ router.route("/users/updateInfo").post((request, response) => {
                         //     const { activities } = results[0]
                         //     response.json(activities);
                         // })
-                        response.sendStatus(200);
                     }
                 }
 
@@ -1227,7 +1238,6 @@ router.route("/users/updateInfo").post((request, response) => {
             // )
         }
     };
-    response.json('Update was successful. User was notified of new comment.')
 }, (error, req, res, next) => {
     if (error) {
         res.status(404).send('An error has occurred. Please try again later.');
@@ -1363,7 +1373,6 @@ router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req,
 
 
 
-// USE THE ID OF THE USER INSTEAD TO FIND THE USER
 router.route("/users/:package").get((request, response) => {
     const package = JSON.parse(request.params.package);
     const { password: passwordAttempt, name, userId, username } = package;

@@ -199,12 +199,12 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             },
             (error, numbersAffected) => {
                 if (error) {
-                    console.error(`Error message: ${error}`);
+                    console.error(`Error message: `, error);
                 }
-                console.log("User replied to a comment. NumbersAffected: ", numbersAffected)
+                console.log("User replied to a comment. NumbersAffected: ", numbersAffected);
+                res.end();
             }
         )
-        res.json("post requested received, reply added to comment");
     } else if (name === "editedReply") {
         const { replyId, commentId } = req.body;
         const { _editedReply, updatedAt } = data;
@@ -231,7 +231,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 }
             }
         )
-        res.json("post requested received, reply edited");
+        // res.json("post requested received, reply edited");
     } else if (name === "deleteComment") {
         const { commentId: _commentId } = req.body;
         BlogPost.updateOne(
