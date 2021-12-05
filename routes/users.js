@@ -23,7 +23,39 @@ const { promisify } = require('util');
 // get notifications.replies of userB. 
 // userA replies to userB's comment which is on userB's post.
 
+const checkForCurrentUserReply = (replyNotifications, data) => {
+    const { postId, commentId, replyAuthorId, commentAuthorId: commentUserId } = data;
+    let isPostPresent;
+    let isCommentAuthorPresent;
+    let isCommentPresent;
+    let hasReplied;
+    replyNotifications && replyNotifications.forEach(({ postId: _postId, repliesInfo }) => {
+        // check if the user has left a reply on this post before
+        if (postId === _postId) {
+            isPostPresent = true;
+            repliesInfo.forEach(({ commentAuthorId, commentsRepliedTo }) => {
+                // check if the user has replied to this comment author before
+                if (commentAuthorId === commentUserId) {
+                    isCommentAuthorPresent = true
+                    commentsRepliedTo.forEach(({ id: _commentId, replies }) => {
+                        // check if the user has replied to this comment before
+                        if (_commentId === commentId) {
+                            isCommentPresent = true
+                            replies.forEach(({ authorId }) => {
+                                // check if the current user has already replied to the target comment
+                                if (authorId === replyAuthorId) {
+                                    hasReplied = true;
+                                }
+                            })
+                        }
+                    })
+                }
+            })
+        };
+    });
 
+    return { isPostPresent, isCommentAuthorPresent, isCommentPresent, hasReplied };
+}
 
 
 const addUserCommentActivity = (userId, postId, res) => {
@@ -1086,124 +1118,159 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             }
         );
-    } else if (name === 'replyNotification') {
-        const { isCommentPresent, hasReplied } = request.body
+    } else if (name === 'replyNotifications') {
+        const { userIds } = request.body
         const { postId, commentId, replyId, replyAuthorId, commentAuthorId } = data;
         console.log('request.body: ', request.body);
-        if (isPostPresent && isCommentAuthorPresent && isCommentPresent && hasReplied) {
-            console.log('case 1')
-            User.updateOne(
-                { _id: notifyUserId },
-                {
-                    $push:
-                    {
-                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo.$[commentId].replies.$[replyAuthorId].replyIds': { id: replyId, wasSeen: false }
-                    }
-                },
-                {
-                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }, { 'commentId.id': commentId }, { 'replyAuthorId.authorId': replyAuthorId }],
-                    multi: true
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error('An error has occurred in notifying user: ', error);
-                    } else {
-                        console.log('User was notified. Case 1 was implemented. ', numsAffected);
-                    }
+        User.find(
+            { _id: { $in: userIds } },
+            { ["notifications.replies"]: 1, _id: 1 },
+            error => {
+                if (error) console.error("An ERROR has occurred in finding reply notifications of user: ", error);
+                else {
+                    console.log('No errors has occurred, notifying users.');
+                    response.json('No errors has occurred, notifying users.');
                 }
-            )
-        } else if (isPostPresent && isCommentAuthorPresent && isCommentPresent && !hasReplied) {
-            console.log('case 2')
-            // the user has replied to the same author on the same post but to a different comment 
-            // GOAL: push the following into the 'replies' field: {authorId: the author id of the reply, replyIds: [{id: replyId, wasSeen: false}]}
-            User.updateOne(
-                { _id: notifyUserId },
-                {
-                    $push:
-                    {
-                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo.$[commentId].replies': { authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }
-                    }
-                },
-                {
-                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }, { 'commentId.id': commentId }],
-                    multi: true
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error('An error has occurred in notifying user: ', error);
+            }).then(replyNotifications => {
+                const userReplyNotifications = replyNotifications.map(reply => {
+                    const { notifications, _id } = reply;
+                    const replyNotifications_ = (notifications && notifications.replies && notifications.replies.length) && notifications.replies;
+
+                    return replyNotifications_ ? { notifyUserId: _id, replyNotifications: replyNotifications_ } : { notifyUserId: _id };
+                });
+
+                userReplyNotifications.forEach(({ notifyUserId, replyNotifications }) => {
+                    // GOAL: check for the following: isCommentPresent, hasReplied, isPostPresent
+                    if (replyNotifications) {
+                        const { isPostPresent, isCommentAuthorPresent, isCommentPresent, hasReplied } = checkForCurrentUserReply(replyNotifications, data);
+                        if (isPostPresent && isCommentAuthorPresent && isCommentPresent && hasReplied) {
+                            console.log('case 1')
+                            User.updateOne(
+                                { _id: notifyUserId },
+                                {
+                                    $push:
+                                    {
+                                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo.$[commentId].replies.$[replyAuthorId].replyIds': { id: replyId, wasSeen: false }
+                                    }
+                                },
+                                {
+                                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }, { 'commentId.id': commentId }, { 'replyAuthorId.authorId': replyAuthorId }],
+                                    multi: true
+                                },
+                                (error, numsAffected) => {
+                                    if (error) {
+                                        console.error('An error has occurred in notifying user: ', error);
+                                    } else {
+                                        console.log('User was notified. Case 1 was implemented. ', numsAffected);
+                                    }
+                                }
+                            )
+                        } else if (isPostPresent && isCommentAuthorPresent && isCommentPresent && !hasReplied) {
+                            console.log('case 2')
+                            User.updateOne(
+                                { _id: notifyUserId },
+                                {
+                                    $push:
+                                    {
+                                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo.$[commentId].replies': { authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }
+                                    }
+                                },
+                                {
+                                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }, { 'commentId.id': commentId }],
+                                    multi: true
+                                },
+                                (error, numsAffected) => {
+                                    if (error) {
+                                        console.error('An error has occurred in notifying user: ', error);
+                                    } else {
+                                        console.log('User was notified. Case 2 was implemented, numsAffected: ', numsAffected);
+                                    }
+                                }
+                            )
+                        } else if (isPostPresent && isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
+                            console.log('case 3')
+                            User.updateOne(
+                                { _id: notifyUserId },
+                                {
+                                    $push:
+                                    {
+                                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo': { id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }
+                                    }
+                                },
+                                {
+                                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }],
+                                    multi: true
+                                },
+                                (error, numsAffected) => {
+                                    if (error) {
+                                        console.error('An error has occurred in notifying user: ', error);
+                                    } else {
+                                        console.log('User was notified. Case 3 was implemented, numsAffected: ', numsAffected);
+                                    }
+                                }
+                            )
+                        } else if (isPostPresent && !isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
+                            console.log('case 4')
+                            User.updateOne(
+                                { _id: notifyUserId },
+                                {
+                                    $push:
+                                    {
+                                        'notifications.replies.$[postOfReply].repliesInfo': { commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }
+                                    }
+                                },
+                                {
+                                    arrayFilters: [{ 'postOfReply.postId': postId }],
+                                    multi: true
+                                },
+                                (error, numsAffected) => {
+                                    if (error) {
+                                        console.error('An error has occurred in notifying user: ', error);
+                                    } else {
+                                        console.log('User was notified. Case 4 was implemented, numsAffected: ', numsAffected);
+                                    }
+                                }
+                            )
+                        } else {
+                            console.log("case 5");
+                            User.updateOne(
+                                { _id: notifyUserId },
+                                {
+                                    $push:
+                                    {
+                                        "notifications.replies": { postId, repliesInfo: [{ commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] }
+                                    }
+                                },
+                                (error, numsAffected) => {
+                                    if (error) {
+                                        console.error('Error in notifying user, case 5: ', error);
+                                    } else {
+                                        console.log('User was notified of new reply. Case 5 was implemented, numsAffected: ', numsAffected);
+                                    }
+                                }
+                            )
+                        }
                     } else {
-                        console.log('User was notified. Case 2 was implemented, numsAffected: ', numsAffected);
+                        console.log("case 5, ribeye");
+                        User.updateOne(
+                            { _id: notifyUserId },
+                            {
+                                $push:
+                                {
+                                    "notifications.replies": { postId, repliesInfo: [{ commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] }
+                                }
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('Error in notifying user, case 5: ', error);
+                                } else {
+                                    console.log('User was notified of new reply. Case 5 was implemented, numsAffected: ', numsAffected);
+                                }
+                            }
+                        )
                     }
-                }
-            )
-        } else if (isPostPresent && isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
-            console.log('case 3')
-            // the current user has replied to the same author on the same post, but to a different comment 
-            // GOAL: push the following into commentsRepliedTo: {id: commentId, replies: [{authorId: replyAuthorId, replyIds: [{id: replyId, wasSeen: false}]}]}
-            User.updateOne(
-                { _id: notifyUserId },
-                {
-                    $push:
-                    {
-                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo': { id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }
-                    }
-                },
-                {
-                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }],
-                    multi: true
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error('An error has occurred in notifying user: ', error);
-                    } else {
-                        console.log('User was notified. Case 3 was implemented, numsAffected: ', numsAffected);
-                    }
-                }
-            )
-            // CASE 4
-        } else if (isPostPresent && !isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
-            console.log('case 4')
-            // the user has replied on the post before, but in this case, this is the first time that the current user has replied to this comment and author of the comment  
-            User.updateOne(
-                { _id: notifyUserId },
-                {
-                    $push:
-                    {
-                        'notifications.replies.$[postOfReply].repliesInfo': { commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }
-                    }
-                },
-                {
-                    arrayFilters: [{ 'postOfReply.postId': postId }],
-                    multi: true
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error('An error has occurred in notifying user: ', error);
-                    } else {
-                        console.log('User was notified. Case 3 was implemented, numsAffected: ', numsAffected);
-                    }
-                }
-            )
-        } else if (!isPostPresent && !isCommentAuthorPresent && !isCommentPresent && !hasReplied) {
-            console.log("case 5");
-            User.updateOne(
-                { _id: notifyUserId },
-                {
-                    $push:
-                    {
-                        "notifications.replies": { postId, repliesInfo: [{ commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] }
-                    }
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error('Error in notifying user, case 5: ', error);
-                    } else {
-                        console.log('User was notified of new reply. Case 5 was implemented, numsAffected: ', numsAffected);
-                    }
-                }
-            )
-        }
-        response.json('Update was successful. User was notified.')
+                })
+            })
     } else if (name === 'commentNotifications') {
         const { postId, commentId, commentAuthorId } = data;
         // MAIN GOAL: when the current user leaves a comment on a post, notify the following users:
