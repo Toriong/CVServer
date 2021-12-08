@@ -23,6 +23,101 @@ const { promisify } = require('util');
 // get notifications.replies of userB. 
 // userA replies to userB's comment which is on userB's post.
 
+
+// GOAL: CHECK IF THE CURRENT USER LIKED THE REPLY BEFORE 
+// don't do anything
+// the current user liked the reply before
+// accessing the likedReplyIds, check if the current user liked the reply before, then don't do anything
+// the likedReplyIds is accessed
+// the comment id exist
+// if the comment id exist, then access the likedReplyIds field
+// the repliedToComments field is accessed
+// the current post exist
+// if the current post exist, then access the repliedToComments
+
+const checkReplyLikesInfo = (data, replyLikesNotifications) => {
+    const { postId, commentId: _commentId, replyId } = data;
+    console.log('replyId: ', replyId);
+    let isPostPresent;
+    let isCommentPresent;
+    let isReplyPresent;
+
+    replyLikesNotifications.forEach(replyLikesInfo => {
+        const { postId: _postId, commentsRepliedTo } = replyLikesInfo;
+        if (_postId === postId) {
+            isPostPresent = true;
+            commentsRepliedTo.forEach(({ commentId, replies }) => {
+                if (commentId === _commentId) {
+                    isCommentPresent = true;
+                    console.log('replies: ', replies);
+                    replies.forEach(({ replyId: _replyId }) => {
+                        if (replyId === _replyId) {
+                            isReplyPresent = true;
+                        }
+                    })
+                }
+            })
+        }
+    });
+
+    return { isPostPresent, isCommentPresent, isReplyPresent };
+}
+
+const notifyUserOfNewReplyLike = (notifyUserId, newReplyLikeNotification) => {
+    User.updateOne(
+        { _id: notifyUserId },
+        {
+            $addToSet:
+            {
+                'notifications.likes.replies': newReplyLikeNotification
+            }
+        },
+        (error, numsAffected) => {
+            if (error) {
+                console.error('An error has occurred in notifying author of reply of new like: ', error);
+            } else {
+                console.log('Case 4 or 5. User was notified of reply like, numsAffected: ', numsAffected);
+            }
+        }
+    );
+}
+
+const checkWasCommentLiked = (commentLikesInfo, data) => {
+    const { postId, commentId } = data;
+    let isPostPresent;
+    let isCommentLiked;
+
+    commentLikesInfo && commentLikesInfo.forEach(({ postIdOfComment, likedCommentIds }) => {
+        if (postIdOfComment === postId) {
+            isPostPresent = true;
+            isCommentLiked = likedCommentIds.includes(commentId);
+        }
+    });
+
+    return { isPostPresent, isCommentLiked };
+}
+
+const checkWasReplyLiked = (replyLikesInfo, data) => {
+    const { postId, commentId, replyId } = data;
+    let isPostPresent;
+    let isCommentPresent;
+    let wasReplyLiked;
+
+    replyLikesInfo && replyLikesInfo.forEach(({ postIdOfReply, repliedToComments }) => {
+        if (postIdOfReply === postId) {
+            isPostPresent = true;
+            repliedToComments.forEach(({ id: _commentId, likedReplyIds }) => {
+                if (commentId === _commentId) {
+                    isCommentPresent = true;
+                    wasReplyLiked = likedReplyIds.includes(replyId);
+                }
+            })
+        }
+    });
+
+    return { isPostPresent, isCommentPresent, wasReplyLiked };
+}
+
 const checkForCurrentUserReply = (replyNotifications, data) => {
     const { postId, commentId, replyAuthorId, commentAuthorId: commentUserId } = data;
     let isPostPresent;
@@ -55,6 +150,26 @@ const checkForCurrentUserReply = (replyNotifications, data) => {
     });
 
     return { isPostPresent, isCommentAuthorPresent, isCommentPresent, hasReplied };
+};
+
+// GOAL: check if the current user has already commented on the post and if the current user id is already present in the target post. If so, then push the id of the comment for the target user.
+
+// 
+const checkForCurrentUserComment = (commentNotifications, currentUserId, postId) => {
+    let isPostPresent;
+    let hasCommented;
+    commentNotifications && commentNotifications.forEach(({ postId: _postId, comments }) => {
+        if (postId === _postId) {
+            isPostPresent = true;
+            comments.forEach(({ authorId }) => {
+                if (authorId === currentUserId) {
+                    hasCommented = true;
+                }
+            })
+        }
+    });
+
+    return { isPostPresent, hasCommented };
 }
 
 
@@ -73,6 +188,25 @@ const addUserCommentActivity = (userId, postId, res) => {
             } else {
                 console.log(`User comment or reply will be tracked, numsAffected: `, numsAffected);
                 res.send('Update was successful.');
+            }
+        }
+    )
+};
+
+const notifyUserOfNewReply = (newReply, notifyUserId) => {
+    User.updateOne(
+        { _id: notifyUserId },
+        {
+            $push:
+            {
+                "notifications.replies": newReply
+            }
+        },
+        (error, numsAffected) => {
+            if (error) {
+                console.error('Error in notifying user, case 5: ', error);
+            } else {
+                console.log('User was notified of new reply. Case 5 was implemented, numsAffected: ', numsAffected);
             }
         }
     )
@@ -445,10 +579,10 @@ router.route("/users/updateInfo").post((request, response) => {
                 } else {
                     // The user replied to comment on a post which the user has already replied to other comments as well. 
                     // push the following into activities.comments: {postId, commentsRepliedTo: [id of comment that the user replied to]}
-                    addUserCommentActivity(userId, postId);
+                    addUserCommentActivity(userId, postId, response);
                 }
             } else {
-                addUserCommentActivity(userId, postId);
+                addUserCommentActivity(userId, postId, response);
                 console.log('First every comment.')
             }
         }, error => {
@@ -476,32 +610,33 @@ router.route("/users/updateInfo").post((request, response) => {
         })
     } else if (name === "userLikedPost") {
         // GOAL: have user like activity be only sent to the server once
+        console.log("request.body", request.body);
         const { userId } = request.body;
         const { postId } = data;
-        User.updateOne(
-            { _id: userId },
-            {
-                $addToSet:
-                {
-                    "activities.likes.likedPostIds": postId
-                }
-            },
-            (error, numsAffected) => {
-                if (error) throw error;
-                else {
-                    console.log(`User liked a post. NumsAffectd: `, numsAffected);
-                    // User.find(
-                    //     { _id: userId },
-                    //     { activities: 1, _id: 0 }
-                    // ).then(results => {
-                    //     console.log("results 483", results)
-                    //     const { activities } = results[0]
-                    //     response.json(activities);
-                    // })
-                    response.status(200).json({ isLiked: true })
-                }
+        User.findOne({ _id: userId }, { 'activities.likes.likedPostIds': 1, _id: 0 }).then(result => {
+            const likedPostsActivities = (result.activities && result.activities.likes && result.activities.likes.likedPostIds && result.activities.likes.likedPostIds.length) && result.activities.likes.likedPostIds;
+            const wasPostLiked = likedPostsActivities && likedPostsActivities.includes(postId);
+            if (likedPostsActivities && wasPostLiked) {
+                console.log('User liked post already.');
+            } else {
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            "activities.likes.likedPostIds": postId
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) throw error;
+                        else {
+                            console.log(`User liked post is being tracked, numsAffected: `, numsAffected);
+                        }
+                    }
+                )
             }
-        )
+        })
+        response.status(200).json('Liked post is being tracked.')
     } else if (name === 'userUnLikedPost') {
         const { userId } = request.body;
         const { postId } = data;
@@ -530,163 +665,147 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     } else if (name === "userLikedComment") {
-        const { signedInUserId: userId, postId, isSamePost } = request.body
-        if (isSamePost) {
-            const { commentId } = data;
-            User.updateOne(
-                { _id: userId },
-                {
-                    $addToSet:
+        const { postId, commentId } = data;
+        User.findOne({ _id: userId }, { "activities.likes.comments": 1, _id: 0 }).then(result => {
+            console.log("result: ", result);
+            const likedCommentsActivity = (result.activities && result.activities.likes && result.activities.likes.comments && result.activities.likes.comments.length) && result.activities.likes.comments
+            const { isPostPresent, isCommentLiked } = checkWasCommentLiked(likedCommentsActivity, data);
+            if (isPostPresent && isCommentLiked) {
+                console.log('The user has liked the comment before.');
+            } else if (isPostPresent && !isCommentLiked) {
+                console.log('case 1 comment activity')
+                // find the object that contains the current post id and push the new liked comment into the likedCommentIds 
+                User.updateOne(
+                    { _id: userId },
                     {
-                        "activities.likes.postIdsAndLikedComments.$[postId].likedCommentIds": commentId
-                    }
-                },
-                {
-                    multi: false,
-                    arrayFilters: [{ "postId.postId": postId }]
-                },
-                (error, numsAffected) => {
-                    if (error) throw error;
-                    else {
-                        console.log(`User liked a comment. NumsAffectd: `, numsAffected);
-                        User.find(
-                            { _id: userId },
-                            { activities: 1, _id: 0 }
-                        ).then(results => {
-                            const { activities } = results[0]
-                            response.json(activities);
-                        })
-                    }
-                }
-            )
-        } else {
-            const { postId, commentId } = data;
-            const postIdAndLikedCommentsIds = { postId, likedCommentIds: [commentId] }
-            User.updateOne(
-                { _id: userId },
-                {
-                    $addToSet:
+                        $addToSet:
+                        {
+                            'activities.likes.comments.$[commentInfo].likedCommentIds': commentId
+                        }
+                    },
                     {
-                        "activities.likes.postIdsAndLikedComments": postIdAndLikedCommentsIds
+                        arrayFilters: [{ 'commentInfo.postIdOfComment': postId }]
+                    },
+                    (error, numsAffected) => {
+                        if (error) console.error('An error has occurred in tracking liked comment: ', error);
+                        else {
+                            console.log(`User liked a comment, numsAffected: `, numsAffected);
+                        }
                     }
-                },
-                (error, numsAffected) => {
-                    if (error) throw error;
-                    else {
-                        console.log(`User liked a comment on a different post. NumsAffectd: ${numsAffected}`);
-                        User.find(
-                            { _id: userId },
-                            { activities: 1, _id: 0 }
-                        ).then(results => {
-                            const { activities } = results[0]
-                            response.json(activities);
-                        })
-                    }
+                )
+            } else {
+                console.log('case 2 comment activity')
+                // push the following into activities.likes.comments: {postIdOfComment, likedCommentIds: [id of liked comments]}
+                const newCommentLikeActivity = {
+                    postIdOfComment: postId,
+                    likedCommentIds: [commentId]
                 }
-            )
-        }
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            'activities.likes.comments': newCommentLikeActivity
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) console.error('An error has occurred in tracking liked comment: ', error);
+                        else {
+                            console.log(`User liked a comment, numsAffected: `, numsAffected);
+                        }
+                    }
+                )
+            };
+            response.status(200).json('Comment like is being tracked');
+        });
+
+        // CASE #1: user likes a comment on a post where the user has liked other comments before
+
+
+        // CASE #2: this is the first comment that the user liked on the current post
+
     } else if (name === "userLikedReply") {
-        const { signedInUserId: userId, isSamePost, isSameComment } = request.body
-        const { replyId } = data;
-        console.log('isSameComment', isSameComment)
-        if (isSamePost && isSameComment) {
-            // GOAL: implement case3
-            const { commentId, postId } = request.body;
-            User.updateOne(
-                { _id: userId },
-                {
-                    $addToSet:
-                    {
-                        "activities.likes.postIdsCommentIdsAndLikedReplies.$[post].commentIdsAndLikedReplyIds.$[comment].likedReplyIds": replyId
-                    }
-                },
-                {
-                    multi: false,
-                    arrayFilters: [{ "post.postId": postId }, { "comment.commentId": commentId }]
-                },
-                (error, numsAffect) => {
-                    if (error) {
-                        console.error(`Error message 597: ${error}`)
-                    } else {
-                        console.log("user liked reply to the same comment on the same post.", numsAffect);
-                        // User.find(
-                        //     { _id: userId },
-                        //     { activities: 1, _id: 0 }
-                        // ).then(results => {
-                        //     const { activities } = results[0]
-                        //     response.json(activities);
-                        // })
-                        response.sendStatus(200);
-                    }
-                }
-            )
-            // same post, but different comment
-        } else if (isSamePost && (isSameComment === undefined)) {
-            const { postId } = request.body
-            const { commentId, replyId } = data;
-            const newReplyActivity = {
-                commentId,
-                likedReplyIds: [replyId]
-            }
-            User.updateOne(
-                { _id: userId },
-                {
-                    $addToSet:
-                    {
-                        "activities.likes.postIdsCommentIdsAndLikedReplies.$[post].commentIdsAndLikedReplyIds": newReplyActivity
-                    }
-                },
-                {
-                    multi: false,
-                    arrayFilters: [{ "post.postId": postId }]
-                },
-                (error, numsAffect) => {
-                    if (error) {
-                        console.error(`Error message 597: ${error}`)
-                    } else {
-                        console.log("user liked reply to a new comment on the same post.", numsAffect);
-                        // User.find(
-                        //     { _id: userId },
-                        //     { activities: 1, _id: 0 }
-                        // ).then(results => {
-                        //     const { activities } = results[0]
-                        //     response.json(activities);
-                        // })
-                    }
-                }
+        const { replyId, commentId, postId } = data;
 
-            )
-        } else {
-            const { commentId, postId } = data;
-            const newReplyActivity = {
-                postId,
-                commentIdsAndLikedReplyIds: [{ commentId, likedReplyIds: [replyId] }]
-            }
-            User.updateOne(
-                { _id: userId },
-                {
-                    $addToSet:
+        User.findOne({ _id: userId }, { _id: 0, 'activities.likes.replies': 1 }).then(result => {
+            const replyActivities = (result.activities.likes && result.activities.likes.replies && result.activities.likes.replies.length) && result.activities.likes.replies;
+            const { isPostPresent, isCommentPresent, wasReplyLiked } = checkWasReplyLiked(replyActivities, data);
+            if (isPostPresent && isCommentPresent && wasReplyLiked) {
+                console.log('User liked the reply already.');
+            } else if (isPostPresent && isCommentPresent && !wasReplyLiked) {
+                console.log('case 1')
+                // find the post id, access the repliedToComments field, find the comment of the reply that was liked, push the new liked reply id into the field of likedReplyIds
+                User.updateOne(
+                    { _id: userId },
                     {
-                        "activities.likes.postIdsCommentIdsAndLikedReplies": newReplyActivity
+                        $addToSet:
+                        {
+                            "activities.likes.replies.$[post].repliedToComments.$[comment].likedReplyIds": replyId
+                        }
+                    },
+                    {
+                        arrayFilters: [{ 'post.postIdOfReply': postId }, { 'comment.id': commentId }]
+                    },
+                    (error, numsAffect) => {
+                        if (error) {
+                            console.error(`Error in tracking user liked reply: `, error);
+                        } else {
+                            console.log("user liked reply on new post. Case 1 was implemented, numsAffected: ", numsAffect);
+                        }
                     }
-                },
-                (error, numsAffect) => {
-                    if (error) {
-                        console.error(`Error message 592: ${error}`)
-                    } else {
-                        console.log("user liked reply on new post.", numsAffect);
-                        User.find(
-                            { _id: userId },
-                            { activities: 1, _id: 0 }
-                        ).then(results => {
-                            const { activities } = results[0]
-                            response.json(activities);
-                        })
+                )
+            } else if (isPostPresent && !isCommentPresent && !wasReplyLiked) {
+                console.log('case 2')
+                // find the postId, and push the following into repliedToComments: {commentId, likedReplyIds: [id of reply that was liked]}
+                const newLikedReplyActivity = {
+                    id: commentId,
+                    likedReplyIds: [replyId]
+                };
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            "activities.likes.replies.$[post].repliedToComments": newLikedReplyActivity
+                        }
+                    },
+                    {
+                        arrayFilters: [{ 'post.postIdOfReply': postId }]
+                    },
+                    (error, numsAffect) => {
+                        if (error) {
+                            console.error(`Error in tracking user liked reply: `, error);
+                        } else {
+                            console.log("user liked reply on new post. Case 2 was implemented, numsAffected: ", numsAffect);
+                        }
                     }
+                )
+            } else {
+                console.log('case 3')
+                // implement the last case in the code below
+                const newLikedReplyActivity = {
+                    postIdOfReply: postId,
+                    repliedToComments: [{ id: commentId, likedReplyIds: [replyId] }]
                 }
-
-            )
-        }
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $addToSet:
+                        {
+                            "activities.likes.replies": newLikedReplyActivity
+                        }
+                    },
+                    (error, numsAffect) => {
+                        if (error) {
+                            console.error(`Error in tracking user liked reply: `, error);
+                        } else {
+                            console.log("user liked reply on new post. Case 3 was implemented, numsAffected: ", numsAffect);
+                        }
+                    }
+                )
+            }
+        });
+        response.json('Will track user reply like');
     } else if (name === "followUser") {
         console.log('data: ', data);
         const { newFollowingUserId, signedInUserId, followedUserAt } = data;
@@ -1122,6 +1241,7 @@ router.route("/users/updateInfo").post((request, response) => {
         const { userIds } = request.body
         const { postId, commentId, replyId, replyAuthorId, commentAuthorId } = data;
         console.log('request.body: ', request.body);
+        const newReplyNotification = { postId, repliesInfo: [{ commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] };
         User.find(
             { _id: { $in: userIds } },
             { ["notifications.replies"]: 1, _id: 1 },
@@ -1233,46 +1353,19 @@ router.route("/users/updateInfo").post((request, response) => {
                             )
                         } else {
                             console.log("case 5");
-                            User.updateOne(
-                                { _id: notifyUserId },
-                                {
-                                    $push:
-                                    {
-                                        "notifications.replies": { postId, repliesInfo: [{ commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] }
-                                    }
-                                },
-                                (error, numsAffected) => {
-                                    if (error) {
-                                        console.error('Error in notifying user, case 5: ', error);
-                                    } else {
-                                        console.log('User was notified of new reply. Case 5 was implemented, numsAffected: ', numsAffected);
-                                    }
-                                }
-                            )
+                            notifyUserOfNewReply(newReplyNotification, notifyUserId);
                         }
                     } else {
                         console.log("case 5, ribeye");
-                        User.updateOne(
-                            { _id: notifyUserId },
-                            {
-                                $push:
-                                {
-                                    "notifications.replies": { postId, repliesInfo: [{ commentAuthorId: commentAuthorId, commentsRepliedTo: [{ id: commentId, replies: [{ authorId: replyAuthorId, replyIds: [{ id: replyId, wasSeen: false }] }] }] }] }
-                                }
-                            },
-                            (error, numsAffected) => {
-                                if (error) {
-                                    console.error('Error in notifying user, case 5: ', error);
-                                } else {
-                                    console.log('User was notified of new reply. Case 5 was implemented, numsAffected: ', numsAffected);
-                                }
-                            }
-                        )
+                        notifyUserOfNewReply(newReplyNotification, notifyUserId);
                     }
                 })
             })
     } else if (name === 'commentNotifications') {
-        const { postId, commentId, commentAuthorId } = data;
+        console.log("request.body: ", request.body)
+        const { userIds } = request.body;
+        const { postId, commentId } = data;
+        // const isOneUserId = userIds.constructor !== Array;
         // MAIN GOAL: when the current user leaves a comment on a post, notify the following users:
         // all users who left a comment on the post if at least one of them isn't the current user 
         // the author of the post, if the author of the post isn't the current user
@@ -1280,31 +1373,213 @@ router.route("/users/updateInfo").post((request, response) => {
         // CASES: 
         // CASE 1: if postPresent and commentAuthorPresent, then find the comment author and push the new comment notification for that author
         // CASE 2: if postPresent and !commentAuthorPresent, then find the post in the notifications.comments and push the following into the commentsInfo field: {commentAuthorId: current user id goes here, commentIds: [{id: commentId, wasSeen: false}]} 
-        // CASE 3: if !postPresent and !commentAuthorPresent, then push the following into notifications.comments: {postId, commentsInfo: [{commentAuthorId, commentIds: [{id: commentId, wasSeen: false}]}]}
+        // CASE 3: if !postPresent and !commentAuthorPresent, then push the following into notifications.comments: {postId, commentsIxxnfo: [{commentAuthorId, commentIds: [{id: commentId, wasSeen: false}]}]}
+        User.find(
+            { _id: { $in: userIds } },
+            { 'notifications.comments': 1, _id: 1 },
+            error => {
+                if (error) {
+                    console.error("An error has occurred in getting comment notifications of users: ", error);
+                    response.sendStatus(404);
+                } else {
+                    console.log('No error has occurred in getting comment notifications of user');
+                    response.json('No error has occurred in getting comment notifications of user. Will notify users of new comment.');
+                }
+            }
+        ).then(commentNotifications => {
+            console.log('commentNotifications: ', commentNotifications);
+            commentNotifications.forEach(({ _id: notifyUserId, notifications }) => {
+                const _commentNotifications = (notifications && notifications.comments && notifications.comments.length) && notifications.comments
+                const { isPostPresent, hasCommented } = checkForCurrentUserComment(_commentNotifications, userId, postId);
+                console.log({
+                    isPostPresent, hasCommented
+                });
+                if (isPostPresent && hasCommented) {
+                    console.log('Case 1 commentNotifications')
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.comments.$[post].comments.$[comment].commentsByAuthor': { id: commentId, wasSeen: false }
+                            }
+                        },
+                        {
+                            arrayFilters: [{ 'post.postId': postId }, { 'comment.authorId': userId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in notifying user: ', error);
+                            } else {
+                                console.log('User was notified of comment. Case 1 was implemented, numsAffected: ', numsAffected);
+                            }
+                        }
+                    )
+                } else if (isPostPresent && !hasCommented) {
+                    // the post exits but the current user hasn't commented on the current post yet
+                    console.log('Case 2 commentNotifications');
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.comments.$[post].comments': { authorId: userId, commentsByAuthor: [{ id: commentId, wasSeen: false }] }
+                            }
+                        },
+                        {
+                            arrayFilters: [{ 'post.postId': postId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in notifying user: ', error);
+                            } else {
+                                console.log('User was notified of comment. Case 2 was implemented, numsAffected: ', numsAffected);
+                            }
+                        }
+                    )
+                } else {
+                    console.log('Case 3 commentNotifications');
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.comments': { postId: postId, comments: [{ authorId: userId, commentsByAuthor: [{ id: commentId, wasSeen: false }] }] }
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in notifying user: ', error);
+                            } else {
+                                console.log('User was notified of comment. Case 3 was implemented, numsAffected: ', numsAffected);
+                            }
+                        }
+                    )
+                }
+            })
+        });
+    } else if (name === 'replyLikeNotification') {
+        // GOAL: notify the author of a reply when it gets a new reply
         console.log('request.body: ', request.body);
-        if (isPostPresent && isCommentAuthorPresent) {
+        const { notifyUserId } = request.body;
+        const { postId, commentId, replyId, userIdOfLike } = data;
 
-        } else if (isPostPresent && !isCommentAuthorPresent) {
+        const newReplyLikeNotification = {
+            postId: postId,
+            commentsRepliedTo: [{ commentId: commentId, replies: [{ replyId: replyId, userIdsOfLikes: [{ userId: userIdOfLike, wasSeen: false }] }] }]
+        };
 
-        } else {
-            // User.updateOne(
-            //     { _id: notifyUserId },
-            //     {
-            //         $push:
-            //         {
-            //             "notifications.comments": { postId, commentsInfo: [{ commentAuthorId: commentAuthorId, commentIds: [{ id: commentId, wasSeen: false}] }] }
-            //         }
-            //     },
-            //     (error, numsAffected) => {
-            //         if (error) {
-            //             console.error('Error in notifying user of a new comment, case 3: ', error);
-            //         } else {
-            //             console.log('User was notified of new comment. Case 3 was implemented, numsAffected: ', numsAffected);
-            //         }
-            //     }
-            // )
-        }
-    };
+        // GOAL: when the reply like notification is deleted by the current user unliking the reply, when the user relikes it again, push the id of the current user into the userIdsOfLikes for that reply 
+        // WHAT IS HAPPENING: 
+        // it is showing that the reply id doesn't exist 
+        User.findOne({ _id: notifyUserId }, { 'notifications.likes.replies': 1, _id: 0 }).then(result => {
+            const replyLikesNotifications = (result.notifications && result.notifications.likes && result.notifications.likes.replies && result.notifications.likes.replies.length) && result.notifications.likes.replies
+            if (replyLikesNotifications) {
+
+                const { isPostPresent, isCommentPresent, isReplyPresent } = checkReplyLikesInfo(data, replyLikesNotifications);
+                console.log({
+                    isPostPresent, isCommentPresent, isReplyPresent
+                })
+                if (isPostPresent && isCommentPresent && isReplyPresent) {
+                    console.log('case 1 reply like notifications')
+                    // GOAL: push the following into userIdsOfLikes for the object that contains the liked reply: {userId, wasSeen: false}
+                    // the reply was already liked before, push the new id of liked into userIdsOfLikes
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.likes.replies.$[post].commentsRepliedTo.$[comment].replies.$[reply].userIdsOfLikes': { userId: userIdOfLike, wasSeen: false }
+                            }
+                        },
+                        {
+                            arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }, { 'reply.replyId': replyId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in notifying author of reply of new like: ', error);
+                            } else {
+                                console.log('Case 1. User was notified of reply like, numsAffected: ', numsAffected);
+                            }
+                        }
+                    );
+                } else if (isPostPresent && isCommentPresent && !isReplyPresent) {
+                    console.log('case 2 reply like notifications')
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.likes.replies.$[post].commentsRepliedTo.$[comment].replies': { replyId: replyId, userIdsOfLikes: [{ userId: userIdOfLike, wasSeen: false }] }
+                            }
+                        },
+                        {
+                            arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in notifying author of reply of new like: ', error);
+                            } else {
+                                console.log('Case 2. User was notified of reply like, numsAffected: ', numsAffected);
+                            }
+                        }
+                    );
+                } else if (isPostPresent && !isCommentPresent && !isReplyPresent) {
+                    console.log('case 3 reply like notifications')
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.likes.replies.$[post].commentsRepliedTo': { commentId: commentId, replies: [{ replyId: replyId, userIdsOfLikes: [{ userId: userIdOfLike, wasSeen: false }] }] }
+                            }
+                        },
+                        {
+                            arrayFilters: [{ 'post.postId': postId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in notifying author of reply of new like: ', error);
+                            } else {
+                                console.log('Case 3. User was notified of reply like, numsAffected: ', numsAffected);
+                            }
+                        }
+                    );
+                } else {
+                    console.log('case 4 rib eye reply like notifications')
+                    notifyUserOfNewReplyLike(notifyUserId, newReplyLikeNotification);
+                };
+            } else {
+                console.log('No notification for reply likes. Will make them. Case 5 rib eye reply like notification')
+                notifyUserOfNewReplyLike(notifyUserId, newReplyLikeNotification);
+            }
+        })
+        response.json('notifying author of reply of new like.');
+    } else if (name === 'deleteReplyLikeNotification') {
+        const { notifyUserId } = request.body;
+        const { postId, commentId, replyId, userIdOfLike } = data;
+        console.log('request.body: ', request.body);
+        User.updateOne(
+            { _id: notifyUserId },
+            {
+                $pull:
+                {
+                    'notifications.likes.replies.$[post].commentsRepliedTo.$[comment].replies.$[reply].userIdsOfLikes': { userId: userIdOfLike }
+                }
+            },
+            {
+                arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }, { 'reply.replyId': replyId }]
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('An error has occurred in deleting the notification for the author of the reply: ', error);
+                } else {
+                    console.log('Reply notification for author of reply was deleted, numsAffected: ', numsAffected);
+                    response.json('Reply notification for author of reply was deleted.')
+                }
+            }
+        );
+    }
 }, (error, req, res, next) => {
     if (error) {
         res.status(404).send('An error has occurred. Please try again later.');
@@ -1668,22 +1943,6 @@ router.route("/users/:package").get((request, response) => {
                     response.sendStatus(500);
                 }
             })
-    } else if (name === 'getCommentNotifications') {
-        const { userIds } = package;
-        User.find({ _id: { $in: userIds } }, { ["notifications.comments"]: 1, _id: 1 })
-            .then(comments => {
-                const comments_ = comments.map(reply => {
-                    const { notifications, _id: userId } = reply;
-                    const comments = (notifications && notifications.comments && notifications.comments.length) && notifications.comments;
-                    return comments ? { userId: userId, comments } : { userId: userId };
-                })
-                response.status(200).send(comments_);
-            })
-            .catch(error => {
-                if (error) {
-                    console.error("An error has occurred in getting user notifications for comments: ", error)
-                }
-            });
     } else if (name === 'getUserCommentActivities') {
         User.find({ _id: userId }, { ["activities.comments"]: 1, _id: 0 })
             .then(commentsActivity => {

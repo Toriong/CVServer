@@ -157,7 +157,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                     console.error(`Error message: ${error}`);
                 } else {
                     console.log("User commented on post. NumbersAffected: ", numbersAffected)
-                    res.send("post requested received, new comment added");
+                    res.json("post requested received, new comment added");
                 }
             }
         );
