@@ -1,10 +1,12 @@
 const express = require('express');
+const multer = require('multer');
 const User = require("../models/user");
 const BlogPost = require('../models/blogPost');
 const fs = require('fs');
+const timeFns = require("../functions/getTime");
+const { getTime, computeTimeElapsed, getTimeElapsedText } = timeFns;
 const router = express.Router();
 const path = require('path');
-const multer = require('multer');
 
 
 // GOAL: if the current user is following the user that they want to block, delete that user from their following list  
@@ -2223,6 +2225,186 @@ router.route("/users/:package").get((request, response) => {
                 }
             });
     } else if (name === 'getNotifications') {
+        const { willGetReplies } = request.body;
+        //  NOTES:
+        // get all seven notifications and send them individual back to the client 
+        // CASE#1: a user replies to another user on the current user's post
+        // send a boolean value to the server that will determine what notification to get for the user
+
+
+        // CASE#2: A user replies to the current user on some else's post
+
+
+
+        // GOAL: GET ALL OF THE REPLY NOTIFICATIONS
+        // CASE#1:
+        User.findOne({ _id: userId }, { _id: 0, 'notifications': 1, publishedDrafts: 1 }).then(result => {
+            const { publishedDrafts, notifications } = result;
+            if (notifications) {
+                const { replies, comments, likes, newPostsFromFollowing, newFollowers } = notifications;
+                if (willGetReplies) {
+                    // GET ALL INFO FOR THE REPLIES HERE AN SEND THEM TO THE CLIENT
+                    // ROUGH OUTLINE:
+                    // get the post name 
+                    // get the username of the comment if the comment is not by the current user
+                    // get the username of the reply
+                    // there will always be a post and the post name 
+                    // get the info of the author of the reply
+
+                    // put all of the ids of the author of the replies into an array
+                    // make a query to the User collection using the array above to get the data of the author of the reply--get the username 
+                    // in the then method above do the next step
+                    // make a query to the Blogposts collection to get the following data: the post name, and the time that the reply was posted (get the  comments field)
+                    // the reply Info for each author was retrieved 
+                    // the info about the post is retrieved (the post title, and the time that the reply was posted (get the  comments field))
+                    // map through all of the replyNotifications, for each notification, insert the time of the reply 
+                    // check if the post was written by the current user
+                    // check if the comment is by the current user 
+                    // the post is written by the current user
+                    // the comment is by the current user
+                    // insert the following text: 'UserX replied to your comment on your post (post name)'
+                    // send the copy of the map method above to the client 
+
+                    // GOAL:  get all of the author ids for each reply
+                    const postIdsOfReplies = replies.map(({ postId }) => postId);
+                    let replyAuthorIds = [];
+                    let commentIdsRepliedTo = [];
+                    replies.forEach(({ repliesInfo }) => {
+                        repliesInfo.forEach(({ commentsRepliedTo }) => {
+                            commentsRepliedTo.forEach(({ replies, id }) => {
+                                commentIdsRepliedTo.push(id);
+                                replies.forEach(({ replyAuthorId }) => {
+                                    const isAuthorIdPresent = replyAuthorIds.length && replyAuthorIds.includes(replyAuthorId);
+                                    !isAuthorIdPresent && replyAuthorIds.push(replyAuthorId);
+                                });
+                            })
+
+                        })
+                    });
+
+                    User.find(
+                        { _id: replyAuthorIds },
+                        { username: 1 },
+                        error => {
+                            if (error) {
+                                console.error('An error has occurred in getting the user info of the author of replies');
+                            } else {
+                                console.log('No error has occurred in getting the user info of the author of replies.')
+                            }
+                        }
+                    ).then(replyAuthorsInfo => {
+                        BlogPost.find(
+                            { _id: { $in: postIdsOfReplies } },
+                            { title: 1, comments: 1 },
+                            error => {
+                                if (error) {
+                                    console.error('An error has occurred in getting the posts of the replies')
+                                } else {
+                                    console.log('No error has occurred in getting the posts of the replies')
+                                }
+                            }
+                        ).then(postsOfReplies => {
+                            const replies_ = replies.map(reply => {
+                                // GOAL: for each reply, insert the time elapsed
+                                // the following fields are inserted for each reply: {timeElapsedText}
+                                // get the text from below
+                                // pass the below into getTimeElapsedText as its parameters
+                                // get the following from computeTimeElapsed: { minutes, hours, days, months, years }
+                                // pass the answer below for the parameter for computeTimeElapsed along with the current Ms of the current year
+                                // get the following answer: current time minus the time that the reply was created
+                                // get the current Ms in this year
+                                // get the current time in miliSeconds
+                                // get the time that the reply was created in miliSeconds
+                                // the reply text is accessed (_reply)
+                                // using the reply id, get the reply object in comment.replies of o
+                                // for each replyId, get the reply itself in comments.replies
+                                // for each reply, access the replyIds
+                                // for each replyInfo, loop through the 'replies' field 
+                                // the comment info is found in the var of comments  
+                                // for each comment id, use it to get the comment info that houses the reply info in the comments var
+                                // for each replyInfo, access the comment id 
+                                // map through repliesInfo 
+                                const { postId, repliesInfo } = reply;
+                                const { comments, title } = postsOfReplies.find(({ _id }) => _id === postId);
+                                const repliesInfo_ = repliesInfo.map(replyInfo => {
+                                    const { commentsRepliedTo, commentAuthorId } = replyInfo;
+                                    const _commentsRepliedTo = commentsRepliedTo.map(comment => {
+                                        const { id: _commentId, replies } = comment;
+                                        const { replies: mainRepliesToComment } = comments.find(({ commentId }) => commentId === _commentId);
+                                        const _replies = replies.map(replyInfo => {
+                                            const { authorId, replyIds } = replyInfo;
+                                            const _replyIds = replyIds.map(reply => {
+                                                const { _reply, createdAt } = mainRepliesToComment.find(({ replyId }) => replyId === reply.id);
+                                                // MS = miliSeconds
+                                                const { miliSeconds: currentTimeInMS, msOfCurrentYear } = getTime();
+                                                const timeSinceReply = currentTimeInMS - createdAt.miliSeconds;
+                                                const { minutes, hours, days, months, years } = computeTimeElapsed(timeSinceReply, msOfCurrentYear);
+                                                const timeElapsedText = getTimeElapsedText(minutes, hours, days, months, years);
+                                                let notificationText;
+                                                // CU = current user
+                                                const isPostByCU = publishedDrafts.includes(postId);
+                                                const isCommentByCU = commentAuthorId === userId;
+                                                // UN = username
+                                                const { username: UNofReplyAuthor } = replyAuthorsInfo.find(({ _id }) => _id === authorId);
+                                                if (isPostByCU && isCommentByCU) {
+                                                    notificationText = `${UNofReplyAuthor} replied to your comment on your post "${title}": `
+                                                } else if (isPostByCU) {
+                                                    notificationText = `${UNofReplyAuthor} replied to a comment that you've replied to on your post "${title}": `
+                                                } else if (isCommentByCU) {
+                                                    notificationText = `${UNofReplyAuthor} replied to your comment a post "${title}": `
+                                                } else {
+                                                    notificationText = `${UNofReplyAuthor} replied to a comment that you've replied to on post "${title}": `
+                                                }
+                                                return {
+                                                    ...reply,
+                                                    timeElapsedText,
+                                                    notificationText,
+                                                    replyText: _reply
+                                                }
+                                            });
+
+                                            return {
+                                                ...replyInfo,
+                                                replyIds: _replyIds
+                                            }
+                                        })
+
+                                        return {
+                                            ...comment,
+                                            replies: _replies
+                                        }
+                                    })
+
+                                    return {
+                                        ...replyInfo,
+                                        commentsRepliedTo: _commentsRepliedTo
+                                    }
+                                });
+
+                                return {
+                                    ...reply,
+                                    repliesInfo: repliesInfo_
+                                }
+                            });
+
+                            console.log('replies: ', replies_);
+                        })
+                    })
+
+
+                    // CASE 1: 'UserX replied to a comment on your post (post name)'
+
+
+                    // CASE 2: 'UserX replied to your comment on your post (post name)'
+
+                    // CASE 3: 'UserX replied to your comment on post 'what is up yo' '(post name)'
+
+                }
+
+            } else {
+                response.json({ isEmpty: true });
+            }
+        })
 
     }
 })

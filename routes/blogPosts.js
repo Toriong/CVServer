@@ -1,10 +1,7 @@
-const { ObjectId } = require('bson');
-const { request, response } = require('express');
 const express = require('express');
 const router = express.Router();
-const getTime = require("../functions/getTime");
+const timeFns = require("../functions/getTime");
 const BlogPost = require('../models/blogPost');
-const User = require('../models/user');
 // make an activities for all of the edits that the user did to comments replies and posts 
 
 // GOAL: display all notifications pertaining to the following: replies on user's post, replies to user comments, comments on user's posts, likes for the following: (comments, replies, posts)
@@ -98,7 +95,7 @@ router.route("/blogPosts").post((req, res) => {
                 imgUrl,
                 body,
                 tags,
-                publicationDate: getTime()
+                publicationDate: timeFns.getTime()
             });
         } else if (!subtitle && imgUrl) {
             console.log("no subtitle present, publishing post")
@@ -109,7 +106,7 @@ router.route("/blogPosts").post((req, res) => {
                 imgUrl,
                 body,
                 tags,
-                publicationDate: getTime()
+                publicationDate: timeFns.getTime()
             });
         } else if (subtitle && !imgUrl) {
             console.log("no intro pic present, publishing post");
@@ -120,7 +117,7 @@ router.route("/blogPosts").post((req, res) => {
                 subtitle,
                 body,
                 tags,
-                publicationDate: getTime()
+                publicationDate: timeFns.getTime()
             });
         } else {
             newPost = new BlogPost({
@@ -129,7 +126,7 @@ router.route("/blogPosts").post((req, res) => {
                 authorId,
                 body,
                 tags,
-                publicationDate: getTime()
+                publicationDate: timeFns.getTime()
             });
         };
         newPost.save()
