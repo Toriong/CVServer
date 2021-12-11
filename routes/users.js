@@ -1,10 +1,10 @@
 const express = require('express');
-const router = express.Router();
 const User = require("../models/user");
-const path = require('path');
+const BlogPost = require('../models/blogPost');
 const fs = require('fs');
+const router = express.Router();
+const path = require('path');
 const multer = require('multer');
-const { promisify } = require('util');
 
 
 // GOAL: if the current user is following the user that they want to block, delete that user from their following list  
@@ -35,22 +35,63 @@ const { promisify } = require('util');
 // the current post exist
 // if the current post exist, then access the repliedToComments
 
-const checkReplyLikesInfo = (data, replyLikesNotifications) => {
+const addPostNotification = (notifyUserId, newPostLikeNotification) => {
+    User.updateOne(
+        { _id: notifyUserId },
+        {
+            $addToSet:
+            {
+                'notifications.likes.posts': newPostLikeNotification
+            }
+        },
+        (error, numsAffected) => {
+            if (error) {
+                console.error('Case 2 or 3. An error has occurred in notifying author of comment of new like: ', error);
+            } else {
+                console.log('Case 2 or 3. Post like notification was sent, numsAffected: ', numsAffected);
+            }
+        }
+    )
+}
+
+
+const addCommentNotification = (notifyUserId, newCommentNotification) => {
+    User.updateOne(
+        { _id: notifyUserId },
+        {
+            $addToSet:
+            {
+                'notifications.likes.comments': newCommentNotification
+            }
+        },
+        (error, numsAffected) => {
+            if (error) {
+                console.error('An error has occurred in notifying author of comment of new like ', error);
+            } else {
+                console.log('Comment notification for author of comment was sent, numsAffected: ', numsAffected);
+            }
+        }
+    );
+}
+
+const checkLikesInfo = (data, likesNotifications, type = {}) => {
     const { postId, commentId: _commentId, replyId } = data;
     console.log('replyId: ', replyId);
+    const { isComment, isReply } = type;
     let isPostPresent;
     let isCommentPresent;
     let isReplyPresent;
 
-    replyLikesNotifications.forEach(replyLikesInfo => {
-        const { postId: _postId, commentsRepliedTo } = replyLikesInfo;
+    likesNotifications.forEach(like => {
+        const { postId: _postId, commentsRepliedTo, comments: comments_ } = like;
+        const comments = commentsRepliedTo ?? comments_
         if (_postId === postId) {
             isPostPresent = true;
-            commentsRepliedTo.forEach(({ commentId, replies }) => {
+            (isComment || isReply) && comments.forEach(({ commentId, replies }) => {
                 if (commentId === _commentId) {
                     isCommentPresent = true;
                     console.log('replies: ', replies);
-                    replies.forEach(({ replyId: _replyId }) => {
+                    isReply && replies.forEach(({ replyId: _replyId }) => {
                         if (replyId === _replyId) {
                             isReplyPresent = true;
                         }
@@ -652,14 +693,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) throw error;
                 else {
                     console.log(`User unliked a post, deleted activity. NumsAffectd: `, numsAffected);
-                    // User.find(
-                    //     { _id: userId },
-                    //     { activities: 1, _id: 0 }
-                    // ).then(results => {
-                    //     console.log("results 483", results)
-                    //     const { activities } = results[0]
-                    //     response.json(activities);
-                    // })
                     response.status(200).json({ isLiked: false })
                 }
             }
@@ -807,7 +840,7 @@ router.route("/users/updateInfo").post((request, response) => {
         });
         response.json('Will track user reply like');
     } else if (name === "followUser") {
-        console.log('data: ', data);
+        // NOTIFY THE USER BEING FOLLOWED HERE
         const { newFollowingUserId, signedInUserId, followedUserAt } = data;
         console.log('dta ', data);
         User.updateOne({ _id: signedInUserId },
@@ -831,11 +864,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 $addToSet:
                 {
                     followers: { userId: signedInUserId, wasFollowedAt: followedUserAt },
-                    notifications:
-                    {
-                        newFollower: signedInUserId,
-                        wasSeen: false
-                    }
+                    'notifications.newFollowers': { userId: signedInUserId, isMarkedRead: false }
                 }
             },
             (error, numsAffected) => {
@@ -843,7 +872,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     console.error(`Error message 687: ${error}`)
                 } else {
                     console.log(`User is being followed by ${signedInUserId}. `, numsAffected)
-                    response.json({ newFollowingUserId, signedInUserId, wasDbUpdated: true });
+                    response.json('user has a new follower and is notified');
                 }
             }
         );
@@ -861,17 +890,18 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) {
                     console.error(`Error message 667: ${error}`)
                 } else {
-                    console.log(`User unFollowed, numsAffected: `, numsAffected)
+                    console.log(`Following activity deleted, numsAffected: `, numsAffected)
                 }
             }
         );
-        // how to tell if an element was seen on the UI?
+        // NOT WORKING:
+        console.log('userId_: ', userId_);
         User.updateOne({ _id: unFollowUser },
             {
                 $pull:
                 {
                     followers: { userId: userId_ },
-                    notifications: { newFollower: userId_ }
+                    'notifications.newFollowers': { userId: userId_ }
                 }
             },
             (error, numsAffected) => {
@@ -879,7 +909,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     console.error(`Error message 687: ${error}`)
                 } else {
                     console.log(`User was unFollowed. numsAffected: `, numsAffected)
-                    response.json("User was unFollowed")
+                    response.json("User was unFollowed and new following notification was deleted.")
                 }
             }
         );
@@ -1460,7 +1490,6 @@ router.route("/users/updateInfo").post((request, response) => {
         });
     } else if (name === 'replyLikeNotification') {
         // GOAL: notify the author of a reply when it gets a new reply
-        console.log('request.body: ', request.body);
         const { notifyUserId } = request.body;
         const { postId, commentId, replyId, userIdOfLike } = data;
 
@@ -1476,7 +1505,7 @@ router.route("/users/updateInfo").post((request, response) => {
             const replyLikesNotifications = (result.notifications && result.notifications.likes && result.notifications.likes.replies && result.notifications.likes.replies.length) && result.notifications.likes.replies
             if (replyLikesNotifications) {
 
-                const { isPostPresent, isCommentPresent, isReplyPresent } = checkReplyLikesInfo(data, replyLikesNotifications);
+                const { isPostPresent, isCommentPresent, isReplyPresent } = checkLikesInfo(data, replyLikesNotifications, { isReply: true });
                 console.log({
                     isPostPresent, isCommentPresent, isReplyPresent
                 })
@@ -1579,6 +1608,233 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             }
         );
+    } else if (name === 'commentLikeNotification') {
+        const { notifyUserId } = request.body;
+        const { postId, commentId, userIdOfLike } = data;
+        const newCommentNotification = {
+            postId,
+            comments: [{ commentId, userIdsOfLikes: [{ userId: userIdOfLike, wasSeen: false }] }]
+        };
+        // CASE #1: first like of the user comment
+
+        // CASE #2: there are already likes for the user's comment
+        // GOAL: when there are likes for the user's comments, find the comment id and push the following object into userIdsOfLikes: {userId, wasSeen: false}
+        // the following is pushed into the userIdOfLikes: {userId, wasSeen: false}
+        // the userIdsOfLikes field is accessed 
+        // the comment that was liked is found by using the comment id
+        // filter through the comments field
+        // the notifications.likes.comments is accessed 
+        // if isCommentPresent and isPostPresent, then push the following object into userIdsOfLikes: {userId, wasSeen: false}
+        // isCommentPresent is set to true
+        // is isPostPresent is set to true
+        // the comment is present 
+        // the post present
+        // if the post and the comment is present, then set the following to true: isCommentPresent and isPostPresent
+        User.findOne({ _id: notifyUserId }, { 'notifications.likes.comments': 1, _id: 0 }).then(result => {
+            const commentLikesNotifications = (result.notifications && result.notifications.likes && result.notifications.likes.comments && result.notifications.likes.comments.length) && result.notifications.likes.comments;
+            if (commentLikesNotifications) {
+                const { isCommentPresent, isPostPresent } = checkLikesInfo(data, commentLikesNotifications, { isComment: true });
+                if (isPostPresent && isCommentPresent) {
+                    console.log('case 1 comments notifications')
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.likes.comments.$[postOfComment].comments.$[comment].userIdsOfLikes': { userId: userIdOfLike, wasSeen: false }
+                            }
+                        },
+                        {
+                            arrayFilters: [{ 'postOfComment.postId': postId }, { 'comment.commentId': commentId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in notifying author of comment of new like ', error);
+                            } else {
+                                console.log('Case 1. Comment notification for author of comment was sent, numsAffected: ', numsAffected);
+                            }
+                        }
+                    );
+                } else if (isPostPresent && !isCommentPresent) {
+                    console.log('case 2 comments notifications')
+                    // the current user is the first user to like a comment by userA on a post, but has liked other comments either by userA or not
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.likes.comments.$[postOfComment].comments': { commentId: commentId, userIdsOfLikes: [{ userId: userIdOfLike, wasSeen: false }] }
+                            }
+                        },
+                        {
+                            arrayFilters: [{ 'postOfComment.postId': postId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in notifying author of comment of new like ', error);
+                            } else {
+                                console.log('Case 2. Comment notification for author of comment was sent, numsAffected: ', numsAffected);
+                            }
+                        }
+                    );
+                } else {
+                    console.log('case 3 comments notifications')
+                    addCommentNotification(notifyUserId, newCommentNotification);
+                }
+            } else {
+                console.log('case 4 comments notifications')
+                addCommentNotification(notifyUserId, newCommentNotification)
+            };
+            response.json('Will notify author of comment of new like.')
+        })
+    } else if (name === 'deleteCommentNotification') {
+        const { notifyUserId } = request.body;
+        const { postId, commentId, userIdOfLike } = data;
+        User.updateOne(
+            { _id: notifyUserId },
+            {
+                $pull:
+                {
+                    'notifications.likes.comments.$[postOfComment].comments.$[comment].userIdsOfLikes': { userId: userIdOfLike }
+                }
+            },
+            {
+                arrayFilters: [{ 'postOfComment.postId': postId }, { 'comment.commentId': commentId }]
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('An error has occurred in notifying author of comment of new like ', error);
+                } else {
+                    console.log('Deleted comment notification, numsAffected: ', numsAffected);
+                }
+            }
+        );
+        response.json('Deleted the comment notification that was sent to the author of comment.');
+    } else if (name === 'postLikeNotification') {
+        // GOAL: check if the there are post likes present for the current post that was liked 
+        const { notifyUserId } = request.body;
+        const { postId, userIdOfLike } = data;
+        const newPostLikeNotification = {
+            postId,
+            userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }]
+        }
+        User.findOne({ _id: notifyUserId }, { 'notifications.likes.posts': 1, _id: 0 }).then(result => {
+            const postLikesNotifications = (result.notifications && result.notifications.likes && result.notifications.likes.posts && result.notifications.likes.posts.length) && result.notifications.likes.posts;
+            if (postLikesNotifications) {
+                const { isPostPresent } = checkLikesInfo(data, postLikesNotifications);
+                if (isPostPresent) {
+                    console.log('Post like notification, case 1')
+                    User.updateOne(
+                        { _id: notifyUserId },
+                        {
+                            $addToSet:
+                            {
+                                'notifications.likes.posts.$[post].userIdsOfLikes': { userId: userIdOfLike, isMarkedRead: false }
+                            }
+                        },
+                        {
+                            arrayFilters: [{ 'post.postId': postId }]
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('Case 1. An error has occurred in notifying author of comment of new like ', error);
+                            } else {
+                                console.log('Case 1. Post like notification was sent, numsAffected: ', numsAffected);
+                            }
+                        }
+                    )
+                } else {
+                    console.log('Post like notification, case 2');
+                    addPostNotification(notifyUserId, newPostLikeNotification);
+                }
+            } else {
+                console.log('Post like notification, case 3. Will create notifications.likes.posts');
+                addPostNotification(notifyUserId, newPostLikeNotification);
+            }
+        })
+        response.json('Author of post will be notified of new like')
+    } else if (name === 'deletePostLikeNotification') {
+        const { notifyUserId } = request.body;
+        const { postId, userIdOfLike } = data;
+        User.updateOne(
+            { _id: notifyUserId },
+            {
+                $pull:
+                {
+                    'notifications.likes.posts.$[post].userIdsOfLikes': { userId: userIdOfLike }
+                }
+            },
+            {
+                arrayFilters: [{ 'post.postId': postId }]
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('Case 1. An error has occurred in deleting notification for the author of the post ', error);
+                } else {
+                    console.log('Post like notification for author was deleted, numsAffected: ', numsAffected);
+                    response.json('Notification of post like for author was deleted.');
+                }
+            }
+        );
+    } else if (name === 'notifyFollowersOfNewPost') {
+        console.log('request.body: ', request.body);
+        const { userId: authorId } = request.body;
+        const { postId } = data;
+        // CHECK THIS CODE AGAIN
+        User.findOne({ _id: authorId }, { followers: 1, _id: 0 }).then(result => {
+            if (result.followers && result.followers.length) {
+                const { followers } = result;
+                const followerIds = followers.map(({ userId }) => userId);
+                followerIds.forEach(_notifyUserId => {
+                    User.findOne({ _id: _notifyUserId }, { 'notifications.newPostsFromFollowing': 1, _id: 0, username: 1 }).then(results => {
+                        const newPostsFromFollowing = (results.notifications && results.notifications.newPostsFromFollowing && results.notifications.newPostsFromFollowing.length) && results.notifications.newPostsFromFollowing;
+                        const isAuthorPresent = newPostsFromFollowing && newPostsFromFollowing.map(({ authorId: _authorId }) => _authorId).includes(authorId);
+                        console.log('isAuthorPresent: ', isAuthorPresent);
+                        if (isAuthorPresent) {
+                            console.log('notify following of new post, case 1')
+                            User.updateOne(
+                                { _id: _notifyUserId },
+                                {
+                                    $addToSet:
+                                    {
+                                        'notifications.newPostsFromFollowing.$[post].newPostIds': { postId: postId, isMarkedRead: false }
+                                    }
+                                },
+                                {
+                                    arrayFilters: [{ 'post.authorId': authorId }]
+                                },
+                                (error, numsAffected) => {
+                                    if (error) {
+                                        console.error(`An error has occurred in notifying ${results.username}: `, error);
+                                    } else {
+                                        console.log(`Case 1. ${results.username} was notified, numsAffected: `, numsAffected);
+                                    }
+                                }
+                            );
+                        } else {
+                            console.log('notify following of new post, case 2')
+                            User.updateOne(
+                                { _id: _notifyUserId },
+                                {
+                                    $addToSet:
+                                    {
+                                        'notifications.newPostsFromFollowing': { authorId: authorId, newPostIds: [{ postId: postId, isMarkedRead: false }] }
+                                    }
+                                },
+                                (error, numsAffected) => {
+                                    if (error) {
+                                        console.error(`An error has occurred in notifying ${results.username}: `, error);
+                                    } else {
+                                        console.log(`Case 2. ${results.username} was notified, numsAffected: `, numsAffected);
+                                    }
+                                }
+                            );
+                        }
+                    })
+                });
+            }
+        })
+        response.json('Will notify the following of current user of new post.')
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -1966,6 +2222,8 @@ router.route("/users/:package").get((request, response) => {
                     console.error("An error has occurred in getting user notifications for comments: ", error)
                 }
             });
+    } else if (name === 'getNotifications') {
+
     }
 })
 
