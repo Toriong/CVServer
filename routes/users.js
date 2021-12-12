@@ -2245,29 +2245,6 @@ router.route("/users/:package").get((request, response) => {
                 const { replies, comments, likes, newPostsFromFollowing, newFollowers } = notifications;
                 const { replies: replyLikes, comments: commentLikes, posts: postLikes } = likes;
                 if (willGetReplies && (replies && replies.length)) {
-                    // GET ALL INFO FOR THE REPLIES HERE AN SEND THEM TO THE CLIENT
-                    // ROUGH OUTLINE:
-                    // get the post name 
-                    // get the username of the comment if the comment is not by the current user
-                    // get the username of the reply
-                    // there will always be a post and the post name 
-                    // get the info of the author of the reply
-
-                    // put all of the ids of the author of the replies into an array
-                    // make a query to the User collection using the array above to get the data of the author of the reply--get the username 
-                    // in the then method above do the next step
-                    // make a query to the Blogposts collection to get the following data: the post name, and the time that the reply was posted (get the  comments field)
-                    // the reply Info for each author was retrieved 
-                    // the info about the post is retrieved (the post title, and the time that the reply was posted (get the  comments field))
-                    // map through all of the replyNotifications, for each notification, insert the time of the reply 
-                    // check if the post was written by the current user
-                    // check if the comment is by the current user 
-                    // the post is written by the current user
-                    // the comment is by the current user
-                    // insert the following text: 'UserX replied to your comment on your post (post name)'
-                    // send the copy of the map method above to the client 
-
-                    // GOAL:  get all of the author ids for each reply
                     const postIdsOfReplies = replies.map(({ postId }) => postId);
                     let replyAuthorIds = [];
                     let commentIdsRepliedTo = [];
@@ -2306,7 +2283,8 @@ router.route("/users/:package").get((request, response) => {
                                 }
                             }
                         ).then(postsOfReplies => {
-                            const replies_ = replies.map(reply => {
+                            let notificationsToDel = [];
+                            let replies_ = replies.map(reply => {
                                 const { postId, repliesInfo } = reply;
                                 const { comments, title } = postsOfReplies.find(({ _id }) => _id === postId);
                                 // if the comment doesn't exist, then that means the user deleted the comments
@@ -2319,68 +2297,103 @@ router.route("/users/:package").get((request, response) => {
                                         const { commentsRepliedTo, commentAuthorId } = replyInfo;
                                         const _commentsRepliedTo = commentsRepliedTo.map(comment => {
                                             const { id: _commentId, replies } = comment;
-                                            const { replies: mainRepliesToComment } = comments.find(({ commentId }) => commentId === _commentId);
-                                            const _replies = replies.map(replyInfo => {
-                                                const { authorId, replyIds } = replyInfo;
-                                                const _replyIds = replyIds.map(reply => {
-                                                    const { _reply, createdAt } = mainRepliesToComment.find(({ replyId }) => replyId === reply.id);
-                                                    // MS = miliSeconds
-                                                    const { miliSeconds: currentTimeInMS, msOfCurrentYear } = getTime();
-                                                    const timeSinceReply = currentTimeInMS - createdAt.miliSeconds;
-                                                    const { minutes, hours, days, months, years } = computeTimeElapsed(timeSinceReply, msOfCurrentYear);
-                                                    const timeElapsedText = getTimeElapsedText(minutes, hours, days, months, years);
-                                                    let notificationText;
-                                                    // CU = current user
-                                                    console.log('publishedDrafts: ', publishedDrafts);
-                                                    console.log('postId: ', postId);
-                                                    const isPostByCU = publishedDrafts.includes(postId);
-                                                    const isCommentByCU = commentAuthorId === userId;
-                                                    // UN = username
-                                                    const { username: UNofReplyAuthor } = replyAuthorsInfo.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                                    if (isPostByCU && isCommentByCU) {
-                                                        notificationText = `${UNofReplyAuthor} replied to your comment on your post `
-                                                    } else if (isPostByCU) {
-                                                        notificationText = `${UNofReplyAuthor} replied to a comment that you've replied to on your post `
-                                                    } else if (isCommentByCU) {
-                                                        notificationText = `${UNofReplyAuthor} replied to your comment on post `;
-                                                    } else {
-                                                        notificationText = `${UNofReplyAuthor} replied to a comment that you've replied to on post `
-                                                    }
+                                            const commentOnPost = comments.find(({ commentId }) => commentId === _commentId);
+                                            if (commentOnPost && commentOnPost.replies && commentOnPost.replies.length) {
+                                                const _replies = replies.map(replyInfo => {
+                                                    const { authorId, replyIds } = replyInfo;
+                                                    const _replyIds = replyIds.map(reply => {
+                                                        // const { _reply, createdAt } = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
+                                                        const targetReply = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
+                                                        // MS = miliSeconds
+                                                        if (targetReply) {
+                                                            const { _reply, createdAt } = targetReply;
+                                                            const { miliSeconds: currentTimeInMS, msOfCurrentYear } = getTime();
+                                                            const timeSinceReply = currentTimeInMS - createdAt.miliSeconds;
+                                                            const { minutes, hours, days, months, years } = computeTimeElapsed(timeSinceReply, msOfCurrentYear);
+                                                            const timeElapsedText = getTimeElapsedText(minutes, hours, days, months, years);
+                                                            let notificationText;
+                                                            // CU = current user
+                                                            const isPostByCU = publishedDrafts.includes(postId);
+                                                            console.log('commentAuthorId: ', commentAuthorId);
+                                                            console.log('userId: ', userId);
+                                                            const isCommentByCU = commentAuthorId === userId;
+                                                            // UN = username
+                                                            const { username: UNofReplyAuthor } = replyAuthorsInfo.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                                            if (isPostByCU && isCommentByCU) {
+                                                                notificationText = `${UNofReplyAuthor} replied to your comment on your post `
+                                                            } else if (isPostByCU) {
+                                                                notificationText = `${UNofReplyAuthor} replied to a comment that you've replied to on your post `
+                                                            } else if (isCommentByCU) {
+                                                                notificationText = `${UNofReplyAuthor} replied to your comment on post `;
+                                                            } else {
+                                                                notificationText = `${UNofReplyAuthor} replied to a comment that you've replied to on post `
+                                                            }
+
+                                                            return {
+                                                                ...reply,
+                                                                //MS = miliSeconds
+                                                                timePostedInMS: createdAt.miliSeconds,
+                                                                timeElapsedText,
+                                                                notificationText,
+                                                                replyText: _reply,
+                                                                title
+                                                            };
+                                                        } else {
+                                                            // delete the reply id 
+                                                            notificationsToDel.push({ postId, commentId: _commentId, replyId: reply.id });
+                                                        }
+
+                                                        return reply;
+                                                    });
+
                                                     return {
-                                                        ...reply,
-                                                        //MS = miliSeconds
-                                                        timePostedInMS: createdAt.miliSeconds,
-                                                        timeElapsedText,
-                                                        notificationText,
-                                                        replyText: _reply,
-                                                        title
+                                                        ...replyInfo,
+                                                        replyIds: _replyIds
                                                     }
-                                                });
+                                                })
 
                                                 return {
-                                                    ...replyInfo,
-                                                    replyIds: _replyIds
+                                                    ...comment,
+                                                    replies: _replies
                                                 }
-                                            })
+                                            } else {
+                                                // delete the comment
+                                                notificationsToDel.push({ postId, commentId: _commentId });
+                                            };
 
-                                            return {
-                                                ...comment,
-                                                replies: _replies
-                                            }
-                                        })
+                                            return comment;
+                                        });
 
                                         return {
                                             ...replyInfo,
                                             commentsRepliedTo: _commentsRepliedTo
                                         }
                                     });
+                                } else {
+                                    // delete the whole entire post from the notifications field
+                                    notificationsToDel.push({ postId });
                                 }
-                                return {
-                                    ...reply,
-                                    repliesInfo: repliesInfo_
-                                }
+
+                                return repliesInfo_ ?
+                                    {
+                                        ...reply,
+                                        repliesInfo: repliesInfo_
+                                    }
+                                    :
+                                    reply
+
                             });
-                            response.json({ replies: replies_ })
+                            if (notificationsToDel.length) {
+                                // GOALS:
+                                //CASE1: if the object only contains the post, then delete the post
+                                //CASE2: if the object only contains a post id and comment id, then delete the comment from the post notification 
+                                // CASE3: if the object only contains a post id, comment id, then delete only reply notification itself 
+                                // SEND THE EDITED replies_ to the client and update the notifications field by deleting the all of the notifications that don't exist
+
+                                response.json({ replies: replies_ })
+                            } else {
+                                response.json({ replies: replies_ })
+                            }
                         })
                     });
 
@@ -2391,7 +2404,12 @@ router.route("/users/:package").get((request, response) => {
                     // CASE 2: 'UserX replied to your comment on your post (post name)'
 
                     // CASE 3: 'UserX replied to your comment on post 'what is up yo' '(post name)'
-                } else if (willGetReplyLikes && (replyLikes && replyLikes.length)) {
+                } else if (willGetReplies) {
+                    response.json({ isRepliesEmpty: true })
+                }
+
+
+                if (willGetReplyLikes && (replyLikes && replyLikes.length)) {
                     // Goal: insert the following into each reply like notification that is stored in userIds of likes: {text: '(the username of the like) liked your reply on (your) post ' + '(the title of the post), title of the post, timeElapsedText'}  
                     // for each like, insert the above into each object
                     // loop through the userIdsOfLikes field
@@ -2401,7 +2419,7 @@ router.route("/users/:package").get((request, response) => {
                     // loop through each comment in the commentsRepliedTo field
                     // for each object, access the replies field
                     // use the find method and get from the user collection of the usernames for all of the user's that liked the current user's reply
-                    // use the find method and get from the blog post collection all of the title names for each post
+                    // use the find method and get from the blog post collection all of the title names for each post and their comments field 
                     // get all of the postIds 
                     // get all of ids of the users that liked your reply
                     let userIdsOfReplyLikes = [];
@@ -2418,6 +2436,14 @@ router.route("/users/:package").get((request, response) => {
                             })
                         })
                     });
+                    console.log({
+                        userIdsOfReplyLikes,
+                        postIds
+                    });
+
+                    response.json('Will get reply likes')
+                } else if (willGetReplyLikes) {
+                    response.json({ isReplyLikesEmpty: true })
                 }
 
             } else {
