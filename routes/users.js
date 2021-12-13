@@ -2253,15 +2253,17 @@ router.route("/users/:package").get((request, response) => {
                 const { replies: replyLikes, comments: commentLikes, posts: postLikes } = likes;
                 if (willGetReplies && (replies && replies.length)) {
                     const postIdsOfReplies = replies.map(({ postId }) => postId);
-                    let replyAuthorIds = [];
+                    let authorIds = [];
                     let commentIdsRepliedTo = [];
                     replies.forEach(({ repliesInfo }) => {
-                        repliesInfo.forEach(({ commentsRepliedTo }) => {
-                            commentsRepliedTo.forEach(({ replies, id }) => {
-                                commentIdsRepliedTo.push(id);
-                                replies.forEach(({ authorId }) => {
-                                    const isAuthorIdPresent = replyAuthorIds.length && replyAuthorIds.includes(authorId);
-                                    !isAuthorIdPresent && replyAuthorIds.push(authorId);
+                        repliesInfo.forEach(({ commentsRepliedTo, commentAuthorId }) => {
+                            const isAuthorIdPresent = authorIds.length && authorIds.includes(commentAuthorId)
+                            !isAuthorIdPresent && authorIds.push(commentAuthorId);
+                            commentsRepliedTo.forEach(({ replies, id: commentId }) => {
+                                commentIdsRepliedTo.push(commentId);
+                                replies.forEach(({ authorId: replyAuthorId }) => {
+                                    const isAuthorIdPresent = authorIds.length && authorIds.includes(replyAuthorId);
+                                    !isAuthorIdPresent && authorIds.push(replyAuthorId);
                                 });
                             })
 
@@ -2269,7 +2271,7 @@ router.route("/users/:package").get((request, response) => {
                     });
 
                     User.find(
-                        { _id: replyAuthorIds },
+                        { _id: authorIds },
                         { username: 1 },
                         error => {
                             if (error) {
@@ -2278,7 +2280,7 @@ router.route("/users/:package").get((request, response) => {
                                 console.log('No error has occurred in getting the user info of the author of replies.')
                             }
                         }
-                    ).then(replyAuthorsInfo => {
+                    ).then(infoOfAuthors => {
                         BlogPost.find(
                             { _id: { $in: postIdsOfReplies } },
                             { title: 1, comments: 1 },
@@ -2290,7 +2292,7 @@ router.route("/users/:package").get((request, response) => {
                                 }
                             }
                         ).then(postsOfReplies => {
-                            let notificationsToDel = [];
+                            let notificationsToDel;
                             console.log('replies: ', replies);
                             let replies_ = replies.map(reply => {
                                 const { postId, repliesInfo } = reply;
@@ -2305,86 +2307,215 @@ router.route("/users/:package").get((request, response) => {
                                         // CASE1: THE COMMENT AUTHOR DOESN'T EXIST
                                         // CASE2: THE COMMENT DOESN'T EXIST
                                         const { commentsRepliedTo, commentAuthorId } = replyInfo;
-                                        const _commentsRepliedTo = commentsRepliedTo.map(comment => {
-                                            const { id: _commentId, replies } = comment;
-                                            const commentOnPost = targetPost.comments.find(({ commentId }) => commentId === _commentId);
-                                            if (commentOnPost && commentOnPost.replies && commentOnPost.replies.length) {
-                                                const _replies = replies.map(replyInfo => {
-                                                    const { authorId, replyIds } = replyInfo;
-                                                    const _replyIds = replyIds.map(reply => {
-                                                        // const { _reply, createdAt } = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
-                                                        const targetReply = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
-                                                        // MS = miliSeconds
-                                                        if (targetReply) {
-                                                            const { _reply, createdAt } = targetReply;
-                                                            const timeElapsedText = _getTimeElapsedText(createdAt);
-                                                            let notificationText;
-                                                            // CU = current user
-                                                            const isPostByCU = publishedDrafts.includes(postId);
-                                                            console.log('commentAuthorId: ', commentAuthorId);
-                                                            console.log('userId: ', userId);
-                                                            const isCommentByCU = commentAuthorId === userId;
-                                                            // UN = username
-                                                            const { username: UNofReplyAuthor } = replyAuthorsInfo.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                                            if (UNofReplyAuthor) {
-                                                                if (isPostByCU && isCommentByCU) {
-                                                                    notificationText = `${UNofReplyAuthor} replied to your comment on your post `
-                                                                } else if (isPostByCU) {
-                                                                    notificationText = `${UNofReplyAuthor} replied to a comment that you've replied to on your post `
-                                                                } else if (isCommentByCU) {
-                                                                    notificationText = `${UNofReplyAuthor} replied to your comment on post `;
+                                        const doesCommentUserExist = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId))
+                                        if (doesCommentUserExist) {
+                                            const _commentsRepliedTo = commentsRepliedTo.map(comment => {
+                                                const { id: _commentId, replies } = comment;
+                                                const commentOnPost = targetPost.comments.find(({ commentId }) => commentId === _commentId);
+                                                if (commentOnPost && commentOnPost.replies && commentOnPost.replies.length) {
+                                                    const _replies = replies.map(replyInfo => {
+                                                        const { authorId, replyIds } = replyInfo;
+                                                        const replyAuthor = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                                        if (replyAuthor) {
+                                                            const _replyIds = replyIds.map(reply => {
+                                                                // const { _reply, createdAt } = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
+                                                                const targetReply = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
+                                                                // MS = miliSeconds
+                                                                if (targetReply) {
+                                                                    const { _reply, createdAt } = targetReply;
+                                                                    const timeElapsedText = _getTimeElapsedText(createdAt);
+                                                                    // CU = current user
+                                                                    const isPostByCU = publishedDrafts.includes(postId);
+                                                                    const isCommentByCU = commentAuthorId === userId;
+                                                                    let notificationText;
+                                                                    if (isPostByCU && isCommentByCU) {
+                                                                        notificationText = `${replyAuthor.username} replied to your comment on your post `
+                                                                    } else if (isPostByCU) {
+                                                                        notificationText = `${replyAuthor.username} replied to a comment that you've replied to on your post `
+                                                                    } else if (isCommentByCU) {
+                                                                        notificationText = `${replyAuthor.username} replied to your comment on post `;
+                                                                    } else {
+                                                                        notificationText = `${replyAuthor.username} replied to a comment that you've replied to on post `
+                                                                    };
+
+                                                                    return {
+                                                                        ...reply,
+                                                                        //MS = miliSeconds
+                                                                        timePostedInMS: createdAt.miliSeconds,
+                                                                        timeElapsedText,
+                                                                        notificationText,
+                                                                        replyText: _reply,
+                                                                    };
+
                                                                 } else {
-                                                                    notificationText = `${UNofReplyAuthor} replied to a comment that you've replied to on post `
+                                                                    // willDeleteReplyId will have the following structure: {willDeleteReplyId: true, replyIdsToDel: [reply Ids]}
+                                                                    // TEST THIS CODE
+
+                                                                    const addNotificationToDel = (notificationsToDel, replyId) => {
+                                                                        const willDelReply = notificationsToDel && notificationsToDel.find(({ willDelReply }) => !!willDelReply);
+                                                                        let _notificationsToDel;
+                                                                        if (willDelReply) {
+                                                                            const isReplyPresent = willDelReply.repliesToDel.includes(replyId);
+                                                                            if (isReplyPresent) {
+                                                                                _notificationsToDel = notificationsToDel.map(notificationToDel => {
+                                                                                    const { willDeleteReplies, repliesToDel } = notificationToDel;
+                                                                                    if (willDeleteReplies) {
+                                                                                        return {
+                                                                                            ...notificationToDel,
+                                                                                            repliesToDel: [...repliesToDel, replyId]
+                                                                                        };
+                                                                                    };
+
+                                                                                    return notificationToDel;
+                                                                                });
+
+                                                                                return _notificationsToDel;
+                                                                            };
+                                                                        } else {
+                                                                            _notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelReplies: true, repliesToDel: [replyId] }] : [{ willDelReplies: true, repliesToDel: [replyId] }];
+
+                                                                            return _notificationsToDel;
+                                                                        }
+                                                                    }
+
+
+                                                                    const willDelReply = notificationsToDel && notificationsToDel.find(({ willDelReply }) => !!willDelReply);
+                                                                    if (notificationsToDel && willDelReply) {
+                                                                        const isReplyPresent = willDelReply.repliesToDel.includes(reply.id);
+                                                                        if (isReplyPresent) {
+                                                                            notificationsToDel = notificationsToDel.map(notificationToDel => {
+                                                                                const { willDeleteReplies, repliesToDel } = notificationToDel;
+                                                                                if (willDeleteReplies) {
+                                                                                    return {
+                                                                                        ...notificationToDel,
+                                                                                        repliesToDel: [...repliesToDel, reply.id]
+                                                                                    };
+                                                                                };
+
+                                                                                return notificationToDel;
+                                                                            })
+                                                                        };
+                                                                    } else {
+                                                                        notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelReplies: true, repliesToDel: [reply.id] }] : [{ willDelReplies: true, repliesToDel: [reply.id] }];
+                                                                    }
                                                                 }
 
-                                                                return {
-                                                                    ...reply,
-                                                                    //MS = miliSeconds
-                                                                    timePostedInMS: createdAt.miliSeconds,
-                                                                    timeElapsedText,
-                                                                    notificationText,
-                                                                    replyText: _reply,
-                                                                };
-                                                            } else {
-                                                                // delete the author of the reply 
-                                                                notificationsToDel.push({ postId, commentId: _commentId, replyId: reply.id, replyAuthor: authorId });
+                                                                return reply;
+                                                            });
+
+                                                            return {
+                                                                ...replyInfo,
+                                                                replyIds: _replyIds
                                                             };
-
-                                                            return reply;
                                                         } else {
-                                                            // delete the reply id 
-                                                            notificationsToDel.push({ postId, commentId: _commentId, replyId: reply.id });
-                                                        }
+                                                            // delete the reply author from replies 
+                                                            const willDelReplyAuthor = notificationsToDel && notificationsToDel.find(({ willDelReplyAuthor }) => !!willDelReplyAuthor);
+                                                            if (notificationsToDel && willDelReplyAuthor) {
+                                                                const isTargetAuthorPresent = willDelReplyAuthor.replyAuthorsToDel.includes(authorId);
+                                                                if (!isTargetAuthorPresent) {
+                                                                    notificationsToDel = notificationsToDel.map(notificationToDel => {
+                                                                        const { willDelReplyAuthor, replyAuthorsToDel } = notificationToDel;
+                                                                        if (willDelReplyAuthor) {
+                                                                            return {
+                                                                                ...notificationToDel,
+                                                                                replyAuthorsToDel: [...replyAuthorsToDel, authorId]
+                                                                            };
+                                                                        };
 
-                                                        return reply;
-                                                    });
+                                                                        return notificationToDel;
+                                                                    })
+                                                                }
+                                                            } else {
+                                                                notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelReplyAuthor: true, replyAuthorsToDel: [authorId] }] : [{ willDelReplyAuthor: true, replyAuthorsToDel: [authorId] }];
+                                                            }
+                                                        };
+
+                                                        return replyInfo;
+                                                    })
 
                                                     return {
-                                                        ...replyInfo,
-                                                        replyIds: _replyIds
+                                                        ...comment,
+                                                        replies: _replies
                                                     }
-                                                })
+                                                } else {
+                                                    // delete the comment
+                                                    // GOAL: create the following DS for deleting the comments that do not exist: {willDeleteComment: true, commentsToDel: [commentId]}
+                                                    const willDelComment = notificationsToDel && notificationsToDel.find(({ willDelComment }) => !!willDelComment);
+                                                    if (notificationsToDel && willDelComment) {
+                                                        const isCommentPresent = willDelComment.commentsToDel.includes(commentAuthorId);
+                                                        if (!isCommentPresent) {
+                                                            notificationsToDel = notificationsToDel.map(notificationToDel => {
+                                                                const { willDelComment, commentsToDel } = notificationToDel;
+                                                                if (willDelComment) {
+                                                                    return {
+                                                                        ...notificationToDel,
+                                                                        commentsToDel: [...commentsToDel, commentAuthorId]
+                                                                    };
+                                                                };
 
-                                                return {
-                                                    ...comment,
-                                                    replies: _replies
+                                                                return notificationToDel;
+                                                            })
+                                                        }
+                                                    } else {
+                                                        notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelComment: true, replyAuthorsToDel: [commentAuthorId] }] : [{ willDelComment: true, replyAuthorsToDel: [commentAuthorId] }];
+                                                    }
+
+                                                };
+
+                                                return comment;
+                                            });
+
+                                            return {
+                                                ...replyInfo,
+                                                commentsRepliedTo: _commentsRepliedTo
+                                            }
+                                        } else {
+                                            // delete the author of the comment
+                                            const willDelCommentAuthor = notificationsToDel && notificationsToDel.find(({ willDelCommentAuthor }) => !!willDelCommentAuthor);
+                                            if (notificationsToDel && willDelCommentAuthor) {
+                                                const isTargetAuthorPresent = willDelCommentAuthor.commentAuthorsToDel.includes(commentAuthorId);
+                                                if (!isTargetAuthorPresent) {
+                                                    notificationsToDel = notificationsToDel.map(notificationToDel => {
+                                                        const { willDelCommentAuthor, commentAuthorsToDel } = notificationToDel;
+                                                        if (willDelCommentAuthor) {
+                                                            return {
+                                                                ...notificationToDel,
+                                                                commentAuthorsToDel: [...commentAuthorsToDel, commentAuthorId]
+                                                            };
+                                                        };
+
+                                                        return notificationToDel;
+                                                    })
                                                 }
                                             } else {
-                                                // delete the comment
-                                                notificationsToDel.push({ postId, commentId: _commentId });
-                                            };
+                                                notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelCommentAuthor: true, replyAuthorsToDel: [commentAuthorId] }] : [{ willDelCommentAuthor: true, replyAuthorsToDel: [commentAuthorId] }];
+                                            }
+                                        };
 
-                                            return comment;
-                                        });
-
-                                        return {
-                                            ...replyInfo,
-                                            commentsRepliedTo: _commentsRepliedTo
-                                        }
+                                        return replyInfo;
                                     });
                                 } else {
                                     // delete the whole entire post from the notifications field
-                                    notificationsToDel.push({ postId });
+                                    // track which post to delete
+                                    const willDeletePost = notificationsToDel.find(({ willDeletePost }) => !!willDeletePost);
+                                    if (willDeletePost) {
+                                        const isPostPresent = willDeletePost.postsToDel.includes(postId);
+                                        if (isPostPresent) {
+                                            notificationsToDel = notificationsToDel.map(notification => {
+                                                const { postsToDel, willDeletePost } = notification;
+                                                if (willDeletePost) {
+                                                    return {
+                                                        ...notification,
+                                                        postsToDel: [...postsToDel, postId]
+                                                    }
+                                                };
+
+                                                return notification;
+                                            })
+                                        };
+                                    } else {
+                                        notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDeletePost: true, postsToDel: [postId] }] : [{ willDeletePost: true, postsToDel: [postId] }]
+                                    }
                                 }
 
                                 return repliesInfo_ ?
@@ -2397,7 +2528,7 @@ router.route("/users/:package").get((request, response) => {
                                     reply
 
                             });
-                            if (notificationsToDel.length) {
+                            if (notificationsToDel) {
                                 // GOALS:
                                 //CASE1: if the object only contains the post, then delete the post
                                 //CASE2: if the object only contains a post id and comment id, then delete the comment from the post notification 
