@@ -35,6 +35,7 @@
   },
   "devDependencies": {
     "dotenv": "^10.0.0",
+    "jest": "^27.4.4",
     "nodemon": "^2.0.9"
   }
 }
