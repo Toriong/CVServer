@@ -21,6 +21,7 @@ const addNotificationToDel = (notificationsToDel, replyId) => {
         } else {
             // CASE 2: returns nothing since the reply is already present
             console.log('the reply is present');
+            return notificationsToDel;
         }
     } else {
         // FIRST OPTION: CASE 3

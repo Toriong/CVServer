@@ -7,6 +7,7 @@ const timeFns = require("../functions/getTime");
 const { getTime, computeTimeElapsed, getTimeElapsedText } = timeFns;
 const router = express.Router();
 const path = require('path');
+const addNotificationToDel = require('../functions/addNotificationsToDel');
 
 
 // GOAL: if the current user is following the user that they want to block, delete that user from their following list  
@@ -2350,54 +2351,7 @@ router.route("/users/:package").get((request, response) => {
                                                                 } else {
                                                                     // willDeleteReplyId will have the following structure: {willDeleteReplyId: true, replyIdsToDel: [reply Ids]}
                                                                     // TEST THIS CODE
-
-                                                                    const addNotificationToDel = (notificationsToDel, replyId) => {
-                                                                        const willDelReply = notificationsToDel && notificationsToDel.find(({ willDelReply }) => !!willDelReply);
-                                                                        let _notificationsToDel;
-                                                                        if (willDelReply) {
-                                                                            const isReplyPresent = willDelReply.repliesToDel.includes(replyId);
-                                                                            if (isReplyPresent) {
-                                                                                _notificationsToDel = notificationsToDel.map(notificationToDel => {
-                                                                                    const { willDeleteReplies, repliesToDel } = notificationToDel;
-                                                                                    if (willDeleteReplies) {
-                                                                                        return {
-                                                                                            ...notificationToDel,
-                                                                                            repliesToDel: [...repliesToDel, replyId]
-                                                                                        };
-                                                                                    };
-
-                                                                                    return notificationToDel;
-                                                                                });
-
-                                                                                return _notificationsToDel;
-                                                                            };
-                                                                        } else {
-                                                                            _notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelReplies: true, repliesToDel: [replyId] }] : [{ willDelReplies: true, repliesToDel: [replyId] }];
-
-                                                                            return _notificationsToDel;
-                                                                        }
-                                                                    }
-
-
-                                                                    const willDelReply = notificationsToDel && notificationsToDel.find(({ willDelReply }) => !!willDelReply);
-                                                                    if (notificationsToDel && willDelReply) {
-                                                                        const isReplyPresent = willDelReply.repliesToDel.includes(reply.id);
-                                                                        if (isReplyPresent) {
-                                                                            notificationsToDel = notificationsToDel.map(notificationToDel => {
-                                                                                const { willDeleteReplies, repliesToDel } = notificationToDel;
-                                                                                if (willDeleteReplies) {
-                                                                                    return {
-                                                                                        ...notificationToDel,
-                                                                                        repliesToDel: [...repliesToDel, reply.id]
-                                                                                    };
-                                                                                };
-
-                                                                                return notificationToDel;
-                                                                            })
-                                                                        };
-                                                                    } else {
-                                                                        notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelReplies: true, repliesToDel: [reply.id] }] : [{ willDelReplies: true, repliesToDel: [reply.id] }];
-                                                                    }
+                                                                    notificationsToDel = addNotificationToDel(notificationsToDel, reply.id);
                                                                 }
 
                                                                 return reply;
