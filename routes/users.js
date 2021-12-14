@@ -2349,9 +2349,8 @@ router.route("/users/:package").get((request, response) => {
                                                                     };
 
                                                                 } else {
-                                                                    // willDeleteReplyId will have the following structure: {willDeleteReplyId: true, replyIdsToDel: [reply Ids]}
-                                                                    // TEST THIS CODE
-                                                                    notificationsToDel = addNotificationToDel(notificationsToDel, reply.id);
+                                                                    // if the reply doesn't exist, then delete the reply from the object that contains the id of the author and their replies 
+                                                                    notificationsToDel = addNotificationToDel(notificationsToDel, reply.id, 'willDelReplies');
                                                                 }
 
                                                                 return reply;
@@ -2362,26 +2361,8 @@ router.route("/users/:package").get((request, response) => {
                                                                 replyIds: _replyIds
                                                             };
                                                         } else {
-                                                            // delete the reply author from replies 
-                                                            const willDelReplyAuthor = notificationsToDel && notificationsToDel.find(({ willDelReplyAuthor }) => !!willDelReplyAuthor);
-                                                            if (notificationsToDel && willDelReplyAuthor) {
-                                                                const isTargetAuthorPresent = willDelReplyAuthor.replyAuthorsToDel.includes(authorId);
-                                                                if (!isTargetAuthorPresent) {
-                                                                    notificationsToDel = notificationsToDel.map(notificationToDel => {
-                                                                        const { willDelReplyAuthor, replyAuthorsToDel } = notificationToDel;
-                                                                        if (willDelReplyAuthor) {
-                                                                            return {
-                                                                                ...notificationToDel,
-                                                                                replyAuthorsToDel: [...replyAuthorsToDel, authorId]
-                                                                            };
-                                                                        };
-
-                                                                        return notificationToDel;
-                                                                    })
-                                                                }
-                                                            } else {
-                                                                notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelReplyAuthor: true, replyAuthorsToDel: [authorId] }] : [{ willDelReplyAuthor: true, replyAuthorsToDel: [authorId] }];
-                                                            }
+                                                            // if the author of the reply no longer exist, then delete the reply author from replies 
+                                                            notificationsToDel = addNotificationToDel(notificationsToDel, authorId, 'willDelReplyAuthors');
                                                         };
 
                                                         return replyInfo;
@@ -2392,28 +2373,9 @@ router.route("/users/:package").get((request, response) => {
                                                         replies: _replies
                                                     }
                                                 } else {
-                                                    // delete the comment
-                                                    // GOAL: create the following DS for deleting the comments that do not exist: {willDeleteComment: true, commentsToDel: [commentId]}
-                                                    const willDelComment = notificationsToDel && notificationsToDel.find(({ willDelComment }) => !!willDelComment);
-                                                    if (notificationsToDel && willDelComment) {
-                                                        const isCommentPresent = willDelComment.commentsToDel.includes(commentAuthorId);
-                                                        if (!isCommentPresent) {
-                                                            notificationsToDel = notificationsToDel.map(notificationToDel => {
-                                                                const { willDelComment, commentsToDel } = notificationToDel;
-                                                                if (willDelComment) {
-                                                                    return {
-                                                                        ...notificationToDel,
-                                                                        commentsToDel: [...commentsToDel, commentAuthorId]
-                                                                    };
-                                                                };
-
-                                                                return notificationToDel;
-                                                            })
-                                                        }
-                                                    } else {
-                                                        notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelComment: true, replyAuthorsToDel: [commentAuthorId] }] : [{ willDelComment: true, replyAuthorsToDel: [commentAuthorId] }];
-                                                    }
-
+                                                    // NOTE: for the 
+                                                    // if the comment doesn't exist, then delete the comment id from the notification 
+                                                    notificationsToDel = addNotificationToDel(notificationsToDel, _commentId, 'willDelComments');
                                                 };
 
                                                 return comment;
@@ -2425,51 +2387,15 @@ router.route("/users/:package").get((request, response) => {
                                             }
                                         } else {
                                             // delete the author of the comment
-                                            const willDelCommentAuthor = notificationsToDel && notificationsToDel.find(({ willDelCommentAuthor }) => !!willDelCommentAuthor);
-                                            if (notificationsToDel && willDelCommentAuthor) {
-                                                const isTargetAuthorPresent = willDelCommentAuthor.commentAuthorsToDel.includes(commentAuthorId);
-                                                if (!isTargetAuthorPresent) {
-                                                    notificationsToDel = notificationsToDel.map(notificationToDel => {
-                                                        const { willDelCommentAuthor, commentAuthorsToDel } = notificationToDel;
-                                                        if (willDelCommentAuthor) {
-                                                            return {
-                                                                ...notificationToDel,
-                                                                commentAuthorsToDel: [...commentAuthorsToDel, commentAuthorId]
-                                                            };
-                                                        };
-
-                                                        return notificationToDel;
-                                                    })
-                                                }
-                                            } else {
-                                                notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelCommentAuthor: true, replyAuthorsToDel: [commentAuthorId] }] : [{ willDelCommentAuthor: true, replyAuthorsToDel: [commentAuthorId] }];
-                                            }
+                                            notificationsToDel = addNotificationToDel(notificationsToDel, commentAuthorId, 'willDelCommentAuthors')
                                         };
 
                                         return replyInfo;
                                     });
                                 } else {
                                     // delete the whole entire post from the notifications field
-                                    // track which post to delete
-                                    const willDeletePost = notificationsToDel.find(({ willDeletePost }) => !!willDeletePost);
-                                    if (willDeletePost) {
-                                        const isPostPresent = willDeletePost.postsToDel.includes(postId);
-                                        if (isPostPresent) {
-                                            notificationsToDel = notificationsToDel.map(notification => {
-                                                const { postsToDel, willDeletePost } = notification;
-                                                if (willDeletePost) {
-                                                    return {
-                                                        ...notification,
-                                                        postsToDel: [...postsToDel, postId]
-                                                    }
-                                                };
+                                    notificationsToDel = addNotificationToDel(notificationsToDel, postId, 'willDelPosts')
 
-                                                return notification;
-                                            })
-                                        };
-                                    } else {
-                                        notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDeletePost: true, postsToDel: [postId] }] : [{ willDeletePost: true, postsToDel: [postId] }]
-                                    }
                                 }
 
                                 return repliesInfo_ ?

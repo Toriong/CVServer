@@ -1,32 +1,41 @@
-const addNotificationToDel = (notificationsToDel, replyId) => {
-    const willDelReplies = notificationsToDel && notificationsToDel.find(({ willDelReplies }) => !!willDelReplies);
+const addNotificationToDel = (notificationsToDel, itemIdForDel, fieldName) => {
+    const targetNotificationForDel = notificationsToDel && notificationsToDel.find(({ willDelReplies, willDelReplyAuthors, willDelComments, willDelCommentAuthors, willDelPosts }) => {
+        if (((fieldName === 'willDelReplies') && willDelReplies) || ((fieldName === 'willDelReplyAuthors') && willDelReplyAuthors) ||
+            ((fieldName === 'willDelComments') && willDelComments) || ((fieldName === 'willDelCommentAuthors') && willDelCommentAuthors) || ((fieldName === 'willDelPosts') && willDelPosts)) {
+            return true;
+        };
+    });
     let _notificationsToDel;
-    if (willDelReplies) {
-        const isReplyPresent = willDelReplies.repliesToDel.includes(replyId);
-        if (!isReplyPresent) {
+    if (targetNotificationForDel) {
+        const isItemForDelPresent = targetNotificationForDel.itemsForDel.includes(itemIdForDel);
+        if (!isItemForDelPresent) {
             _notificationsToDel = notificationsToDel.map(notificationToDel => {
-                const { willDelReplies, repliesToDel } = notificationToDel;
-                if (willDelReplies) {
-                    return {
-                        ...notificationToDel,
-                        repliesToDel: [...repliesToDel, replyId]
-                    };
+                const { willDelReplies, willDelReplyAuthors, willDelCommentAuthors, willDelComments, willDelPosts, itemsForDel } = notificationToDel;
+                const _notificationsToDel = {
+                    ...notificationToDel,
+                    itemsForDel: [...itemsForDel, itemIdForDel]
                 };
+
+                if ((willDelReplies && (fieldName === 'willDelReplies')) || (willDelReplyAuthors && (fieldName === 'willDelReplyAuthors')) ||
+                    (willDelComments && (fieldName === 'willDelComments')) || (willDelCommentAuthors && (fieldName === 'willDelCommentAuthors')) || ((fieldName === 'willDelPosts') && willDelPosts)) {
+                    return _notificationsToDel;
+                }
+
 
                 return notificationToDel;
             });
 
-            // CASE 1
+            // CASE1
             return _notificationsToDel;
         } else {
             // CASE 2: returns nothing since the reply is already present
-            console.log('the reply is present');
+            console.log('the item for deletion is present');
             return notificationsToDel;
         }
     } else {
         // FIRST OPTION: CASE 3
         // SECOND OPTION: CASE 4
-        _notificationsToDel = notificationsToDel ? [...notificationsToDel, { willDelReplies: true, repliesToDel: [replyId] }] : [{ willDelReplies: true, repliesToDel: [replyId] }];
+        _notificationsToDel = notificationsToDel ? [...notificationsToDel, { [fieldName]: true, itemsForDel: [itemIdForDel] }] : [{ [fieldName]: true, itemsForDel: [itemIdForDel] }];
 
         return _notificationsToDel;
     }

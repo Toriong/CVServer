@@ -1,0 +1,22 @@
+[
+        {
+            "willDelPosts": true,
+            "itemsToDel": ["839a2947-f22d-4054-9ff3-a2393eeda19ba2393eeda19b"]
+        },
+        {
+            "willDelComments": true,
+            "itemsToDel": ["14dc36fe-c597-498b-90f1-dfe0a2a1aed0"]
+        },
+        {
+            "willDelCommentAuthors": true,
+            "itemsToDel": ["617ec99a45ec340b41adbeff"]
+        },
+        {
+            "willDelReplies": true,
+            "itemsToDel": ["cd1168d8-965a-4245-a1ad-a1c6859b2ff1","01405600-7978-49ae-8ebf-797ff15bab24-8ebf-797ff15bab24"]
+        },
+        {
+            "willDelReplyAuthors": true,
+            "itemsToDel": ["617eda898e476911e031f1c2"]
+        }
+]
