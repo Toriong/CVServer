@@ -12,11 +12,11 @@
             "itemsToDel": ["617ec99a45ec340b41adbeff"]
         },
         {
-            "willDelReplies": true,
-            "itemsToDel": ["cd1168d8-965a-4245-a1ad-a1c6859b2ff1","01405600-7978-49ae-8ebf-797ff15bab24-8ebf-797ff15bab24"]
-        },
-        {
             "willDelReplyAuthors": true,
             "itemsToDel": ["617eda898e476911e031f1c2"]
+        },
+        {
+            "willDelReplies": true,
+            "itemsToDel": ["cd1168d8-965a-4245-a1ad-a1c6859b2ff1","01405600-7978-49ae-8ebf-797ff15bab24-8ebf-797ff15bab24"]
         }
 ]

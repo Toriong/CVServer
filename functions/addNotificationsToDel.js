@@ -1,7 +1,13 @@
+// NOTES:
+// implement logic that will track the user of likes that will be deleted:
+// willDelUserReplyLikes
+// willDelUserCommentLikes
+// willDelUerPostLikes 
+
 const addNotificationToDel = (notificationsToDel, itemIdForDel, fieldName) => {
-    const targetNotificationForDel = notificationsToDel && notificationsToDel.find(({ willDelReplies, willDelReplyAuthors, willDelComments, willDelCommentAuthors, willDelPosts }) => {
+    const targetNotificationForDel = notificationsToDel && notificationsToDel.find(({ willDelReplies, willDelReplyAuthors, willDelComments, willDelCommentAuthors, willDelPosts, willDelUserReplyLikes, willDelUserCommentLikes, willDelUserPostLikes }) => {
         if (((fieldName === 'willDelReplies') && willDelReplies) || ((fieldName === 'willDelReplyAuthors') && willDelReplyAuthors) ||
-            ((fieldName === 'willDelComments') && willDelComments) || ((fieldName === 'willDelCommentAuthors') && willDelCommentAuthors) || ((fieldName === 'willDelPosts') && willDelPosts)) {
+            ((fieldName === 'willDelComments') && willDelComments) || ((fieldName === 'willDelCommentAuthors') && willDelCommentAuthors) || ((fieldName === 'willDelPosts') && willDelPosts) || ((fieldName === 'willDelUserReplyLikes') && willDelUserReplyLikes) || (willDelUserCommentLikes && (fieldName === 'willDelUserCommentLikes')) || ((fieldName === 'willDelUserPostLikes') && willDelUserPostLikes)) {
             return true;
         };
     });
@@ -10,14 +16,15 @@ const addNotificationToDel = (notificationsToDel, itemIdForDel, fieldName) => {
         const isItemForDelPresent = targetNotificationForDel.itemsForDel.includes(itemIdForDel);
         if (!isItemForDelPresent) {
             _notificationsToDel = notificationsToDel.map(notificationToDel => {
-                const { willDelReplies, willDelReplyAuthors, willDelCommentAuthors, willDelComments, willDelPosts, itemsForDel } = notificationToDel;
+                const { willDelReplies, willDelReplyAuthors, willDelCommentAuthors, willDelComments, willDelPosts, willDelUserReplyLikes, itemsForDel, willDelUserCommentLikes, willDelUserPostLikes } = notificationToDel;
                 const _notificationsToDel = {
                     ...notificationToDel,
                     itemsForDel: [...itemsForDel, itemIdForDel]
                 };
 
                 if ((willDelReplies && (fieldName === 'willDelReplies')) || (willDelReplyAuthors && (fieldName === 'willDelReplyAuthors')) ||
-                    (willDelComments && (fieldName === 'willDelComments')) || (willDelCommentAuthors && (fieldName === 'willDelCommentAuthors')) || ((fieldName === 'willDelPosts') && willDelPosts)) {
+                    (willDelComments && (fieldName === 'willDelComments')) || (willDelCommentAuthors && (fieldName === 'willDelCommentAuthors')) || ((fieldName === 'willDelPosts') && willDelPosts) ||
+                    ((fieldName === 'willDelUserReplyLikes') && willDelUserReplyLikes) || (willDelUserCommentLikes && (fieldName === 'willDelUserCommentLikes')) || (willDelUserPostLikes && (fieldName === 'willDelUserPostLikes'))) {
                     return _notificationsToDel;
                 }
 

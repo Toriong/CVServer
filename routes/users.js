@@ -1,3 +1,4 @@
+
 const express = require('express');
 const multer = require('multer');
 const User = require("../models/user");
@@ -7,6 +8,7 @@ const timeFns = require("../functions/getTime");
 const { getTime, computeTimeElapsed, getTimeElapsedText } = timeFns;
 const router = express.Router();
 const path = require('path');
+const { delNonexistentReplies, delNonexistentReplyAuthors, delNonexistentCommAuthors, delNonexistentComms, delNonexistentPosts } = require('../functions/delNonexistentValues');
 const addNotificationToDel = require('../functions/addNotificationsToDel');
 
 
@@ -2234,7 +2236,7 @@ router.route("/users/:package").get((request, response) => {
             });
     } else if (name === 'getNotifications') {
         console.log('package: ', package);
-        const { willGetReplies, willGetReplyLikes } = package;
+        const { willGetReplies, willGetReplyLikes, willGetCommentLikes } = package;
         //  NOTES:
         // get all seven notifications and send them individual back to the client 
         // CASE#1: a user replies to another user on the current user's post
@@ -2409,13 +2411,35 @@ router.route("/users/:package").get((request, response) => {
 
                             });
                             if (notificationsToDel) {
-                                // GOALS:
-                                //CASE1: if the object only contains the post, then delete the post
-                                //CASE2: if the object only contains a post id and comment id, then delete the comment from the post notification 
-                                // CASE3: if the object only contains a post id, comment id, then delete only reply notification itself 
-                                // SEND THE EDITED replies_ to the client and update the notifications field by deleting the all of the notifications that don't exist
+                                const willDelReplies = notificationsToDel.find(({ willDelReplies }) => !!willDelReplies);
+                                const willDelReplyAuthors = notificationsToDel.find(({ willDelReplyAuthors }) => !!willDelReplyAuthors);
+                                const willDelCommentAuthors = notificationsToDel.find(({ willDelCommentAuthors }) => !!willDelCommentAuthors);
+                                const willDelComments = notificationsToDel.find(({ willDelComments }) => !!willDelComments);
+                                const willDelPosts = notificationsToDel.find(({ willDelPosts }) => !!willDelPosts);
+                                let _notifications;
 
-                                response.json({ replies: replies_ })
+                                if (willDelReplies) {
+                                    const replyIds = willDelReplies.itemsToDel;
+                                    _notifications = delNonexistentReplies(replies_, replyIds);
+                                };
+                                if (willDelReplyAuthors) {
+                                    const replyAuthorIds = willDelReplyAuthors.itemsToDel;
+                                    _notifications = _notifications ? delNonexistentReplyAuthors(_notifications, replyAuthorIds) : delNonexistentReplyAuthors(replies_, replyAuthorIds)
+                                };
+                                if (willDelCommentAuthors) {
+                                    const commentAuthorIds = willDelCommentAuthors.itemsToDel;
+                                    _notifications = _notifications ? delNonexistentCommAuthors(_notifications, commentAuthorIds) : delNonexistentCommAuthors(replies_, commentAuthorIds)
+                                };
+                                if (willDelComments) {
+                                    const commentIds = willDelComments.itemsToDel;
+                                    _notifications = _notifications ? delNonexistentComms(_notifications, commentIds) : delNonexistentComms(replies_, commentIds)
+                                };
+                                if (willDelPosts) {
+                                    const postIds = willDelPosts.itemsToDel;
+                                    _notifications = _notifications ? delNonexistentPosts(_notifications, postIds) : delNonexistentPosts(replies_, postIds)
+                                };
+
+                                response.json({ replies: _notifications })
                             } else {
                                 response.json({ replies: replies_ })
                             }
@@ -2433,21 +2457,7 @@ router.route("/users/:package").get((request, response) => {
                     response.json({ isRepliesEmpty: true })
                 }
 
-
                 if (willGetReplyLikes && (replyLikes && replyLikes.length)) {
-                    // Goal: insert the following into each reply like notification that is stored in userIds of likes: {text: '(the username of the like) liked your reply on (your) post ' + '(the title of the post), title of the post, timeElapsedText'}  
-                    // for each like, insert the above into each object
-                    // loop through the userIdsOfLikes field
-                    // for each reply access the userIdsOfLike field 
-                    // loop through the replies field
-                    // for each comment, access the replies field
-                    // loop through each comment in the commentsRepliedTo field
-                    // for each object, access the commentsRepliedTo
-                    // loop through the replyLikes var
-                    // use the find method and get from the user collection of the usernames for all of the user's that liked the current user's reply
-                    // use the find method and get from the blog post collection all of the title names for each post and their comments field 
-                    // get all of the postIds 
-                    // get all of ids of the users that liked your reply
                     let userIdsOfReplyLikes = [];
                     let postIds = [];
                     replyLikes.forEach(({ commentsRepliedTo, postId }) => {
@@ -2568,9 +2578,7 @@ router.route("/users/:package").get((request, response) => {
                             });
                             if (delNotifications.length) {
                                 console.log("delNotifications: ", delNotifications);
-
-
-                                // if the array is not empty, then perform the deletion of the reply like notifications that are stored in delNotifications
+                                //  GOAL: MAKE DELETION OF REPLY LIKES OCCUR AFTER THE FOLLOWING IS COMPLETE: THE notifications are displayed on the UI, the user's activities are displayed on the UI, the search feature is functional, the message feature is functional, the website is responsive    
                             } else {
                                 // if the array is not empy, then send the below to the client 
                                 console.log('_replyLikes: ', _replyLikes);
@@ -2583,9 +2591,17 @@ router.route("/users/:package").get((request, response) => {
                     response.json({ isReplyLikesEmpty: true })
                 }
 
+                if (willGetCommentLikes) {
+
+                } else if (willGetCommentLikes) {
+                    response.json({ isCommentLikesEmpty: true })
+                }
+
             } else {
                 response.json({ isEmpty: true });
             }
+
+
         })
 
     }
