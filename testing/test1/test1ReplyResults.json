@@ -1,0 +1,180 @@
+[ 
+    { 
+        "postId" : "a4e78b2e-aa6b-45fc-bf55-8b94e33a5f26", 
+        "repliesInfo" : 
+        [ 
+            { 
+                "commentAuthorId" : "617ec99a45ec340b41adbeff", 
+                "commentsRepliedTo" : 
+                [ 
+                    { 
+                        "id" : "69757c97-e563-48e8-b471-e88bfbe08df7", 
+                        "replies" : 
+                        [ 
+                            { 
+                                "authorId" : "617ed5618e476911e031ef7d", 
+                                "replyIds" : 
+                                [ 
+                                    { 
+                                        "id" : "3e095199-ae2c-4327-b8fc-176a5648052d", 
+                                        "isMarkedRead" : false 
+                                    }, 
+                                    { 
+                                        "id" : "995c3835-2aff-443f-9c9f-ce0e9b8df575", 
+                                        "isMarkedRead" : false 
+                                    } 
+                                ] 
+                            } 
+                        ] 
+                    } 
+                ] 
+            }, 
+            { 
+                "commentAuthorId" : "617ed5618e476911e031ef7d", 
+                "commentsRepliedTo" : 
+                [ 
+                    { 
+                        "id" : "268e5eb1-5653-4653-98fe-a2b8d26492c0", 
+                        "replies" : 
+                        [ 
+                            { 
+                                "authorId" : "617ed5618e476911e031ef7d", 
+                                "replyIds" : 
+                                [ 
+                                    { 
+                                        "id" : "1ff8486d-5f03-404f-89eb-d2dbae7bbc68", 
+                                        "isMarkedRead" : false 
+                                    } 
+                                ] 
+                            } 
+                        ] 
+                    }, 
+                    { 
+                        "id" : "14dc36fe-c597-498b-90f1-dfe0a2a1aed0", 
+                        "replies" : 
+                        [ 
+                            { 
+                                "authorId" : "617ed5618e476911e031ef7d", 
+                                "replyIds" : 
+                                [ 
+                                    { 
+                                        "id" : "5e377b6c-fb9f-4565-9d4d-6490ecadb8ad", 
+                                        "isMarkedRead" : false 
+                                    }, 
+                                    { 
+                                        "id" : "a5593cdf-a178-459b-a0fc-6315847fdb03", 
+                                        "isMarkedRead" : false 
+                                    } 
+                                ] 
+                            } 
+                        ] 
+                    } 
+                ] 
+            } 
+        ] 
+    }, 
+    { 
+        "postId" : "2b3fa1df-28c4-4cd4-89c9-6b6fb67edbae", 
+        "repliesInfo" : 
+        [ 
+            { 
+                "commentAuthorId" : "61783524281d489fcf82083a", 
+                "commentsRepliedTo" : 
+                [ 
+                    { 
+                        "id" : "daf58b4d-8e69-47a1-8060-cd9e802ed005", 
+                        "replies" : 
+                        [ 
+                            { 
+                                "authorId" : "61783524281d489fcf82083a", 
+                                "replyIds" : 
+                                [ 
+                                    { 
+                                        "id" : "1e266989-f94c-46d1-b49b-6043f8d59c2d", 
+                                        "isMarkedRead" : false 
+                                    }
+                                ] 
+                            } 
+                        ] 
+                    } 
+                ] 
+            } 
+        ] 
+    }, 
+    { 
+        "postId" : "839a2947-f22d-4054-9ff3-a2393eeda19be476911e031f1c2", 
+        "repliesInfo" : 
+        [ 
+            { 
+                "commentAuthorId" : "61783524281d489fcf82083a", 
+                "commentsRepliedTo" : 
+                [ 
+                    { 
+                        "id" : "85cf5d35-e054-4c78-a03d-5b1e48c19303", 
+                        "replies" : 
+                        [ 
+                            { 
+                                "authorId" : "617eda898e476911e031f1c2", 
+                                "replyIds" : 
+                                [ 
+                                    { 
+                                        "id" : "4bfb4203-a805-4460-b560-d8875da719d5", 
+                                        "isMarkedRead" : false 
+                                    } 
+                                ] 
+                            } 
+                        ] 
+                    } 
+                ] 
+            } 
+        ] 
+    },
+    { 
+        "postId" : "839a2947-f22d-4054-9ff3-a2393eeda19ba2393eeda19b", 
+        "repliesInfo" : 
+        [ 
+            { 
+                "commentAuthorId" : "61783524281d489fcf82083a82083a6", 
+                "commentsRepliedTo" : 
+                [ 
+                    { 
+                        "id" : "85cf5d35-e054-4c78-a03d-5b1e48c19303", 
+                        "replies" : 
+                        [ 
+                            { 
+                                "authorId" : "617eda898e476911e031f1c2", 
+                                "replyIds" : 
+                                [ 
+                                    { 
+                                        "id" : "4bfb4203-a805-4460-b560-d8875da719d5", 
+                                        "isMarkedRead" : false 
+                                    } 
+                                ] 
+                            } 
+                        ] 
+                    },
+                    { 
+                        "id" : "85cf5d35-e054-4c78-a03d-5b1e48c19303a03d", 
+                        "replies" : 
+                        [ 
+                            { 
+                                "authorId" : "617eda898e476911e031f1c2617eda898e476911e031f1c2", 
+                                "replyIds" : 
+                                [ 
+                                    { 
+                                        "id" : "4bfb4203-a805-4460-b560-d8875da719d54bfb4203-a805-4460-b560-d8875da719d5", 
+                                        "isMarkedRead" : false 
+                                    }, 
+                                    { 
+                                        "id" : "4bfb4203-a805-4460-b560-d8875da719d54bfb4203-a805-4460-b560-d8875da719d54bfb4203-a805-4460-b560-d8875da719d5", 
+                                        "isMarkedRead" : false 
+                                    } 
+                                ] 
+                            } 
+                        ] 
+                    } 
+                ] 
+            } 
+        ] 
+    } 
+]

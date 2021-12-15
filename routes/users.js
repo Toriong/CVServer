@@ -2495,6 +2495,145 @@ router.route("/users/:package").get((request, response) => {
                         ).then(targetPosts => {
                             console.log('targetPosts: ', targetPosts);
                             let delNotifications = [];
+                            let willDelNotification;
+                            const _replyLikes = replyLikes.map(replyLike => {
+                                const { postId, commentsRepliedTo } = replyLike;
+                                const targetPost = targetPosts.find(({ _id }) => _id === postId);
+                                let _commentsRepliedTo;
+                                // check if the post exist, and there are still comments on the post 
+                                if (targetPost && targetPost.comments && targetPost.comments.length) {
+                                    _commentsRepliedTo = commentsRepliedTo.map(comment => {
+                                        const { replies, commentId } = comment;
+                                        const targetComment = targetPost.comments.find(({ commentId: _commentId }) => _commentId === commentId);
+                                        // check if the comment exist
+                                        if (targetComment) {
+                                            const _replies = replies.map(reply => {
+                                                const targetReply = targetComment.replies.find(({ replyId }) => replyId === reply.replyId);
+                                                // check if the reply exist
+                                                if (targetReply) {
+                                                    const _userIdsOfLikes = reply.userIdsOfLikes.map(user => {
+                                                        console.log('replyLikesUsers: ', replyLikesUsers)
+                                                        const userOfLike = replyLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
+                                                        // check if the user still exist
+                                                        console.log('userIdOfLike: ', userOfLike);
+                                                        if (userOfLike) {
+                                                            const { likedAt } = targetReply.userIdsOfLikes.find(({ userId }) => userId === user.userId);
+                                                            const timeElapsedText = _getTimeElapsedText(likedAt);
+                                                            const isPostByUser = publishedDrafts.includes(postId);
+                                                            const notificationText = isPostByUser ? `${userOfLike.username} liked your reply on your post ` : `${userOfLike.username} liked your reply on post `;
+
+                                                            return {
+                                                                ...user,
+                                                                timeElapsedText,
+                                                                notificationText,
+                                                                likedAt: likedAt.miliSeconds
+                                                            };
+                                                        } else {
+                                                            // if the user doesn't exist, then find the user in the userIdsOfLikes and delete the userId from replies 
+                                                            // delNotifications.push({ postId, commentId, replyId: reply.replyId, userId });
+                                                            willDelNotification = true;
+
+                                                            return userId
+                                                        }
+                                                    })
+
+                                                    return {
+                                                        ...reply,
+                                                        userIdsOfLikes: _userIdsOfLikes
+                                                    }
+                                                } else {
+                                                    // if the reply doesn't exist, then delete the rely
+                                                    // delNotifications.push({ postId, commentId, replyId: reply.replyId });
+                                                    willDelNotification = true;
+
+                                                    return reply
+                                                };
+                                            });
+
+                                            return {
+                                                ...comment,
+                                                replies: _replies
+                                            }
+                                        } else {
+                                            // if the comment doesn't exist, then delete the comment from the replies var
+                                            // delNotifications.push({ postId, commentId });
+                                            willDelNotification = true;
+                                        };
+
+                                        return comment;
+                                    });
+
+
+                                } else {
+                                    // if postId is not found im the blogPost collection, then delete the whole entire object by using the post id 
+                                    // delNotifications.push({ postId });
+                                    willDelNotification = true;
+
+                                    return replyLike
+                                };
+
+                                return _commentsRepliedTo ?
+                                    {
+                                        ...replyLike,
+                                        commentsRepliedTo: _commentsRepliedTo,
+                                        title: targetPost.title
+                                    }
+                                    :
+                                    replyLike
+                            });
+                            if (delNotifications.length) {
+                                console.log("delNotifications: ", delNotifications);
+                                //  GOAL: MAKE DELETION OF REPLY LIKES OCCUR AFTER THE FOLLOWING IS COMPLETE: THE notifications are displayed on the UI, the user's activities are displayed on the UI, the search feature is functional, the message feature is functional, the website is responsive    
+                            } else {
+                                // if the array is not empy, then send the below to the client 
+                                console.log('_replyLikes: ', _replyLikes);
+                                response.json(_replyLikes);
+                            }
+                        })
+                    })
+
+                } else if (willGetReplyLikes) {
+                    response.json({ isReplyLikesEmpty: true })
+                }
+
+                if (willGetCommentLikes && (commentLikes && commentLikes.length)) {
+                    let userIdsOfCommentLikes = [];
+                    let postIds = [];
+                    // CU = 'current user'
+                    let commentIdsByCU = [];
+                    commentLikes.forEach(({ comments, postId }) => {
+                        !postIds.includes(postId) && postIds.push(postId);
+                        // GOAL: get the userIds of the comment likes
+                        comments.forEach(({ commentId, userIdsOfLikes }) => {
+                            !commentIdsByCU.includes(commentId) && commentIdsByCU.push(commentId);
+                            userIdsOfLikes.forEach(({ userId }) => {
+                                !userIdsOfCommentLikes.includes(userId) && userIdsOfCommentLikes.push(userId);
+                            })
+                        })
+                    });
+                    User.find(
+                        { _id: { $in: userIdsOfCommentLikes } },
+                        { username: 1 },
+                        error => {
+                            if (error) {
+                                console.error('An error has occurred in getting the users of the reply likes');
+                            } else {
+                                console.log('No error has occurred in getting the users of the reply likes.')
+                            }
+                        }
+                    ).then(replyLikesUsers => {
+                        console.log("postIds: ", postIds);
+                        BlogPost.find(
+                            { _id: { $in: postIds } },
+                            { comments: 1, title: 1 },
+                            error => {
+                                if (error) {
+                                    console.error("THE ERROR YOO: ", error);
+                                }
+                            }
+                        ).then(targetPosts => {
+                            console.log('targetPosts: ', targetPosts);
+                            let delNotifications = [];
                             const _replyLikes = replyLikes.map(replyLike => {
                                 const { postId, commentsRepliedTo } = replyLike;
                                 const targetPost = targetPosts.find(({ _id }) => _id === postId);
@@ -2586,13 +2725,6 @@ router.route("/users/:package").get((request, response) => {
                             }
                         })
                     })
-
-                } else if (willGetReplyLikes) {
-                    response.json({ isReplyLikesEmpty: true })
-                }
-
-                if (willGetCommentLikes) {
-
                 } else if (willGetCommentLikes) {
                     response.json({ isCommentLikesEmpty: true })
                 }
