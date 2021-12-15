@@ -2314,6 +2314,7 @@ router.route("/users/:package").get((request, response) => {
                                         if (doesCommentUserExist) {
                                             const _commentsRepliedTo = commentsRepliedTo.map(comment => {
                                                 const { id: _commentId, replies } = comment;
+                                                // does the comment on the post exist?
                                                 const commentOnPost = targetPost.comments.find(({ commentId }) => commentId === _commentId);
                                                 if (commentOnPost && commentOnPost.replies && commentOnPost.replies.length) {
                                                     const _replies = replies.map(replyInfo => {
@@ -2352,7 +2353,7 @@ router.route("/users/:package").get((request, response) => {
 
                                                                 } else {
                                                                     // if the reply doesn't exist, then delete the reply from the object that contains the id of the author and their replies 
-                                                                    notificationsToDel = addNotificationToDel(notificationsToDel, reply.id, 'willDelReplies');
+                                                                    // notificationsToDel = addNotificationToDel(notificationsToDel, reply.id, 'willDelReplies');
                                                                 }
 
                                                                 return reply;
@@ -2364,7 +2365,7 @@ router.route("/users/:package").get((request, response) => {
                                                             };
                                                         } else {
                                                             // if the author of the reply no longer exist, then delete the reply author from replies 
-                                                            notificationsToDel = addNotificationToDel(notificationsToDel, authorId, 'willDelReplyAuthors');
+                                                            // notificationsToDel = addNotificationToDel(notificationsToDel, authorId, 'willDelReplyAuthors');
                                                         };
 
                                                         return replyInfo;
@@ -2377,7 +2378,7 @@ router.route("/users/:package").get((request, response) => {
                                                 } else {
                                                     // NOTE: for the 
                                                     // if the comment doesn't exist, then delete the comment id from the notification 
-                                                    notificationsToDel = addNotificationToDel(notificationsToDel, _commentId, 'willDelComments');
+                                                    // notificationsToDel = addNotificationToDel(notificationsToDel, _commentId, 'willDelComments');
                                                 };
 
                                                 return comment;
@@ -2389,14 +2390,14 @@ router.route("/users/:package").get((request, response) => {
                                             }
                                         } else {
                                             // delete the author of the comment
-                                            notificationsToDel = addNotificationToDel(notificationsToDel, commentAuthorId, 'willDelCommentAuthors')
+                                            // notificationsToDel = addNotificationToDel(notificationsToDel, commentAuthorId, 'willDelCommentAuthors')
                                         };
 
                                         return replyInfo;
                                     });
                                 } else {
                                     // delete the whole entire post from the notifications field
-                                    notificationsToDel = addNotificationToDel(notificationsToDel, postId, 'willDelPosts')
+                                    // notificationsToDel = addNotificationToDel(notificationsToDel, postId, 'willDelPosts')
 
                                 }
 
@@ -2411,48 +2412,42 @@ router.route("/users/:package").get((request, response) => {
 
                             });
                             if (notificationsToDel) {
-                                const willDelReplies = notificationsToDel.find(({ willDelReplies }) => !!willDelReplies);
-                                const willDelReplyAuthors = notificationsToDel.find(({ willDelReplyAuthors }) => !!willDelReplyAuthors);
-                                const willDelCommentAuthors = notificationsToDel.find(({ willDelCommentAuthors }) => !!willDelCommentAuthors);
-                                const willDelComments = notificationsToDel.find(({ willDelComments }) => !!willDelComments);
-                                const willDelPosts = notificationsToDel.find(({ willDelPosts }) => !!willDelPosts);
-                                let _notifications;
+                                // WILL REFACTOR LATER
 
-                                if (willDelReplies) {
-                                    const replyIds = willDelReplies.itemsToDel;
-                                    _notifications = delNonexistentReplies(replies_, replyIds);
-                                };
-                                if (willDelReplyAuthors) {
-                                    const replyAuthorIds = willDelReplyAuthors.itemsToDel;
-                                    _notifications = _notifications ? delNonexistentReplyAuthors(_notifications, replyAuthorIds) : delNonexistentReplyAuthors(replies_, replyAuthorIds)
-                                };
-                                if (willDelCommentAuthors) {
-                                    const commentAuthorIds = willDelCommentAuthors.itemsToDel;
-                                    _notifications = _notifications ? delNonexistentCommAuthors(_notifications, commentAuthorIds) : delNonexistentCommAuthors(replies_, commentAuthorIds)
-                                };
-                                if (willDelComments) {
-                                    const commentIds = willDelComments.itemsToDel;
-                                    _notifications = _notifications ? delNonexistentComms(_notifications, commentIds) : delNonexistentComms(replies_, commentIds)
-                                };
-                                if (willDelPosts) {
-                                    const postIds = willDelPosts.itemsToDel;
-                                    _notifications = _notifications ? delNonexistentPosts(_notifications, postIds) : delNonexistentPosts(replies_, postIds)
-                                };
+                                // const willDelReplies = notificationsToDel.find(({ willDelReplies }) => !!willDelReplies);
+                                // const willDelReplyAuthors = notificationsToDel.find(({ willDelReplyAuthors }) => !!willDelReplyAuthors);
+                                // const willDelCommentAuthors = notificationsToDel.find(({ willDelCommentAuthors }) => !!willDelCommentAuthors);
+                                // const willDelComments = notificationsToDel.find(({ willDelComments }) => !!willDelComments);
+                                // const willDelPosts = notificationsToDel.find(({ willDelPosts }) => !!willDelPosts);
+                                // let _notifications;
 
-                                response.json({ replies: _notifications })
+                                // if (willDelReplies) {
+                                //     const replyIds = willDelReplies.itemsToDel;
+                                //     _notifications = delNonexistentReplies(replies_, replyIds);
+                                // };
+                                // if (willDelReplyAuthors) {
+                                //     const replyAuthorIds = willDelReplyAuthors.itemsToDel;
+                                //     _notifications = _notifications ? delNonexistentReplyAuthors(_notifications, replyAuthorIds) : delNonexistentReplyAuthors(replies_, replyAuthorIds)
+                                // };
+                                // if (willDelCommentAuthors) {
+                                //     const commentAuthorIds = willDelCommentAuthors.itemsToDel;
+                                //     _notifications = _notifications ? delNonexistentCommAuthors(_notifications, commentAuthorIds) : delNonexistentCommAuthors(replies_, commentAuthorIds)
+                                // };
+                                // if (willDelComments) {
+                                //     const commentIds = willDelComments.itemsToDel;
+                                //     _notifications = _notifications ? delNonexistentComms(_notifications, commentIds) : delNonexistentComms(replies_, commentIds)
+                                // };
+                                // if (willDelPosts) {
+                                //     const postIds = willDelPosts.itemsToDel;
+                                //     _notifications = _notifications ? delNonexistentPosts(_notifications, postIds) : delNonexistentPosts(replies_, postIds)
+                                // };
+
+                                // response.json({ replies: _notifications })
                             } else {
                                 response.json({ replies: replies_ })
                             }
                         })
                     });
-
-
-                    // CASE 1: 'UserX replied to a comment on your post (post name)'
-
-
-                    // CASE 2: 'UserX replied to your comment on your post (post name)'
-
-                    // CASE 3: 'UserX replied to your comment on post 'what is up yo' '(post name)'
                 } else if (willGetReplies) {
                     response.json({ isRepliesEmpty: true })
                 }
@@ -2482,7 +2477,7 @@ router.route("/users/:package").get((request, response) => {
                                 console.log('No error has occurred in getting the users of the reply likes.')
                             }
                         }
-                    ).then(replyLikesUsers => {
+                    ).then(commentLikesUsers => {
                         console.log("postIds: ", postIds);
                         BlogPost.find(
                             { _id: { $in: postIds } },
@@ -2495,7 +2490,6 @@ router.route("/users/:package").get((request, response) => {
                         ).then(targetPosts => {
                             console.log('targetPosts: ', targetPosts);
                             let delNotifications = [];
-                            let willDelNotification;
                             const _replyLikes = replyLikes.map(replyLike => {
                                 const { postId, commentsRepliedTo } = replyLike;
                                 const targetPost = targetPosts.find(({ _id }) => _id === postId);
@@ -2504,16 +2498,17 @@ router.route("/users/:package").get((request, response) => {
                                 if (targetPost && targetPost.comments && targetPost.comments.length) {
                                     _commentsRepliedTo = commentsRepliedTo.map(comment => {
                                         const { replies, commentId } = comment;
-                                        const targetComment = targetPost.comments.find(({ commentId: _commentId }) => _commentId === commentId);
+                                        // THE COMMENT WON'T EXIST WHEN THE USER DELETES THEIR ACCOUNT
                                         // check if the comment exist
+                                        const targetComment = targetPost.comments.find(({ commentId: _commentId }) => _commentId === commentId);
                                         if (targetComment) {
                                             const _replies = replies.map(reply => {
                                                 const targetReply = targetComment.replies.find(({ replyId }) => replyId === reply.replyId);
                                                 // check if the reply exist
                                                 if (targetReply) {
                                                     const _userIdsOfLikes = reply.userIdsOfLikes.map(user => {
-                                                        console.log('replyLikesUsers: ', replyLikesUsers)
-                                                        const userOfLike = replyLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
+                                                        console.log('commentLikesUsers: ', commentLikesUsers)
+                                                        const userOfLike = commentLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
                                                         // check if the user still exist
                                                         console.log('userIdOfLike: ', userOfLike);
                                                         if (userOfLike) {
@@ -2531,9 +2526,8 @@ router.route("/users/:package").get((request, response) => {
                                                         } else {
                                                             // if the user doesn't exist, then find the user in the userIdsOfLikes and delete the userId from replies 
                                                             // delNotifications.push({ postId, commentId, replyId: reply.replyId, userId });
-                                                            willDelNotification = true;
 
-                                                            return userId
+                                                            return user
                                                         }
                                                     })
 
@@ -2544,7 +2538,6 @@ router.route("/users/:package").get((request, response) => {
                                                 } else {
                                                     // if the reply doesn't exist, then delete the rely
                                                     // delNotifications.push({ postId, commentId, replyId: reply.replyId });
-                                                    willDelNotification = true;
 
                                                     return reply
                                                 };
@@ -2557,7 +2550,6 @@ router.route("/users/:package").get((request, response) => {
                                         } else {
                                             // if the comment doesn't exist, then delete the comment from the replies var
                                             // delNotifications.push({ postId, commentId });
-                                            willDelNotification = true;
                                         };
 
                                         return comment;
@@ -2567,9 +2559,6 @@ router.route("/users/:package").get((request, response) => {
                                 } else {
                                     // if postId is not found im the blogPost collection, then delete the whole entire object by using the post id 
                                     // delNotifications.push({ postId });
-                                    willDelNotification = true;
-
-                                    return replyLike
                                 };
 
                                 return _commentsRepliedTo ?
@@ -2585,7 +2574,6 @@ router.route("/users/:package").get((request, response) => {
                                 console.log("delNotifications: ", delNotifications);
                                 //  GOAL: MAKE DELETION OF REPLY LIKES OCCUR AFTER THE FOLLOWING IS COMPLETE: THE notifications are displayed on the UI, the user's activities are displayed on the UI, the search feature is functional, the message feature is functional, the website is responsive    
                             } else {
-                                // if the array is not empy, then send the below to the client 
                                 console.log('_replyLikes: ', _replyLikes);
                                 response.json(_replyLikes);
                             }
@@ -2621,7 +2609,7 @@ router.route("/users/:package").get((request, response) => {
                                 console.log('No error has occurred in getting the users of the reply likes.')
                             }
                         }
-                    ).then(replyLikesUsers => {
+                    ).then(commentLikesUsers => {
                         console.log("postIds: ", postIds);
                         BlogPost.find(
                             { _id: { $in: postIds } },
@@ -2633,101 +2621,95 @@ router.route("/users/:package").get((request, response) => {
                             }
                         ).then(targetPosts => {
                             console.log('targetPosts: ', targetPosts);
-                            let delNotifications = [];
-                            const _replyLikes = replyLikes.map(replyLike => {
-                                const { postId, commentsRepliedTo } = replyLike;
-                                const targetPost = targetPosts.find(({ _id }) => _id === postId);
-                                let _commentsRepliedTo;
-                                // check if the post exist, and there are still comments on the post 
-                                if (targetPost && targetPost.comments && targetPost.comments.length) {
-                                    _commentsRepliedTo = commentsRepliedTo.map(comment => {
-                                        const { replies, commentId } = comment;
-                                        const targetComment = targetPost.comments.find(({ commentId: _commentId }) => _commentId === commentId);
-                                        // check if the comment exist
-                                        if (targetComment) {
-                                            const _replies = replies.map(reply => {
-                                                const targetReply = targetComment.replies.find(({ replyId }) => replyId === reply.replyId);
-                                                // check if the reply exist
-                                                if (targetReply) {
-                                                    const _userIdsOfLikes = reply.userIdsOfLikes.map(user => {
-                                                        console.log('replyLikesUsers: ', replyLikesUsers)
-                                                        const userOfLike = replyLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
-                                                        // check if the user still exist
-                                                        console.log('userIdOfLike: ', userOfLike);
-                                                        if (userOfLike) {
-                                                            const { likedAt } = targetReply.userIdsOfLikes.find(({ userId }) => userId === user.userId);
-                                                            const timeElapsedText = _getTimeElapsedText(likedAt);
-                                                            const isPostByUser = publishedDrafts.includes(postId);
-                                                            const notificationText = isPostByUser ? `${userOfLike.username} liked your reply on your post ` : `${userOfLike.username} liked your reply on post `;
+                            let delNotifications;
+                            if (targetPosts.length && commentLikesUsers.length) {
+                                let _commentLikes = commentLikes.map(commentLike => {
+                                    const { postId, comments } = commentLike;
+                                    const targetPost = targetPosts.find(({ _id }) => _id === postId);
+                                    let _comments;
+                                    // check if the post exist, and there are still comments on the post 
+                                    if (targetPost && targetPost.comments && targetPost.comments.length) {
+                                        _comments = comments.map(comment => {
+                                            const { commentId, userIdsOfLikes } = comment;
+                                            const targetComment = targetPost.comments.find(({ commentId: _commentId }) => commentId === _commentId);
+                                            if (targetComment) {
+                                                const _userIdsOfLikes = userIdsOfLikes.map(user => {
+                                                    const userOfLike = commentLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
+                                                    if (userOfLike) {
+                                                        const { likedAt } = targetComment.userIdsOfLikes.find(({ userId }) => userId === user.userId);
+                                                        const timeElapsedText = _getTimeElapsedText(likedAt);
+                                                        const isPostByUser = publishedDrafts.includes(postId);
+                                                        const notificationText = isPostByUser ? `${userOfLike.username} liked your reply on your post ` : `${userOfLike.username} liked your reply on post `;
 
-                                                            return {
-                                                                ...user,
-                                                                timeElapsedText,
-                                                                notificationText,
-                                                                likedAt: likedAt.miliSeconds
-                                                            };
-                                                        } else {
-                                                            // if the user doesn't exist, then find the user in the userIdsOfLikes and delete the userId from replies 
-                                                            delNotifications.push({ postId, commentId, replyId: reply.replyId, userId });
-
-                                                            return userId
+                                                        return {
+                                                            ...user,
+                                                            timeElapsedText,
+                                                            notificationText,
+                                                            likedAt: likedAt.miliSeconds
                                                         }
-                                                    })
 
-                                                    return {
-                                                        ...reply,
-                                                        userIdsOfLikes: _userIdsOfLikes
-                                                    }
-                                                } else {
-                                                    // if the reply doesn't exist, then delete the rely
-                                                    delNotifications.push({ postId, commentId, replyId: reply.replyId });
+                                                    } else {
+                                                        return user;
+                                                    };
+                                                });
 
-                                                    return reply
-                                                };
-                                            });
-
-                                            return {
-                                                ...comment,
-                                                replies: _replies
+                                                return {
+                                                    ...comment,
+                                                    userIdsOfLikes: _userIdsOfLikes
+                                                }
+                                            } else {
+                                                return comment;
                                             }
-                                        } else {
-                                            // if the comment doesn't exist, then delete the comment from the replies var
-                                            delNotifications.push({ postId, commentId });
-                                        };
+                                        })
+                                        // GOAL: get following info of the comment like: (the time of the like, the user of the like, create the notification text that wil be displayed on the UI)
+                                        // notes:
+                                        // insert the following into the comment like notification: {the time of the like, the user of the like, create the notification text that wil be displayed on the UI}
+                                        // if the user doesn't exist, then return the comment like notification without any modification
+                                        // the user exist
+                                        // for each user, check if the user exist
+                                        // loop through the userIds of likes
+                                        // if the comment doesn't exist, then return the comment itself without modification
+                                        // the comment exist
+                                        // for each comment check if the comment exist
+                                        // access the comments array
+                                        // if the post doesn't exist, then return the post itself 
+                                        // the post exist
+                                        // check if the post exist
 
-                                        return comment;
-                                    });
 
+                                    } else {
+                                        // if postId is not found im the blogPost collection, then delete the whole entire object by using the post id 
+                                        // delNotifications.push({ postId });
+                                    };
 
+                                    return _comments ?
+                                        {
+                                            ...commentLike,
+                                            comments: _comments,
+                                            title: targetPost.title
+                                        }
+                                        :
+                                        commentLike
+                                });
+
+                                if (delNotifications) {
+
+                                    response.json(_commentLikes);
                                 } else {
-                                    // if postId is not found im the blogPost collection, then delete the whole entire object by using the post id 
-                                    delNotifications.push({ postId });
-
-                                    return replyLike
-                                };
-
-                                return _commentsRepliedTo ?
-                                    {
-                                        ...replyLike,
-                                        commentsRepliedTo: _commentsRepliedTo,
-                                        title: targetPost.title
-                                    }
-                                    :
-                                    replyLike
-                            });
-                            if (delNotifications.length) {
-                                console.log("delNotifications: ", delNotifications);
-                                //  GOAL: MAKE DELETION OF REPLY LIKES OCCUR AFTER THE FOLLOWING IS COMPLETE: THE notifications are displayed on the UI, the user's activities are displayed on the UI, the search feature is functional, the message feature is functional, the website is responsive    
+                                    // if the array is not empy, then send the below to the client 
+                                    console.log('_commentLikes: ', _commentLikes);
+                                    response.json(_commentLikes);
+                                }
                             } else {
-                                // if the array is not empy, then send the below to the client 
-                                console.log('_replyLikes: ', _replyLikes);
-                                response.json(_replyLikes);
+                                response.json({ isCommentLikesEmpty: true })
                             }
                         })
                     })
                 } else if (willGetCommentLikes) {
                     response.json({ isCommentLikesEmpty: true })
-                }
+                };
+
+
 
             } else {
                 response.json({ isEmpty: true });
