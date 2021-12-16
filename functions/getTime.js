@@ -67,10 +67,28 @@ const getTimeElapsedText = (minutes, hours, days, months, years) => {
     }
 
     return text;
+};
+
+const _getTimeElapsedText = eventTime => {
+    const { miliSeconds: currentTimeInMS, msOfCurrentYear } = getTime();
+    const timeSinceReply = currentTimeInMS - eventTime.miliSeconds;
+    const { minutes, hours, days, months, years } = computeTimeElapsed(timeSinceReply, msOfCurrentYear);
+    return getTimeElapsedText(minutes, hours, days, months, years);
+}
+
+const getTimeElapsedInfo = (targetPost, posts, user, text) => {
+    const { text1, text2 } = text;
+    const { likedAt } = targetPost.userIdsOfLikes.find(({ userId }) => userId === user.userId);
+    const timeElapsedText = _getTimeElapsedText(likedAt);
+    const isPostByUser = posts.includes(postId);
+    const notificationText = isPostByUser ? text1 : text2;
+
+    return { timeElapsedText, notificationText };
 }
 
 module.exports = {
     getTime,
     computeTimeElapsed,
-    getTimeElapsedText
+    getTimeElapsedText,
+    getTimeElapsedInfo
 };
