@@ -2305,13 +2305,13 @@ router.route("/users/:package").get((request, response) => {
                                 console.log('No error has occurred in getting the posts of the replies')
                             }
                         }
-                    ).then(infoOfAuthors => {
-                        const _infoOfAuthors = infoOfAuthors.map(({ authorId }) => authorId);
+                    ).then(postsOfReplies => {
+                        const _infoOfAuthors = postsOfReplies.map(({ authorId }) => authorId);
                         authorIds = [...authorIds, ..._infoOfAuthors];
                         authorIds = [...new Set(authorIds)];
                         User.find(
                             { _id: authorIds },
-                            { username: 1, iconPath: 1 },
+                            { username: 1, iconPath: 1, publishedDrafts: 1 },
                             error => {
                                 if (error) {
                                     console.error('An error has occurred in getting the user info of the author of replies');
@@ -2319,18 +2319,22 @@ router.route("/users/:package").get((request, response) => {
                                     console.log('No error has occurred in getting the user info of the author of replies.')
                                 }
                             }
-                        ).then(postsOfReplies => {
+                        ).then(infoOfAuthors => {
                             let notificationsToDel;
                             console.log('replies: ', replies);
                             let replies_ = replies.map(reply => {
                                 const { postId, repliesInfo } = reply;
                                 const targetPost = postsOfReplies.find(({ _id }) => _id === postId);
+                                // GOAL: get the username of the author of the post 
+                                const postAuthor = infoOfAuthors.find(author => author.publishedDrafts && author.publishedDrafts.includes(postId));
+                                const isPostByCU = publishedDrafts.includes(postId);
+
                                 // if the comment doesn't exist, then that means the user deleted the comments
                                 // the comments doesn't exist
                                 // the user deleted the comments
                                 // if the user deleted the comments, then delete the reply notification 
                                 let repliesInfo_;
-                                if (targetPost && targetPost.comments && targetPost.comments.length) {
+                                if (postAuthor && targetPost && targetPost.comments && targetPost.comments.length) {
                                     repliesInfo_ = repliesInfo.map(replyInfo => {
                                         // CASE1: THE COMMENT AUTHOR DOESN'T EXIST
                                         // CASE2: THE COMMENT DOESN'T EXIST
@@ -2354,7 +2358,6 @@ router.route("/users/:package").get((request, response) => {
                                                                     const { _reply, createdAt } = targetReply;
                                                                     const timeElapsedText = _getTimeElapsedText(createdAt);
                                                                     // CU = current user
-                                                                    const isPostByCU = publishedDrafts.includes(postId);
                                                                     const isCommentByCU = commentAuthorId === userId;
                                                                     let notificationText;
                                                                     if (isPostByCU && isCommentByCU) {
@@ -2409,11 +2412,18 @@ router.route("/users/:package").get((request, response) => {
 
                                                 return comment;
                                             });
-
-                                            return {
-                                                ...replyInfo,
-                                                commentsRepliedTo: _commentsRepliedTo
-                                            }
+                                            return isPostByCU ?
+                                                {
+                                                    ...replyInfo,
+                                                    commentsRepliedTo: _commentsRepliedTo
+                                                }
+                                                :
+                                                {
+                                                    ...replyInfo,
+                                                    // UN = username
+                                                    postAuthorUN: postAuthor.username,
+                                                    commentsRepliedTo: _commentsRepliedTo
+                                                };
                                         } else {
                                             // delete the author of the comment
                                             // notificationsToDel = addNotificationToDel(notificationsToDel, commentAuthorId, 'willDelCommentAuthors')
@@ -2480,7 +2490,7 @@ router.route("/users/:package").get((request, response) => {
 
                 if (willGetReplyLikes && (likes && likes.replies && likes.replies.length)) {
                     const { replies: replyLikes } = likes;
-                    let userIdsOfReplyLikes = [];
+                    let userIds = [];
                     let postIds = [];
                     replyLikes.forEach(({ commentsRepliedTo, postId }) => {
                         !postIds.includes(postId) && postIds.push(postId);
@@ -2488,42 +2498,48 @@ router.route("/users/:package").get((request, response) => {
                             replies.forEach(({ userIdsOfLikes }) => {
                                 if (userIdsOfLikes && userIdsOfLikes.length) {
                                     userIdsOfLikes.forEach(({ userId }) => {
-                                        !userIdsOfReplyLikes.includes(userId) && userIdsOfReplyLikes.push(userId);
+                                        !userIds.includes(userId) && userIds.push(userId);
                                     });
                                 }
                             })
                         })
                     });
-                    User.find(
-                        { _id: { $in: userIdsOfReplyLikes } },
-                        { username: 1, iconPath: 1 },
+
+                    BlogPost.find(
+                        { _id: { $in: postIds } },
+                        { comments: 1, title: 1, authorId: 1 },
                         error => {
                             if (error) {
-                                console.error('An error has occurred in getting the users of the reply likes');
-                            } else {
-                                console.log('No error has occurred in getting the users of the reply likes.')
+                                console.error("THE ERROR YOO: ", error);
                             }
                         }
-                    ).then(commentLikesUsers => {
-                        console.log("postIds: ", postIds);
-                        BlogPost.find(
-                            { _id: { $in: postIds } },
-                            { comments: 1, title: 1 },
+                    ).then(targetPosts => {
+                        const postAuthors = targetPosts.map(({ authorId }) => authorId);
+                        userIds = [...userIds, ...postAuthors];
+                        userIds = [...new Set(userIds)];
+
+                        User.find(
+                            { _id: { $in: userIds } },
+                            { username: 1, iconPath: 1, publishedDrafts: 1 },
                             error => {
                                 if (error) {
-                                    console.error("THE ERROR YOO: ", error);
+                                    console.error('An error has occurred in getting the users of the reply likes');
+                                } else {
+                                    console.log('No error has occurred in getting the users of the reply likes.')
                                 }
                             }
-                        ).then(targetPosts => {
+                        ).then(users => {
                             console.log('targetPosts: ', targetPosts);
                             let delNotifications = [];
                             const _replyLikes = replyLikes.map(replyLike => {
                                 const { postId, commentsRepliedTo } = replyLike;
                                 const targetPost = targetPosts.find(({ _id }) => _id === postId);
-                                let _commentsRepliedTo;
+                                const postAuthor = users.find(user => user.publishedDrafts && user.publishedDrafts.includes(postId));
+                                const isPostByCU = publishedDrafts.includes(postId);
+                                console.log("postAuthor: ", postAuthor);
                                 // check if the post exist, and there are still comments on the post 
-                                if (targetPost && targetPost.comments && targetPost.comments.length) {
-                                    _commentsRepliedTo = commentsRepliedTo.map(comment => {
+                                if (postAuthor && targetPost && targetPost.comments && targetPost.comments.length) {
+                                    const _commentsRepliedTo = commentsRepliedTo.map(comment => {
                                         const { replies, commentId } = comment;
                                         // THE COMMENT WON'T EXIST WHEN THE USER DELETES THEIR ACCOUNT
                                         // check if the comment exist
@@ -2534,15 +2550,14 @@ router.route("/users/:package").get((request, response) => {
                                                 // check if the reply exist
                                                 if (targetReply && reply.userIdsOfLikes && reply.userIdsOfLikes.length) {
                                                     const _userIdsOfLikes = reply.userIdsOfLikes.map(user => {
-                                                        console.log('commentLikesUsers: ', commentLikesUsers)
-                                                        const userOfLike = commentLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
+                                                        console.log('users: ', users)
+                                                        const userOfLike = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
                                                         // check if the user still exist
                                                         console.log('userIdOfLike: ', userOfLike);
                                                         if (userOfLike) {
                                                             const { likedAt } = targetReply.userIdsOfLikes.find(({ userId }) => userId === user.userId);
                                                             const timeElapsedText = _getTimeElapsedText(likedAt);
                                                             // CU = current user
-                                                            const isPostByCU = publishedDrafts.includes(postId);
                                                             const notificationText = isPostByCU ? `${userOfLike.username} liked your reply on your post ` : `${userOfLike.username} liked your reply on post `;
 
                                                             return {
@@ -2584,20 +2599,28 @@ router.route("/users/:package").get((request, response) => {
                                         return comment;
                                     });
 
-
+                                    console.log("postAuthor.username: ", postAuthor.username)
+                                    // CU = current user
+                                    return isPostByCU ?
+                                        {
+                                            ...replyLike,
+                                            commentsRepliedTo: _commentsRepliedTo,
+                                            title: targetPost.title
+                                        }
+                                        :
+                                        {
+                                            ...replyLike,
+                                            commentsRepliedTo: _commentsRepliedTo,
+                                            title: targetPost.title,
+                                            // UN = username
+                                            postAuthorUN: postAuthor.username
+                                        };
                                 } else {
                                     // if postId is not found im the blogPost collection, then delete the whole entire object by using the post id 
                                     // delNotifications.push({ postId });
                                 };
 
-                                return _commentsRepliedTo ?
-                                    {
-                                        ...replyLike,
-                                        commentsRepliedTo: _commentsRepliedTo,
-                                        title: targetPost.title
-                                    }
-                                    :
-                                    replyLike
+                                return replyLike
                             });
                             if (delNotifications.length) {
                                 console.log("delNotifications: ", delNotifications);
