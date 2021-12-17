@@ -2321,132 +2321,135 @@ router.route("/users/:package").get((request, response) => {
                             }
                         ).then(infoOfAuthors => {
                             let notificationsToDel;
+                            let replies_;
                             console.log('replies: ', replies);
-                            let replies_ = replies.map(reply => {
-                                const { postId, repliesInfo } = reply;
-                                const targetPost = postsOfReplies.find(({ _id }) => _id === postId);
-                                // GOAL: get the username of the author of the post 
-                                const postAuthor = infoOfAuthors.find(author => author.publishedDrafts && author.publishedDrafts.includes(postId));
-                                const isPostByCU = publishedDrafts.includes(postId);
+                            if (infoOfAuthors?.length && postsOfReplies?.length) {
+                                replies_ = replies.map(reply => {
+                                    const { postId, repliesInfo } = reply;
+                                    const targetPost = postsOfReplies.find(({ _id }) => _id === postId);
+                                    // GOAL: get the username of the author of the post 
+                                    const postAuthor = infoOfAuthors.find(author => author.publishedDrafts && author.publishedDrafts.includes(postId));
+                                    const isPostByCU = publishedDrafts.includes(postId);
 
-                                // if the comment doesn't exist, then that means the user deleted the comments
-                                // the comments doesn't exist
-                                // the user deleted the comments
-                                // if the user deleted the comments, then delete the reply notification 
-                                let repliesInfo_;
-                                if (postAuthor && targetPost && targetPost.comments && targetPost.comments.length) {
-                                    repliesInfo_ = repliesInfo.map(replyInfo => {
-                                        // CASE1: THE COMMENT AUTHOR DOESN'T EXIST
-                                        // CASE2: THE COMMENT DOESN'T EXIST
-                                        const { commentsRepliedTo, commentAuthorId } = replyInfo;
-                                        const doesCommentUserExist = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId))
-                                        if (doesCommentUserExist) {
-                                            const _commentsRepliedTo = commentsRepliedTo.map(comment => {
-                                                const { id: _commentId, replies } = comment;
-                                                // does the comment on the post exist?
-                                                const commentOnPost = targetPost.comments.find(({ commentId }) => commentId === _commentId);
-                                                if (commentOnPost && commentOnPost.replies && commentOnPost.replies.length) {
-                                                    const _replies = replies.map(replyInfo => {
-                                                        const { authorId, replyIds } = replyInfo;
-                                                        const replyAuthor = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                                        if (replyAuthor && replyIds && replyIds.length) {
-                                                            const _replyIds = replyIds.map(reply => {
-                                                                // const { _reply, createdAt } = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
-                                                                const targetReply = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
-                                                                // MS = miliSeconds
-                                                                if (targetReply) {
-                                                                    const { _reply, createdAt } = targetReply;
-                                                                    const timeElapsedText = _getTimeElapsedText(createdAt);
-                                                                    // CU = current user
-                                                                    const isCommentByCU = commentAuthorId === userId;
-                                                                    let notificationText;
-                                                                    if (isPostByCU && isCommentByCU) {
-                                                                        notificationText = `${replyAuthor.username} replied to your comment on your post `
-                                                                    } else if (isPostByCU) {
-                                                                        notificationText = `${replyAuthor.username} replied to a comment that you've replied to on your post `
-                                                                    } else if (isCommentByCU) {
-                                                                        notificationText = `${replyAuthor.username} replied to your comment on post `;
+                                    // if the comment doesn't exist, then that means the user deleted the comments
+                                    // the comments doesn't exist
+                                    // the user deleted the comments
+                                    // if the user deleted the comments, then delete the reply notification 
+                                    let repliesInfo_;
+                                    if (postAuthor && targetPost && targetPost.comments && targetPost.comments.length) {
+                                        repliesInfo_ = repliesInfo.map(replyInfo => {
+                                            // CASE1: THE COMMENT AUTHOR DOESN'T EXIST
+                                            // CASE2: THE COMMENT DOESN'T EXIST
+                                            const { commentsRepliedTo, commentAuthorId } = replyInfo;
+                                            const doesCommentUserExist = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId))
+                                            if (doesCommentUserExist) {
+                                                const _commentsRepliedTo = commentsRepliedTo.map(comment => {
+                                                    const { id: _commentId, replies } = comment;
+                                                    // does the comment on the post exist?
+                                                    const commentOnPost = targetPost.comments.find(({ commentId }) => commentId === _commentId);
+                                                    if (commentOnPost && commentOnPost.replies && commentOnPost.replies.length) {
+                                                        const _replies = replies.map(replyInfo => {
+                                                            const { authorId, replyIds } = replyInfo;
+                                                            const replyAuthor = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                                            if (replyAuthor && replyIds && replyIds.length) {
+                                                                const _replyIds = replyIds.map(reply => {
+                                                                    // const { _reply, createdAt } = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
+                                                                    const targetReply = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
+                                                                    // MS = miliSeconds
+                                                                    if (targetReply) {
+                                                                        const { _reply, createdAt } = targetReply;
+                                                                        const timeElapsedText = _getTimeElapsedText(createdAt);
+                                                                        // CU = current user
+                                                                        const isCommentByCU = commentAuthorId === userId;
+                                                                        let notificationText;
+                                                                        if (isPostByCU && isCommentByCU) {
+                                                                            notificationText = `${replyAuthor.username} replied to your comment on your post `
+                                                                        } else if (isPostByCU) {
+                                                                            notificationText = `${replyAuthor.username} replied to a comment that you've replied to on your post `
+                                                                        } else if (isCommentByCU) {
+                                                                            notificationText = `${replyAuthor.username} replied to your comment on post `;
+                                                                        } else {
+                                                                            notificationText = `${replyAuthor.username} replied to a comment that you've replied to on post `
+                                                                        };
+
+                                                                        return {
+                                                                            ...reply,
+                                                                            //MS = miliSeconds
+                                                                            userIcon: replyAuthor.iconPath,
+                                                                            timePostedInMS: createdAt.miliSeconds,
+                                                                            timeElapsedText,
+                                                                            notificationText,
+                                                                            replyText: _reply,
+                                                                        };
+
                                                                     } else {
-                                                                        notificationText = `${replyAuthor.username} replied to a comment that you've replied to on post `
-                                                                    };
+                                                                        // if the reply doesn't exist, then delete the reply from the object that contains the id of the author and their replies 
+                                                                        // notificationsToDel = addNotificationToDel(notificationsToDel, reply.id, 'willDelReplies');
+                                                                    }
 
-                                                                    return {
-                                                                        ...reply,
-                                                                        //MS = miliSeconds
-                                                                        userIcon: replyAuthor.iconPath,
-                                                                        timePostedInMS: createdAt.miliSeconds,
-                                                                        timeElapsedText,
-                                                                        notificationText,
-                                                                        replyText: _reply,
-                                                                    };
+                                                                    return reply;
+                                                                });
 
-                                                                } else {
-                                                                    // if the reply doesn't exist, then delete the reply from the object that contains the id of the author and their replies 
-                                                                    // notificationsToDel = addNotificationToDel(notificationsToDel, reply.id, 'willDelReplies');
-                                                                }
-
-                                                                return reply;
-                                                            });
-
-                                                            return {
-                                                                ...replyInfo,
-                                                                replyIds: _replyIds
+                                                                return {
+                                                                    ...replyInfo,
+                                                                    replyIds: _replyIds
+                                                                };
+                                                            } else {
+                                                                // if the author of the reply no longer exist, then delete the reply author from replies 
+                                                                // notificationsToDel = addNotificationToDel(notificationsToDel, authorId, 'willDelReplyAuthors');
                                                             };
-                                                        } else {
-                                                            // if the author of the reply no longer exist, then delete the reply author from replies 
-                                                            // notificationsToDel = addNotificationToDel(notificationsToDel, authorId, 'willDelReplyAuthors');
-                                                        };
 
-                                                        return replyInfo;
-                                                    })
+                                                            return replyInfo;
+                                                        })
 
-                                                    return {
-                                                        ...comment,
-                                                        replies: _replies
+                                                        return {
+                                                            ...comment,
+                                                            replies: _replies
+                                                        }
+                                                    } else {
+                                                        // NOTE: for the 
+                                                        // if the comment doesn't exist, then delete the comment id from the notification 
+                                                        // notificationsToDel = addNotificationToDel(notificationsToDel, _commentId, 'willDelComments');
+                                                    };
+
+                                                    return comment;
+                                                });
+                                                return isPostByCU ?
+                                                    {
+                                                        ...replyInfo,
+                                                        commentsRepliedTo: _commentsRepliedTo
                                                     }
-                                                } else {
-                                                    // NOTE: for the 
-                                                    // if the comment doesn't exist, then delete the comment id from the notification 
-                                                    // notificationsToDel = addNotificationToDel(notificationsToDel, _commentId, 'willDelComments');
-                                                };
+                                                    :
+                                                    {
+                                                        ...replyInfo,
+                                                        // UN = username
+                                                        postAuthorUN: postAuthor.username,
+                                                        commentsRepliedTo: _commentsRepliedTo
+                                                    };
+                                            } else {
+                                                // delete the author of the comment
+                                                // notificationsToDel = addNotificationToDel(notificationsToDel, commentAuthorId, 'willDelCommentAuthors')
+                                            };
 
-                                                return comment;
-                                            });
-                                            return isPostByCU ?
-                                                {
-                                                    ...replyInfo,
-                                                    commentsRepliedTo: _commentsRepliedTo
-                                                }
-                                                :
-                                                {
-                                                    ...replyInfo,
-                                                    // UN = username
-                                                    postAuthorUN: postAuthor.username,
-                                                    commentsRepliedTo: _commentsRepliedTo
-                                                };
-                                        } else {
-                                            // delete the author of the comment
-                                            // notificationsToDel = addNotificationToDel(notificationsToDel, commentAuthorId, 'willDelCommentAuthors')
-                                        };
+                                            return replyInfo;
+                                        });
+                                    } else {
+                                        // delete the whole entire post from the notifications field
+                                        // notificationsToDel = addNotificationToDel(notificationsToDel, postId, 'willDelPosts')
 
-                                        return replyInfo;
-                                    });
-                                } else {
-                                    // delete the whole entire post from the notifications field
-                                    // notificationsToDel = addNotificationToDel(notificationsToDel, postId, 'willDelPosts')
-
-                                }
-
-                                return repliesInfo_ ?
-                                    {
-                                        ...reply,
-                                        repliesInfo: repliesInfo_,
-                                        postTitle: targetPost.title
                                     }
-                                    :
-                                    reply
 
-                            });
+                                    return repliesInfo_ ?
+                                        {
+                                            ...reply,
+                                            repliesInfo: repliesInfo_,
+                                            postTitle: targetPost.title
+                                        }
+                                        :
+                                        reply
+
+                                });
+                            };
                             if (notificationsToDel) {
                                 // WILL REFACTOR LATER
 
@@ -2637,7 +2640,7 @@ router.route("/users/:package").get((request, response) => {
                 }
 
                 if (willGetCommentLikes && (likes && likes.comments && likes.comments.length)) {
-                    let userIdsOfCommentLikes = [];
+                    let userIds = [];
                     let postIds = [];
                     const { comments: commentLikes } = likes;
                     // CU = 'current user'
@@ -2648,52 +2651,56 @@ router.route("/users/:package").get((request, response) => {
                         comments.forEach(({ commentId, userIdsOfLikes }) => {
                             !commentIdsByCU.includes(commentId) && commentIdsByCU.push(commentId);
                             userIdsOfLikes.forEach(({ userId }) => {
-                                !userIdsOfCommentLikes.includes(userId) && userIdsOfCommentLikes.push(userId);
+                                !userIds.includes(userId) && userIds.push(userId);
                             })
                         })
                     });
-                    User.find(
-                        { _id: { $in: userIdsOfCommentLikes } },
-                        { username: 1, iconPath: 1 },
+
+                    BlogPost.find(
+                        { _id: { $in: postIds } },
+                        { comments: 1, title: 1 },
                         error => {
                             if (error) {
-                                console.error('An error has occurred in getting the users of the reply likes');
-                            } else {
-                                console.log('No error has occurred in getting the users of the reply likes.')
+                                console.error("THE ERROR YOO: ", error);
                             }
                         }
-                    ).then(commentLikesUsers => {
-                        console.log("postIds: ", postIds);
-                        BlogPost.find(
-                            { _id: { $in: postIds } },
-                            { comments: 1, title: 1 },
+                    ).then(targetPosts => {
+                        const postAuthorIds = targetPosts.map(({ authorId }) => authorId);
+                        userIds = [...userIds, ...postAuthorIds];
+                        userIds = [...new Set(userIds)];
+
+                        User.find(
+                            { _id: { $in: userIds } },
+                            { username: 1, iconPath: 1, publishedDrafts: 1 },
                             error => {
                                 if (error) {
-                                    console.error("THE ERROR YOO: ", error);
+                                    console.error('An error has occurred in getting the users of the reply likes');
+                                } else {
+                                    console.log('No error has occurred in getting the users of the reply likes.')
                                 }
                             }
-                        ).then(targetPosts => {
+                        ).then(users => {
                             console.log('targetPosts: ', targetPosts);
                             let delNotifications;
-                            if (targetPosts.length && commentLikesUsers.length) {
+                            if (targetPosts.length && users.length) {
                                 let _commentLikes = commentLikes.map(commentLike => {
                                     const { postId, comments } = commentLike;
                                     const targetPost = targetPosts.find(({ _id }) => _id === postId);
-                                    let _comments;
+                                    const postAuthor = users.find(user => user.publishedDrafts && user.publishedDrafts.includes(postId));
+                                    const isPostByCU = publishedDrafts.includes(postId);
                                     // check if the post exist, and there are still comments on the post 
-                                    if (targetPost && targetPost.comments && targetPost.comments.length) {
-                                        _comments = comments.map(comment => {
+                                    if (postAuthor && targetPost && targetPost.comments && targetPost.comments.length) {
+                                        const _comments = comments.map(comment => {
                                             const { commentId, userIdsOfLikes } = comment;
                                             const targetComment = targetPost.comments.find(({ commentId: _commentId }) => commentId === _commentId);
                                             // check if the comment exist
                                             if (targetComment && userIdsOfLikes && userIdsOfLikes.length) {
                                                 const _userIdsOfLikes = userIdsOfLikes.map(user => {
-                                                    const userOfLike = commentLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
+                                                    const userOfLike = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
                                                     if (userOfLike) {
                                                         const { likedAt } = targetComment.userIdsOfLikes.find(({ userId }) => userId === user.userId);
                                                         const timeElapsedText = _getTimeElapsedText(likedAt);
                                                         // CU = current user 
-                                                        const isPostByCU = publishedDrafts.includes(postId);
                                                         const notificationText = isPostByCU ? `${userOfLike.username} liked your reply on your post ` : `${userOfLike.username} liked your reply on post `;
 
                                                         return {
@@ -2716,20 +2723,27 @@ router.route("/users/:package").get((request, response) => {
                                             } else {
                                                 return comment;
                                             }
-                                        })
+                                        });
+
+                                        return isPostByCU ?
+                                            {
+                                                ...commentLike,
+                                                comments: _comments,
+                                                title: targetPost.title
+                                            }
+                                            :
+                                            {
+                                                ...commentLike,
+                                                comments: _comments,
+                                                postAuthorUN: postAuthor.username,
+                                                title: targetPost.title
+                                            };
                                     } else {
                                         // if postId is not found im the blogPost collection, then delete the whole entire object by using the post id 
                                         // delNotifications.push({ postId });
                                     };
 
-                                    return _comments ?
-                                        {
-                                            ...commentLike,
-                                            comments: _comments,
-                                            title: targetPost.title
-                                        }
-                                        :
-                                        commentLike
+                                    return commentLike;
                                 });
 
                                 if (delNotifications) {
