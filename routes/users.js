@@ -1846,6 +1846,422 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         })
         response.json('Will notify the following of current user of new post if user has any followers.')
+    } else if (name === 'markAllAsReadNotifications') {
+        User.findOne({ _id: userId }, { _id: 0, notifications: 1 }).then(result => {
+            if (result.notifications) {
+                const { notifications } = result;
+                let _notifications;
+                Object.keys(notifications).forEach(notificationField => {
+                    if (notificationField === 'comments') {
+                        const commentsUpdated = notifications['comments'].map(post => {
+                            //GOAL: mark the COMMENT notifications as true 
+                            const _comments = post.comments.map(author => {
+                                const _commentsByAuthor = author.commentsByAuthor.map(comment => {
+                                    return {
+                                        ...comment,
+                                        isMarkedRead: true
+                                    }
+                                });
+
+                                return {
+                                    ...author,
+                                    commentsByAuthor: _commentsByAuthor
+                                }
+                            });
+
+                            return {
+                                ...post,
+                                comments: _comments
+                            }
+                        });
+                        _notifications = _notifications ? { ..._notifications, comments: commentsUpdated } : { comments: commentsUpdated };
+                    } else if (notificationField === 'newFollowers') {
+                        const _newFollowers = notifications['newFollowers'].map(follower => {
+                            return {
+                                ...follower,
+                                isMarkedRead: true
+                            }
+                        });
+                        _notifications = _notifications ? { ..._notifications, newFollowers: _newFollowers } : { newFollowers: _newFollowers };
+                    } else if (notificationField === 'replies') {
+                        // GOAL: mark the reply notification as true 
+                        const _replies = notifications['replies'].map(post => {
+                            const _repliesInfo = post.repliesInfo.map(replyInfo => {
+                                const _commentsRepliedTo = replyInfo.commentsRepliedTo.map(comment => {
+                                    const _replies = comment.replies.map(reply => {
+                                        const _replyIds = reply.replyIds.map(replyId => {
+                                            return {
+                                                ...replyId,
+                                                isMarkedRead: true
+                                            };
+                                        });
+
+                                        return {
+                                            ...reply,
+                                            replyIds: _replyIds
+                                        };
+                                    });
+
+                                    return {
+                                        ...comment,
+                                        replies: _replies
+                                    }
+                                });
+
+                                return {
+                                    ...replyInfo,
+                                    commentsRepliedTo: _commentsRepliedTo
+                                }
+                            });
+
+                            return {
+                                ...post,
+                                repliesInfo: _repliesInfo
+                            }
+                        });
+                        _notifications = _notifications ? { ..._notifications, replies: _replies } : { replies: _replies };
+                    } else if (notificationField === 'likes') {
+                        // GOAL: access the replies field of the like object and change every 'isMarkedRead' field to true 
+                        const likes = notifications[notificationField];
+                        Object.keys(likes).forEach(likeField => {
+                            if (likeField === 'posts') {
+                                const _posts = likes['posts'].map(post => {
+                                    if (post.userIdsOfLikes.length) {
+                                        const _userIdsOfLikes = post.userIdsOfLikes.map(user => {
+                                            return {
+                                                ...user,
+                                                isMarkedRead: true
+                                            }
+                                        });
+
+                                        return {
+                                            ...post,
+                                            userIdsOfLikes: _userIdsOfLikes
+                                        }
+                                    };
+
+                                    return post
+                                });
+
+                                _notifications = _notifications ?
+                                    {
+                                        ..._notifications,
+                                        likes:
+                                            _notifications?.likes ?
+                                                {
+                                                    ..._notifications.likes,
+                                                    posts: _posts
+                                                }
+                                                :
+                                                {
+                                                    posts: _posts
+                                                }
+                                    }
+                                    :
+                                    {
+                                        likes: { posts: _posts }
+                                    };
+                            } else if (likeField === 'replies') {
+                                const _replies = likes['replies'].map(post => {
+                                    const _commentsRepliedTo = post.commentsRepliedTo.map(comment => {
+                                        const _replies = comment.replies.map(reply => {
+                                            if (reply.userIdsOfLikes.length) {
+                                                const _userIdsOfLikes = reply.userIdsOfLikes.map(user => {
+                                                    return {
+                                                        ...user,
+                                                        isMarkedRead: true
+                                                    }
+                                                });
+
+                                                return {
+                                                    ...reply,
+                                                    userIdsOfLikes: _userIdsOfLikes
+                                                };
+                                            };
+
+                                            return reply;
+                                        });
+
+                                        return {
+                                            ...comment,
+                                            replies: _replies
+                                        }
+                                    });
+
+                                    return {
+                                        ...post,
+                                        commentsRepliedTo: _commentsRepliedTo
+                                    }
+                                });
+                                _notifications = _notifications ?
+                                    {
+                                        ..._notifications,
+                                        likes:
+                                            _notifications?.likes ?
+                                                {
+                                                    ..._notifications.likes,
+                                                    replies: _replies
+                                                }
+                                                :
+                                                {
+                                                    replies: _replies
+                                                }
+                                    }
+                                    :
+                                    {
+                                        likes: { replies: _replies }
+                                    };
+                            } else if (likeField === 'comments') {
+                                // GOAL: for all of the objects that is stored in the array of comments access the isMarkedRead field and store a true boolean 
+                                const _comments = likes['comments'].map(post => {
+                                    const _comments = post.comments.map(comment => {
+                                        if (comment.userIdsOfLikes.length) {
+                                            const _userIdsOfLikes = comment.userIdsOfLikes.map(user => {
+                                                return {
+                                                    ...user,
+                                                    isMarkedRead: true
+                                                }
+                                            });
+
+                                            return {
+                                                ...comment,
+                                                userIdsOfLikes: _userIdsOfLikes
+                                            }
+                                        };
+
+                                        return comment;
+                                    });
+
+                                    return {
+                                        ...post,
+                                        comments: _comments
+                                    }
+                                });
+
+                                _notifications = _notifications ?
+                                    {
+                                        ..._notifications,
+                                        likes:
+                                            _notifications?.likes ?
+                                                {
+                                                    ..._notifications.likes,
+                                                    comments: _comments
+                                                }
+                                                :
+                                                {
+                                                    comments: _comments
+                                                }
+                                    }
+                                    :
+                                    {
+                                        likes: { comments: _comments }
+                                    };
+
+                            }
+                        })
+                    } else if (notificationField === 'newPostsFromFollowing') {
+                        const _newPostsFromFollowing = notifications[notificationField].map(author => {
+                            const _newPostIds = author.newPostIds.map(post => {
+                                return {
+                                    ...post,
+                                    isMarkedRead: true
+                                }
+                            });
+
+                            return {
+                                ...author,
+                                newPostIds: _newPostIds
+                            }
+                        });
+
+                        _notifications = _notifications ? { ..._notifications, newPostsFromFollowing: _newPostsFromFollowing } : { newPostsFromFollowing: _newPostsFromFollowing };
+                    }
+                });
+
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $set:
+                        {
+                            notifications: _notifications
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error('An error has occurred in updating notifications of user: ', error);
+                        } else {
+                            console.log("User's notifications has been updated, numsAffected: ", numsAffected);
+                            response.sendStatus(200);
+                        }
+                    }
+                )
+            }
+        });
+        // response.json("'markAllAsReadNotifications' package was received.")
+    } else if (name === 'markedAsReadToggled') {
+        // GOAL: marked the reply like as read 
+        // the isMarkedRead field is change to true for that object
+        // find the object that contains the userId that was sent to the server
+        // if a reply id for each object in the array that is stored in the replies field matches with the reply id that was sent to the server, access the userIdsOfLikes for that object
+        // loop through the replies field 
+        // if the commentId matches with the commentId that was sent to the server, then access replies field for the object
+        // loop through the commentsRepliedTo field
+        // the commentsRepliedTo is accessed
+        // the postId matches with the postId matches with the postId that was sent to the server
+        // if the postId matches with the postId that was sent to the server, then for that object that contains the matching postId, access the commentsRepliedTo field 
+        // loop through the array that is stored in replies
+        console.log("request.body: ", request.body);
+        const { postId, commentId, replyId, userIdOfNotification, type, commentAuthorId } = request.body;
+        const { isRead } = data;
+
+        if (type === 'isReplyLike') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        'notifications.likes.replies.$[post].commentsRepliedTo.$[comment].replies.$[reply].userIdsOfLikes.$[user].isMarkedRead': isRead
+                    }
+                },
+                {
+                    arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }, { 'reply.replyId': replyId }, { 'user.userId': userIdOfNotification }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("An error has occurred in updating the 'read' status of a notification: ", error);
+                    } else {
+                        console.log("The reply like 'isMarkedRead' status has been updated, numsAffected: ", numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        } else if (type === 'isCommentLike') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        'notifications.likes.comments.$[post].comments.$[comment].userIdsOfLikes.$[user].isMarkedRead': isRead
+                    }
+                },
+                {
+                    arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }, { 'user.userId': userIdOfNotification }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("An error has occurred in updating the 'isMarkedRead' status of a comment like notification: ", error);
+                    } else {
+                        console.log("The comment like 'isMarkedRead' status has been updated, numsAffected: ", numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        } else if (type === 'isPostLike') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        'notifications.likes.posts.$[post].userIdsOfLikes.$[user].isMarkedRead': isRead
+                    }
+                },
+                {
+                    arrayFilters: [{ 'post.postId': postId }, { 'user.userId': userIdOfNotification }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("An error has occurred in updating the 'isMarkedRead' status of a post like notification: ", error);
+                    } else {
+                        console.log("The post like 'isMarkedRead' status has been updated, numsAffected: ", numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        } else if (type === 'isReplyNotify') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        'notifications.replies.$[post].repliesInfo.$[commentAuthor].commentsRepliedTo.$[comment].replies.$[replyAuthor].replyIds.$[reply].isMarkedRead': isRead
+                    }
+                },
+                {
+                    arrayFilters: [{ 'post.postId': postId }, { 'commentAuthor.commentAuthorId': commentAuthorId }, { 'comment.id': commentId }, { 'replyAuthor.authorId': userIdOfNotification }, { 'reply.id': replyId }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("An error has occurred in updating the 'isMarkedRead' status of reply notification: ", error);
+                    } else {
+                        console.log("The reply notification 'isMarkedRead' status has been updated, numsAffected: ", numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        } else if (type === 'isCommentNotify') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        'notifications.comments.$[post].comments.$[commentAuthor].commentsByAuthor.$[comment].isMarkedRead': isRead
+                    }
+                },
+                {
+                    arrayFilters: [{ 'post.postId': postId }, { 'commentAuthor.authorId': userIdOfNotification }, { 'comment.id': commentId }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("An error has occurred in updating the 'isMarkedRead' status of comment notification: ", error);
+                    } else {
+                        console.log("The comment notification 'isMarkedRead' status has been updated, numsAffected: ", numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        } else if (type === 'isPostFromFollowing') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        'notifications.newPostsFromFollowing.$[author].newPostIds.$[post].isMarkedRead': isRead
+                    }
+                },
+                {
+                    arrayFilters: [{ 'author.authorId': userIdOfNotification }, { 'post.postId': postId }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("An error has occurred in updating the 'isMarkedRead' status of newPostFromFollowing notification: ", error);
+                    } else {
+                        console.log("The new post from following notification 'isMarkedRead' status has been updated, numsAffected: ", numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        } else if (type === 'isNewFollower') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $set:
+                    {
+                        'notifications.newFollowers.$[user].isMarkedRead': isRead
+                    }
+                },
+                {
+                    arrayFilters: [{ 'user.userId': userIdOfNotification }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("An error has occurred in updating the 'isMarkedRead' status of newPostFromFollowing notification: ", error);
+                    } else {
+                        console.log("The new post from following notification 'isMarkedRead' status has been updated, numsAffected: ", numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        }
     }
 }, (error, req, res, next) => {
     if (error) {
