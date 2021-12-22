@@ -405,6 +405,7 @@ router.route("/users").post((request, response) => {
 
 
 router.route("/users/updateInfo").post((request, response) => {
+    console.log('request.body: ', request.body);
     const { name, data, userId, username, listName, isPostPresent, isCommentAuthorPresent, notifyUserId } = request.body
     if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
@@ -906,7 +907,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             }
         );
-        // NOT WORKING:
         console.log('userId_: ', userId_);
         User.updateOne({ _id: unFollowUser },
             {
@@ -1317,7 +1317,6 @@ router.route("/users/updateInfo").post((request, response) => {
                                 },
                                 {
                                     arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }, { 'commentId.id': commentId }, { 'replyAuthorId.authorId': replyAuthorId }],
-                                    multi: true
                                 },
                                 (error, numsAffected) => {
                                     if (error) {
@@ -1616,10 +1615,11 @@ router.route("/users/updateInfo").post((request, response) => {
                     console.error('An error has occurred in deleting the notification for the author of the reply: ', error);
                 } else {
                     console.log('Reply notification for author of reply was deleted, numsAffected: ', numsAffected);
-                    response.json('Reply notification for author of reply was deleted.')
+                    // response.json('Reply notification for author of reply was deleted.')
                 }
             }
         );
+        response.sendStatus(200);
     } else if (name === 'commentLikeNotification') {
         const { notifyUserId } = request.body;
         const { postId, commentId, userIdOfLike } = data;
@@ -1627,21 +1627,7 @@ router.route("/users/updateInfo").post((request, response) => {
             postId,
             comments: [{ commentId, userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }] }]
         };
-        // CASE #1: first like of the user comment
 
-        // CASE #2: there are already likes for the user's comment
-        // GOAL: when there are likes for the user's comments, find the comment id and push the following object into userIdsOfLikes: {userId, isMarkedRead: false}
-        // the following is pushed into the userIdOfLikes: {userId, isMarkedRead: false}
-        // the userIdsOfLikes field is accessed 
-        // the comment that was liked is found by using the comment id
-        // filter through the comments field
-        // the notifications.likes.comments is accessed 
-        // if isCommentPresent and isPostPresent, then push the following object into userIdsOfLikes: {userId, isMarkedRead: false}
-        // isCommentPresent is set to true
-        // is isPostPresent is set to true
-        // the comment is present 
-        // the post present
-        // if the post and the comment is present, then set the following to true: isCommentPresent and isPostPresent
         User.findOne({ _id: notifyUserId }, { 'notifications.likes.comments': 1, _id: 0 }).then(result => {
             const commentLikesNotifications = (result.notifications && result.notifications.likes && result.notifications.likes.comments && result.notifications.likes.comments.length) && result.notifications.likes.comments;
             if (commentLikesNotifications) {
@@ -1721,7 +1707,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             }
         );
-        response.json('Deleted the comment notification that was sent to the author of comment.');
+        response.sendStatus(200)
     } else if (name === 'postLikeNotification') {
         // GOAL: check if the there are post likes present for the current post that was liked 
         const { notifyUserId } = request.body;
@@ -1784,7 +1770,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     console.error('Case 1. An error has occurred in deleting notification for the author of the post ', error);
                 } else {
                     console.log('Post like notification for author was deleted, numsAffected: ', numsAffected);
-                    response.json('Notification of post like for author was deleted.');
+                    response.sendStatus(200);
                 }
             }
         );
@@ -2257,6 +2243,93 @@ router.route("/users/updateInfo").post((request, response) => {
                         console.error("An error has occurred in updating the 'isMarkedRead' status of newPostFromFollowing notification: ", error);
                     } else {
                         console.log("The new post from following notification 'isMarkedRead' status has been updated, numsAffected: ", numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        }
+    } else if (name === 'deleteNotification') {
+        const { postId, commentId, replyId, userIdOfNotification, type, commentAuthorId } = request.body;
+
+        if (type === 'isReplyNotify') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull:
+                    {
+                        'notifications.replies.$[postOfReply].repliesInfo.$[commentAuthorId].commentsRepliedTo.$[commentId].replies.$[replyAuthorId].replyIds': { id: replyId }
+                    }
+                },
+                {
+                    arrayFilters: [{ 'postOfReply.postId': postId }, { 'commentAuthorId.commentAuthorId': commentAuthorId }, { 'commentId.id': commentId }, { 'replyAuthorId.authorId': userIdOfNotification }],
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in deleting the reply notification: ', error);
+                    } else {
+                        console.log('Reply notification was deleted. ', numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        } else if (type === 'isCommentNotify') {
+            console.log('isCommentNotify, request.body: ', request.body)
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull:
+                    {
+                        'notifications.comments.$[post].comments.$[comment].commentsByAuthor': { id: commentId }
+                    }
+                },
+                {
+                    arrayFilters: [{ 'post.postId': postId }, { 'comment.authorId': userIdOfNotification }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in deleting comment notification: ', error);
+                    } else {
+                        console.log('Comment notification was deleted, numsAffected: ', numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            )
+        } else if (type === 'isPostFromFollowing') {
+            console.log('isPostFromFollowing, request.body: ', request.body)
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull:
+                    {
+                        'notifications.newPostsFromFollowing.$[post].newPostIds': { postId: postId }
+                    }
+                },
+                {
+                    arrayFilters: [{ 'post.authorId': userIdOfNotification }]
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error(`An error has occurred in deleting post notification: `, error);
+                    } else {
+                        console.log('Post notification was deleted, numsAffected', numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            );
+        } else if (type === 'isNewFollower') {
+            console.log('isNewFollower, request.body: ', request.body)
+            User.updateOne({ _id: userId },
+                {
+                    $pull:
+                    {
+                        'notifications.newFollowers': { userId: userIdOfNotification }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in deleting newFollower notification')
+                    } else {
+                        console.log('newFollower notification was deleted: ', numsAffected);
                         response.sendStatus(200);
                     }
                 }
