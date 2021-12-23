@@ -2322,7 +2322,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 {
                     $pull:
                     {
-                        'notifications.newFollowers': { userId: userIdOfNotification }
                     }
                 },
                 (error, numsAffected) => {
@@ -2960,7 +2959,58 @@ router.route("/users/:package").get((request, response) => {
 
                                 // response.json({ replies: _notifications })
                             } else {
-                                response.json({ replies: replies_ })
+                                let _replyNotifications = [];
+                                replies_.forEach(post => {
+                                    const { postId, repliesInfo, title, postAuthorUN } = post;
+                                    repliesInfo.forEach(replyInfo => {
+                                        const { commentAuthorId, commentsRepliedTo } = replyInfo
+                                        commentsRepliedTo.forEach(comment => {
+                                            const { id: commentId, replies } = comment;
+                                            replies.forEach(replyAuthor => {
+                                                const { authorId, replyIds } = replyAuthor;
+                                                replyIds.forEach(reply => {
+                                                    if (reply.createdAt && postAuthorUN) {
+                                                        const { id: replyId, ..._reply } = reply
+                                                        _replyNotifications.push(
+                                                            {
+                                                                isReplyNotify: true,
+                                                                postId,
+                                                                title,
+                                                                postAuthorUN,
+                                                                commentAuthorId,
+                                                                commentId: commentId,
+                                                                replyId: replyId,
+                                                                notification: {
+                                                                    ..._reply,
+                                                                    userId: authorId
+                                                                }
+
+                                                            }
+                                                        );
+                                                    } else if (reply.createdAt) {
+                                                        const { id: replyId, ..._reply } = reply
+                                                        _replyNotifications.push(
+                                                            {
+                                                                isReplyNotify: true,
+                                                                postId,
+                                                                title,
+                                                                commentAuthorId,
+                                                                replyId: replyId,
+                                                                commentId: commentId,
+                                                                notification: {
+                                                                    ..._reply,
+                                                                    userId: authorId
+                                                                }
+
+                                                            }
+                                                        );
+                                                    }
+                                                })
+                                            })
+                                        })
+                                    })
+                                });
+                                _replyNotifications.length ? response.json({ replies: _replyNotifications }) : response.json({ isEmpty: true });
                             }
                         })
                     });
@@ -3107,7 +3157,45 @@ router.route("/users/:package").get((request, response) => {
                             if (delNotifications.length) {
                                 //  GOAL: MAKE DELETION OF REPLY LIKES OCCUR AFTER THE FOLLOWING IS COMPLETE: THE notifications are displayed on the UI, the user's activities are displayed on the UI, the search feature is functional, the message feature is functional, the website is responsive    
                             } else {
-                                response.json({ replyLikes: _replyLikes });
+                                let _replyLikesNotifications = [];
+                                _replyLikes.forEach(post => {
+                                    const { postId, title, commentsRepliedTo, postAuthorUN } = post;
+                                    commentsRepliedTo.forEach(comment => {
+                                        const { commentId, replies } = comment;
+                                        replies.forEach(reply => {
+                                            const { replyId, userIdsOfLikes } = reply;
+                                            if (userIdsOfLikes?.length) {
+                                                userIdsOfLikes.forEach(userOfLike => {
+                                                    if (userOfLike.likedAt && postAuthorUN) {
+                                                        _replyLikesNotifications.push(
+                                                            {
+                                                                isReplyLike: true,
+                                                                postId,
+                                                                title,
+                                                                commentId,
+                                                                replyId,
+                                                                postAuthorUN,
+                                                                notification: userOfLike
+                                                            }
+                                                        )
+                                                    } else if (userOfLike.likedAt) {
+                                                        _replyLikesNotifications.push(
+                                                            {
+                                                                isReplyLike: true,
+                                                                postId,
+                                                                title,
+                                                                commentId,
+                                                                replyId,
+                                                                notification: userOfLike
+                                                            }
+                                                        )
+                                                    }
+                                                })
+                                            }
+                                        })
+                                    })
+                                });
+                                _replyLikesNotifications.length ? response.json({ replyLikes: _replyLikesNotifications }) : response.json({ isEmpty: true })
                             }
                         })
                     })
@@ -3233,8 +3321,42 @@ router.route("/users/:package").get((request, response) => {
 
                                     response.json({ commentLikes: _commentLikes });
                                 } else {
-                                    // if the array is not empy, then send the below to the client 
-                                    response.json({ commentLikes: _commentLikes });
+                                    // if the array is not empty, then send the below to the client 
+                                    let _commentLikesNotifications = [];
+                                    _commentLikes.forEach(post => {
+                                        const { postId, title, comments, postAuthorUN } = post;
+                                        comments.forEach(comment => {
+                                            const { commentId, userIdsOfLikes } = comment;
+                                            if (userIdsOfLikes?.length) {
+                                                userIdsOfLikes.forEach(userOfLike => {
+                                                    if (userOfLike?.likedAt && postAuthorUN) {
+                                                        _commentLikesNotifications.push(
+                                                            {
+                                                                isCommentLike: true,
+                                                                postId,
+                                                                title,
+                                                                postAuthorUN,
+                                                                commentId,
+                                                                notification: userOfLike
+                                                            }
+                                                        )
+                                                    } else if (userOfLike?.likedAt) {
+                                                        _commentLikesNotifications.push(
+                                                            {
+                                                                isCommentLike: true,
+                                                                postId,
+                                                                title,
+                                                                commentId,
+                                                                notification: userOfLike
+                                                            }
+                                                        )
+                                                    };
+                                                })
+                                            }
+                                        })
+                                    });
+                                    console.log('_commentLikesNotifications: ', _commentLikesNotifications);
+                                    _commentLikesNotifications.length ? response.json({ commentLikes: _commentLikesNotifications }) : response.json({ isEmpty: true })
                                 }
                             } else {
                                 response.json({ isEmpty: true })
@@ -3282,7 +3404,7 @@ router.route("/users/:package").get((request, response) => {
                         ).then(targetPosts => {
                             let delNotifications;
                             if (targetPosts.length && postLikesUsers.length) {
-                                let _postLikes = postLikes.map(postLike => {
+                                const _postLikes = postLikes.map(postLike => {
                                     const { postId, userIdsOfLikes: userIdsLikeAlert } = postLike;
                                     const targetPost = targetPosts.find(({ _id }) => _id === postId);
                                     let _userIdsOfLikes;
@@ -3327,8 +3449,24 @@ router.route("/users/:package").get((request, response) => {
 
                                     response.json({ postLikes: _postLikes });
                                 } else {
-                                    // if the array is not empty, then send the below to the client 
-                                    response.json({ postLikes: _postLikes });
+                                    // if the array is not empty, then send the below to the client
+                                    let _postLikeNotifications = [];
+                                    _postLikes.forEach(post => {
+                                        const { postId, title, userIdsOfLikes } = post;
+                                        if (userIdsOfLikes.length) {
+                                            userIdsOfLikes.forEach(userOfLike => {
+                                                _postLikeNotifications.push(
+                                                    {
+                                                        isPostLike: true,
+                                                        postId,
+                                                        title,
+                                                        notification: userOfLike
+                                                    }
+                                                )
+                                            })
+                                        };
+                                    });
+                                    _postLikeNotifications.length ? response.json({ postLikes: _postLikeNotifications }) : response.json({ isEmpty: true });
                                 }
                             } else {
                                 response.json({ isEmpty: true })
@@ -3372,78 +3510,126 @@ router.route("/users/:package").get((request, response) => {
                             }
                         ).then(users => {
                             let notificationsToDel;
-                            let commentNotifications = comments.map(post => {
-                                const { postId, comments: commentsOnPost } = post;
-                                const targetPost = postsOfComments.find(({ _id }) => _id === postId);
-                                const postAuthor = users.find(user => user.publishedDrafts && user.publishedDrafts.includes(postId));
-                                const isPostByCU = publishedDrafts.includes(postId);
-                                if ((postAuthor || isPostByCU) && targetPost && targetPost.comments && targetPost.comments.length) {
-                                    const _comments = commentsOnPost.map(commentInfo => {
-                                        const { authorId, commentsByAuthor } = commentInfo;
-                                        const commentAuthor = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                        if (commentAuthor) {
-                                            const _commentsByAuthor = commentsByAuthor.map(commentByAuthor => {
-                                                const targetComment = targetPost.comments.find(({ commentId }) => commentId === commentByAuthor.id);
-                                                if (targetComment) {
-                                                    const timeElapsedText = _getTimeElapsedText(targetComment.createdAt);
-                                                    // CU = current user
-                                                    const { username, iconPath } = commentAuthor;
-                                                    const notificationText = isPostByCU ? 'commented on your post ' : "commented on a post that you've commented on";
-                                                    const { date, miliSeconds, time } = targetComment.createdAt;
-                                                    return {
-                                                        ...commentByAuthor,
-                                                        timeElapsedText,
-                                                        notificationText,
-                                                        text: targetComment.comment,
-                                                        username,
-                                                        userIcon: iconPath,
-                                                        createdAt: {
-                                                            date: date,
-                                                            time: time
-                                                        },
-                                                        timeStampSort: miliSeconds
+                            let commentNotifications;
+                            if (users.length && postsOfComments.length) {
+                                commentNotifications = comments.map(post => {
+                                    const { postId, comments: commentsOnPost } = post;
+                                    const targetPost = postsOfComments.find(({ _id }) => _id === postId);
+                                    const postAuthor = users.find(user => user.publishedDrafts && user.publishedDrafts.includes(postId));
+                                    const isPostByCU = publishedDrafts.includes(postId);
+                                    if ((postAuthor || isPostByCU) && targetPost && targetPost.comments && targetPost.comments.length) {
+                                        const _comments = commentsOnPost.map(commentInfo => {
+                                            const { authorId, commentsByAuthor } = commentInfo;
+                                            const commentAuthor = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                            if (commentAuthor) {
+                                                const _commentsByAuthor = commentsByAuthor.map(commentByAuthor => {
+                                                    const targetComment = targetPost.comments.find(({ commentId }) => commentId === commentByAuthor.id);
+                                                    if (targetComment) {
+                                                        const timeElapsedText = _getTimeElapsedText(targetComment.createdAt);
+                                                        // CU = current user
+                                                        const { username, iconPath } = commentAuthor;
+                                                        const notificationText = isPostByCU ? 'commented on your post ' : "commented on a post that you've commented on";
+                                                        const { date, miliSeconds, time } = targetComment.createdAt;
+                                                        return {
+                                                            ...commentByAuthor,
+                                                            timeElapsedText,
+                                                            notificationText,
+                                                            text: targetComment.comment,
+                                                            username,
+                                                            userIcon: iconPath,
+                                                            createdAt: {
+                                                                date: date,
+                                                                time: time
+                                                            },
+                                                            timeStampSort: miliSeconds
+                                                        }
                                                     }
+
+                                                    return commentAuthor;
+                                                });
+
+                                                return {
+                                                    ...commentInfo,
+                                                    commentsByAuthor: _commentsByAuthor
                                                 }
+                                            };
 
-                                                return commentAuthor;
-                                            });
+                                            return commentInfo;
+                                        });
 
-                                            return {
-                                                ...commentInfo,
-                                                commentsByAuthor: _commentsByAuthor
+                                        return isPostByCU ?
+                                            {
+                                                ...post,
+                                                comments: _comments,
+                                                title: targetPost.title,
                                             }
-                                        };
+                                            :
+                                            {
+                                                ...post,
+                                                // UN = username
+                                                postAuthorUN: postAuthor.username,
+                                                comments: _comments,
+                                                title: targetPost.title,
+                                            };
+                                    } else {
+                                        //add the post to an array and store it into notificationsToDel, will implement logic later
+                                    }
 
-                                        return commentInfo;
-                                    });
+                                    return post;
+                                });
+                            }
 
-                                    return isPostByCU ?
-                                        {
-                                            ...post,
-                                            comments: _comments,
-                                            title: targetPost.title,
-                                        }
-                                        :
-                                        {
-                                            ...post,
-                                            // UN = username
-                                            postAuthorUN: postAuthor.username,
-                                            comments: _comments,
-                                            title: targetPost.title,
-                                        };
-                                } else {
-                                    //add the post to an array and store it into notificationsToDel, will implement logic later
-                                }
-
-                                return post;
-                            });
                             if (notificationsToDel) {
                                 // WILL REFACTOR LATER
 
 
                                 // response.json({ replies: _notifications })
                             } else {
-                                response.json({ comments: commentNotifications })
+                                let _commentsNotifications = [];
+                                commentNotifications && commentNotifications.forEach(post => {
+                                    const { postId, comments, postAuthorUN, title } = post;
+                                    comments.forEach(commentAuthor => {
+                                        const { authorId, commentsByAuthor } = commentAuthor;
+                                        if (commentsByAuthor.length) {
+                                            commentsByAuthor.forEach(comment => {
+                                                if (comment.createdAt && postAuthorUN) {
+                                                    const { id: commentId, ..._comment } = comment;
+                                                    _commentsNotifications.push(
+                                                        {
+                                                            isCommentNotify: true,
+                                                            postId,
+                                                            authorId,
+                                                            postAuthorUN,
+                                                            title,
+                                                            commentId: commentId,
+                                                            notification: {
+                                                                ..._comment,
+                                                                userId: authorId
+                                                            }
+                                                        }
+                                                    )
+                                                } else if (comment.createdAt) {
+                                                    const { id: commentId, ..._comment } = comment;
+                                                    _commentsNotifications.push(
+                                                        {
+                                                            isCommentNotify: true,
+                                                            postId,
+                                                            authorId,
+                                                            title,
+                                                            commentId: commentId,
+                                                            notification: {
+                                                                ..._comment,
+                                                                userId: authorId
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            })
+                                        };
+                                    })
+                                });
+                                console.log('_commentsNotifications: ', _commentsNotifications)
+                                _commentsNotifications.length ? response.json({ comments: _commentsNotifications }) : response.json({ isEmpty: true })
                             }
                         })
                     });
@@ -3481,49 +3667,74 @@ router.route("/users/:package").get((request, response) => {
                                 }
                             }
                         ).then(newPosts => {
-                            const _newPosts = newPostsFromFollowing.map(post => {
-                                const { authorId, newPostIds } = post;
-                                const author = authorsOfPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                // check if the author still exist 
-                                if (author) {
-                                    const { username, iconPath } = author;
-                                    const _newPostIds = newPostIds.map(newPost => {
-                                        const targetPost = newPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(newPost.postId));
-                                        // check if the post still exist
-                                        if (targetPost) {
-                                            const { publicationDate, title } = targetPost;
-                                            const timeElapsedText = _getTimeElapsedText(publicationDate);
-                                            const { date, time, miliSeconds } = publicationDate;
-                                            const { username, iconPath } = author;
-                                            return {
-                                                ...newPost,
-                                                timeElapsedText,
-                                                title,
-                                                notificationText: `posted a new article titled: `,
-                                                createdAt: {
-                                                    date,
-                                                    time
-                                                },
-                                                timeStampSort: miliSeconds
-                                            }
-                                        };
+                            if (newPosts.length && authorsOfPosts.length) {
+                                const _newPosts = newPostsFromFollowing.map(post => {
+                                    const { authorId, newPostIds } = post;
+                                    const author = authorsOfPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                    // check if the author still exist 
+                                    if (author) {
+                                        const { username, iconPath } = author;
+                                        const _newPostIds = newPostIds.map(newPost => {
+                                            const targetPost = newPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(newPost.postId));
+                                            // check if the post still exist
+                                            if (targetPost) {
+                                                const { publicationDate, title } = targetPost;
+                                                const timeElapsedText = _getTimeElapsedText(publicationDate);
+                                                const { date, time, miliSeconds } = publicationDate;
+                                                return {
+                                                    ...newPost,
+                                                    timeElapsedText,
+                                                    title,
+                                                    notificationText: `posted a new article titled: `,
+                                                    createdAt: {
+                                                        date,
+                                                        time
+                                                    },
+                                                    timeStampSort: miliSeconds
+                                                }
+                                            };
 
-                                        return newPost
-                                    });
+                                            return newPost
+                                        });
 
-                                    return {
-                                        ...post,
-                                        // CHANGE 'newPostIds' to 'newPosts'
-                                        authorUsername: username,
-                                        userIcon: iconPath,
-                                        newPostIds: _newPostIds
+                                        return {
+                                            ...post,
+                                            // CHANGE 'newPostIds' to 'newPosts'
+                                            authorUsername: username,
+                                            userIcon: iconPath,
+                                            newPostIds: _newPostIds
+                                        }
                                     }
-                                }
 
-                                return post;
-                            });
+                                    return post;
+                                });
+                                let _followingNewPosts = [];
+                                _newPosts.forEach(newPost => {
+                                    const { authorId, newPostIds, authorUsername, userIcon } = newPost;
+                                    if (newPostIds?.length) {
+                                        newPostIds.forEach(post => {
+                                            const { postId, title, ..._post } = post;
+                                            if (post.createdAt) {
+                                                _followingNewPosts.push(
+                                                    {
+                                                        isPostFromFollowing: true,
+                                                        title,
+                                                        postId,
+                                                        postAuthorUN: authorUsername,
+                                                        notification: {
+                                                            ..._post,
+                                                            userId: authorId,
+                                                            userIcon: userIcon,
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        })
+                                    }
+                                });
 
-                            response.json({ newPosts: _newPosts })
+                                _followingNewPosts.length ? response.json({ newPosts: _followingNewPosts }) : response.json({ isEmpty: true })
+                            };
                         })
                     })
                 } else if (willGetPostsFromFollowing) {
@@ -3534,33 +3745,37 @@ router.route("/users/:package").get((request, response) => {
                     const newFollowersIds = followers.map(({ userId }) => userId);
                     User.find({ _id: { $in: newFollowersIds } }, { username: 1, iconPath: 1 })
                         .then(users => {
-                            const _newFollowers = newFollowers.map(follower => {
-                                const user = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(follower.userId));
-                                // check if the user still exists
-                                if (user) {
-                                    const { wasFollowedAt } = followers.find(({ userId }) => userId === follower.userId);
-                                    const timeElapsedText = _getTimeElapsedText(wasFollowedAt);
-                                    const { date, time, miliSeconds } = wasFollowedAt;
+                            if (users.length) {
+                                const _newFollowers = newFollowers.map(follower => {
+                                    const user = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(follower.userId));
+                                    // check if the user still exists
+                                    if (user) {
+                                        const { wasFollowedAt } = followers.find(({ userId }) => userId === follower.userId);
+                                        const timeElapsedText = _getTimeElapsedText(wasFollowedAt);
+                                        const { date, time, miliSeconds } = wasFollowedAt;
 
-                                    return {
-                                        notification: {
-                                            ...follower,
-                                            timeElapsedText,
-                                            userIcon: user.iconPath,
-                                            username: user.username,
-                                            followedAt: {
-                                                date,
-                                                time
+                                        return {
+                                            notification: {
+                                                ...follower,
+                                                timeElapsedText,
+                                                userIcon: user.iconPath,
+                                                username: user.username,
+                                                followedAt: {
+                                                    date,
+                                                    time
+                                                },
+                                                timeStampSort: miliSeconds
                                             },
-                                            timeStampSort: miliSeconds
+                                            isNewFollower: true
                                         }
                                     }
-                                }
 
-                                return follower;
-                            });
+                                    return follower
+                                });
+                                console.log('_newFollowers: ', _newFollowers);
+                                response.json({ newFollowers: _newFollowers });
+                            };
 
-                            response.json({ newFollowers: _newFollowers });
                         });
                 } else if (willGetNewFollowers) {
                     response.json({ isEmpty: true });
