@@ -40,7 +40,8 @@ const BlogPostSchema = new Mongoose.Schema(
         publicationDate: Object,
         comments: Array,
         userIdsOfLikes: Array,
-        authorId: String
+        authorId: String,
+        editedPost: Object
     }
 )
 

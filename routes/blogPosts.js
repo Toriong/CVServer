@@ -8,67 +8,6 @@ const BlogPost = require('../models/blogPost');
 
 
 
-// FEATURES:
-// real time updates for notifications
-
-// store the notifications into the db 
-
-
-// MAIN GOAL: notify the author of the user when another user replies, get the time of that reply 
-
-// NOTES:
-// show the content of the reply on the user's notifications page 
-// notifications.replies
-// notifications.comments
-// notifications will be an object that will consist of the following:
-// comments
-// replies (consist of replies on user's post and replies to user's comments)
-// likes: {comments, replies, posts}
-// followingNewPosts
-// the storing for notifications.replies will be stored as follows: {postId, commentId, and the replyId}
-// when the user replies to another user notify the following: whoever the user replied to, the author of the post  
-// all replies and comments on user's post will notify the author of the post 
-// case one: the user replies to a user who is not the author of a post but has a commented on the post 
-// case two: the user replies to a user's comment who is the author of the post
-// before notify the user who wrote the reply, check first if the user who wrote the comment, also wrote the post. If the user 
-// when displaying the notifications for replies, check if the user wrote the post. If the user did wrote the post, then display the following, (userA replied to your comment on your post: 'comment data here');
-// using the array that has all of the ids of the articles that were posted by the current user, checked if the post that the user replied on was written by the current user 
-
-// GOAL FOR REPLY DISPLAY: display all of the replies that were made on the user's post: "userA replied to a comment on your post: 'the reply data here'"
-
-// GOAL FOR REPLY THAT WAS MADE TO THE CURRENT USER DISPLAY: display all of the replies that were made on the user's post when the comment was made by the author of the post: "userA replied to your comment on your post: 'the reply data here'"
-
-// GOAL: IF THE USER REPLIES TO A COMMENT THAT WAS MADE ON THE CURRENT USER'S POST AND THE COMMENT WAS MADE BY THE AUTHOR OF THE POST HAVE THE FOLLOWING DISPLAYED: "userA replied to your comment on your post: 'the reply data here'"
-// all that is in notifications.replies is sent to the client
-
-// GOAL: store the user replies notifications with the following format: [{postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]]
-
-// CASE #1: the userA replies again to userB's comment and the post is written by userB
-// the replyId is pushed into replyIds
-// the author is found in the array that is stored in replies 
-// the comment that userA replied to found by using the commentId in the array that is stored in repliesInfo
-// the post if found by using the postId of where the reply resides in. 
-// the following is sent to the backend: {name of package, postId, commentId, authorIdOfComment, authorId of reply, the id of the reply}
-// userA's id exists (the author of the reply has already made a reply to the target comment before)
-// check if userA's id exists in the commentsRepliedTo.replies array {authorId} 
-// the comment id exists 
-// check if the comment id that userA replied to exists in commentsRepliedTo  
-// the author id of the comment exists in the repliesInfo array 
-// check if the author id of the comment that userA replied to exists in repliesInfo
-// the post id exists in notifications.replies
-// check if the post id exists in notifications.replies
-// the notifications.replies array of userB is retrieved from the database
-// get the id of the post 
-// get the id of the comment 
-
-
-
-
-// GOAL:
-// when the user replies on a post, send a notification to the author of that post
-
-// the notification will be stored in the db as follows: {id of the notification, the id of the post, the id of the comment, [the id of the reply]: [{replyId, wasSeen}] }
-
 
 
 
@@ -462,13 +401,89 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         // get all of the commentIds an put them into an array
         res.json('Post requested received, will update user posts');
 
+    } else if (name === 'editPost') {
+        const { draftId: postId, field, userId, wasPicDeleted, imgUrl } = req.body;
+        const { timeOfLastEdit, data: draftUpdate } = data;
+
+        if (wasPicDeleted) {
+
+        } else {
+            // check if the editedPost exist 
+            // if the editedPost field doesn't exist, then insert the current version of the draft into the field 'editedPost'
+            // if the editedPost field does exist, then set the updates into the editedPost and using dot notation insert the edits into the field that was changed 
+            BlogPost.findOne(
+                { _id: postId },
+                error => {
+                    if (error) {
+                        console.error('An error has occurred in getting the target post to be edited: ', error);
+                    } else {
+                        console.log('No error has occurred in getting the target post to be edited.')
+                    }
+                }
+            ).then(result => {
+                const { editedPost, ...postInfo } = result;
+                if (editedPost) {
+                    console.log('editedPost: ', editedPost);
+                    BlogPost.updateOne(
+                        {
+                            _id: postId,
+                        },
+                        {
+                            $set:
+                            {
+                                [`editedPost.${field}`]: draftUpdate,
+                                'editedPost.timeOfLastEdit': timeOfLastEdit
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error("error message: ", error);
+                            } else {
+                                console.log(`${field} was updated, numsAffected: `, numsAffected);
+                                res.json({ message: 'Edit made to copy of posted article.' });
+                            }
+                        }
+                    )
+
+                } else {
+                    const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, ...postContent } = postInfo._doc
+                    const postToBeEdited = {
+                        ...postContent,
+                        timeOfLastEdit,
+                        [field]: draftUpdate
+                    };
+                    BlogPost.updateOne(
+                        {
+                            _id: postId,
+                        },
+                        {
+                            $set:
+                            {
+                                editedPost: postToBeEdited,
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error("error message: ", error);
+                            } else {
+                                console.log(`First edit. The field '${field}' was updated, numsAffected: `, numsAffected);
+                                res.json({ message: 'First edit. Edit made to copy of posted article.' });
+                            }
+                        }
+                    )
+                }
+            })
+        }
     }
 })
+
+
 
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts")
     const package = JSON.parse(req.params.package);
     const { name, signedInUserId: userId, draftId, savedPosts } = package;
+    // change this to 'getPublishedDraftsByAuthor'
     if (name === "getPublishedDrafts") {
         BlogPost.find({ authorId: userId }).then(posts => {
             if (posts.length) {
@@ -486,6 +501,7 @@ router.route("/blogPosts/:package").get((req, res) => {
                 )
             }
         })
+        // change to 'getOtherPostsFromAuthorOfPost'
     } else if (name === "getPost") {
         BlogPost.find(
             // why I am using the or operator, use the $AND operator?
@@ -589,7 +605,40 @@ router.route("/blogPosts/:package").get((req, res) => {
                     });
                     res.json(_posts);
                 }
-            })
+            });
+        // change to 'getPublishedPostsByUser'
+    } else if (name === 'getPublishedPosts') {
+        const { publishedPostsIds } = package;
+        BlogPost.find(
+            { _id: { $in: publishedPostsIds } },
+            error => {
+                if (error) {
+                    console.error('An error has occurred in getting the published posts by current user.')
+                } else {
+                    console.log('No error has occurred in getting the published posts by current user.')
+                }
+            }
+        ).then(posts => {
+            posts.length ? res.json({ publishedPosts: posts }) : res.json({ isEmpty: true });
+        })
+    } else if (name === 'getPostToEdit') {
+        console.log('will get published post to edit it.');
+        const { draftId } = package;
+        BlogPost.findOne(
+            { _id: draftId },
+            error => {
+                if (error) {
+                    console.error('An error has occurred in getting the published posts by current user.')
+                } else {
+                    console.log('No error has occurred in getting the published posts by current user.')
+                }
+            }
+        ).then(post => {
+            const { editedPost, ...postedArticle } = post;
+            console.log('editedPost: ', editedPost);
+            const postToEdit = editedPost ? { ...editedPost, isPostPublished: true } : { ...postedArticle._doc, isPostPublished: true }
+            res.json(postToEdit);
+        });
     }
 });
 

@@ -2654,9 +2654,7 @@ router.route("/users/:package").get((request, response) => {
             response.json({ isBlocked });
         }).catch(error => { error && console.error('Error in finding user and checking block status: ', error) })
     } else if (name === 'checkListName') {
-        console.log('checking if list name was taken');
         const { listName } = package;
-        console.log('listName: ', listName);
         User.findOne({ _id: userId }, { [`readingLists.${listName}`]: 1, _id: 0 }).then(result => {
             const isListNameTaken = Object.keys(result.readingLists).length
             if (isListNameTaken) {
@@ -2722,7 +2720,6 @@ router.route("/users/:package").get((request, response) => {
                 }
             });
     } else if (name === 'getNotifications') {
-        console.log('package: ', package);
         const { willGetReplies, willGetReplyLikes, willGetCommentLikes, willGetPostLikes, willGetComments, willGetPostsFromFollowing, willGetNewFollowers } = package;
         //  NOTES:
         // get all seven notifications and send them individual back to the client 
@@ -2787,7 +2784,6 @@ router.route("/users/:package").get((request, response) => {
                         ).then(infoOfAuthors => {
                             let notificationsToDel;
                             let replies_;
-                            console.log('replies: ', replies);
                             if (infoOfAuthors?.length && postsOfReplies?.length) {
                                 replies_ = replies.map(reply => {
                                     const { postId, repliesInfo } = reply;
@@ -2800,7 +2796,6 @@ router.route("/users/:package").get((request, response) => {
                                     // the comments doesn't exist
                                     // the user deleted the comments
                                     // if the user deleted the comments, then delete the reply notification 
-                                    console.log('isPostByCU: ', isPostByCU);
                                     console.log(postAuthor)
                                     if ((postAuthor || isPostByCU) && targetPost && targetPost.comments && targetPost.comments.length) {
                                         const repliesInfo_ = repliesInfo.map(replyInfo => {
@@ -3355,7 +3350,7 @@ router.route("/users/:package").get((request, response) => {
                                             }
                                         })
                                     });
-                                    console.log('_commentLikesNotifications: ', _commentLikesNotifications);
+
                                     _commentLikesNotifications.length ? response.json({ commentLikes: _commentLikesNotifications }) : response.json({ isEmpty: true })
                                 }
                             } else {
@@ -3628,7 +3623,6 @@ router.route("/users/:package").get((request, response) => {
                                         };
                                     })
                                 });
-                                console.log('_commentsNotifications: ', _commentsNotifications)
                                 _commentsNotifications.length ? response.json({ comments: _commentsNotifications }) : response.json({ isEmpty: true })
                             }
                         })
@@ -3772,7 +3766,6 @@ router.route("/users/:package").get((request, response) => {
 
                                     return follower
                                 });
-                                console.log('_newFollowers: ', _newFollowers);
                                 response.json({ newFollowers: _newFollowers });
                             };
 
