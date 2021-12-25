@@ -2420,6 +2420,7 @@ const postIntroPicStorage = multer.diskStorage({
 });
 
 const postIntroPicUpload = multer({
+    // how is storage executed during run time?
     storage: postIntroPicStorage,
     limits: {
         fileSize: 100_000_000
@@ -2429,6 +2430,8 @@ const postIntroPicUpload = multer({
     }
 });
 
+
+// what is the 'single' method doing in
 router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req, res) => {
     console.log("req.body: ", req.body);
     const extname = path.extname(req.file.originalname);
