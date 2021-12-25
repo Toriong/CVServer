@@ -3,12 +3,14 @@ const express = require('express');
 const multer = require('multer');
 const User = require("../models/user");
 const BlogPost = require('../models/blogPost');
+const Tag = require("../models/tag");
 const fs = require('fs');
 const timeFns = require("../functions/getTime");
 const { getTime, computeTimeElapsed, getTimeElapsedText, getTimeElapsedInfo } = timeFns;
+const blogPostFns = require("../functions/blogPostsFns/blogPostFns");
+const { getPostTags } = blogPostFns;
 const router = express.Router();
 const path = require('path');
-const { delNonexistentReplies, delNonexistentReplyAuthors, delNonexistentCommAuthors, delNonexistentComms, delNonexistentPosts } = require('../functions/delNonexistentValues');
 const addNotificationToDel = require('../functions/addNotificationsToDel');
 
 
@@ -2595,10 +2597,12 @@ router.route("/users/:package").get((request, response) => {
                 _id: 0
             }
         ).then(result => {
-            const { roughDrafts } = result;
-            const { _id, ...targetedDraft } = roughDrafts.find(({ _id }) => _id === draftId);
-            response.json(targetedDraft);
-
+            Tag.find({}).then(tags => {
+                const { _id, ...targetedDraft } = result.roughDrafts.find(({ _id }) => _id === draftId);
+                const _tags = targetedDraft.tags && getPostTags(targetedDraft.tags, tags);
+                const _draftToEdit = _tags ? { ...targetedDraft, tags: _tags } : { ...targetedDraft };
+                response.json(_draftToEdit);
+            });
         })
     } else if ((name === 'getUserId') && username) {
         console.log('username: ', username);

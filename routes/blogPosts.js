@@ -11,7 +11,16 @@ const fs = require('fs');
 // GOAL: display all notifications pertaining to the following: replies on user's post, replies to user comments, comments on user's posts, likes for the following: (comments, replies, posts)
 
 
+const getPostTags = (selectedTags, tags) => selectedTags.map(tag => {
+    const { isNew, _id: postTagId } = tag;
+    if (!isNew) {
+        const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postTagId));
 
+        return _tag;
+    };
+
+    return tag;
+});
 
 
 
@@ -752,23 +761,32 @@ router.route("/blogPosts/:package").get((req, res) => {
                 .then(tags => {
                     const { editedPost, ...postedArticle } = post;
                     // GOAL:  get all of the tag info for the posted article, when the  
-                    const _postTags = postedArticle._doc.tags.map(tag => {
-                        const { isNew, _id: postTagId } = tag;
-                        if (!isNew) {
-                            const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postTagId));
+                    // const _postTags = postedArticle._doc.tags.map(tag => {
+                    //     const { isNew, _id: postTagId } = tag;
+                    //     if (!isNew) {
+                    //         const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postTagId));
 
-                            return _tag;
+                    //         return _tag;
+                    //     };
+
+                    //     return tag;
+                    // });
+                    // const _postedArticle = {
+                    //     ...postedArticle._doc,
+                    //     tags: _postTags
+                    // }
+                    const _postTags = editedPost ? getPostTags(editedPost.tags, tags) : getPostTags(postedArticle._doc.tags, tags);
+                    const postToEdit = editedPost ?
+                        {
+                            ...editedPost,
+                            tags: _postTags
+                        }
+                        :
+                        {
+                            ...postedArticle,
+                            tags: _postTags
                         };
-
-                        return tag;
-                    });
-                    const _postedArticle = {
-                        ...postedArticle._doc,
-                        tags: _postTags
-                    }
-                    console.log('editedPost: ', editedPost);
-                    const postToEdit = editedPost ? { ...editedPost, isPostPublished: true } : { ..._postedArticle, isPostPublished: true }
-                    res.json(postToEdit);
+                    res.json({ ...postToEdit, isPostPublished: true });
                 });
         });
     }
