@@ -3,9 +3,11 @@ const multer = require('multer');
 const router = express.Router();
 const path = require('path');
 const timeFns = require("../functions/getTime");
+const { getTime } = timeFns;
 const BlogPost = require('../models/blogPost');
 const Tag = require("../models/tag");
 const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 // make an activities for all of the edits that the user did to comments replies and posts 
 
 // GOAL: display all notifications pertaining to the following: replies on user's post, replies to user comments, comments on user's posts, likes for the following: (comments, replies, posts)
@@ -156,7 +158,13 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         )
     } else if (name === "editedReply") {
         const { replyId, commentId } = req.body;
-        const { _editedReply, updatedAt } = data;
+        const { _editedReply, updatedAt, oldReply, oldReplyPostedAt } = data;
+        // GOAL: send the updatedAt object to the server if it exist or send the createdAt object if the updatedAt object doesn't exist 
+        const previousReply = {
+            id: uuidv4(),
+            createdAt: oldReplyPostedAt,
+            text: oldReply
+        }
         BlogPost.updateOne(
             {
                 _id: postId,
@@ -167,6 +175,10 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 {
                     "comments.$.replies.$[reply]._reply": _editedReply,
                     "comments.$.replies.$[reply].updatedAt": updatedAt
+                },
+                $push:
+                {
+                    "comments.$.replies.$[reply].previousReplies": previousReply
                 }
             },
             {
@@ -415,7 +427,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         res.json('Post requested received, will update user posts');
 
     } else if (name === 'editPost') {
-        const { draftId: postId, field, userId, wasPicDeleted, imgUrl } = req.body;
+        const { draftId: postId, field, wasPicDeleted, imgUrl } = req.body;
         const { timeOfLastEdit, data: draftUpdate } = data;
 
         if (wasPicDeleted) {
@@ -424,10 +436,16 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             // if they match, then don't delete any images. Otherwise, delete the image 
             // still proceed to set the timeOfLastEdit and unset the imgUrl
 
-            BlogPost.findOne({ _id: postId }, { imgUrl: 1 }).then(result => {
+            // check if the field 'editedPost' exist. If it does, then proceed with the code below. If it doesn't, then create the editedPost field 
+
+            BlogPost.findOne({ _id: postId }).then(result => {
                 console.log("result: ", result);
-                console.log({ imgUrl });
-                const isSamePic = result.imgUrl === imgUrl;
+                // GOAL:  get all of the tag info for the posted article, when the  
+                const { editedPost, ...postInfo } = result;
+                const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, editsPublishedAt, previousVersions, ...postContent } = postInfo._doc
+                const { imgUrl: postIntroPic } = postContent;
+                const isSamePic = postIntroPic === imgUrl;
+
                 if (!isSamePic) {
                     console.log('Will delete the intro pic of post that is being edited.')
                     fs.unlink(`./postIntroPics/${imgUrl}`, err => {
@@ -441,27 +459,53 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                     console.log('Pic that was deleted is the same as the pic that is posted.');
                 }
 
-                BlogPost.updateOne(
-                    {
-                        _id: postId,
-                    },
-                    {
-                        $set:
+                if (editedPost) {
+                    BlogPost.updateOne(
                         {
-                            "editedPost.timeOfLastEdit": timeOfLastEdit,
+                            _id: postId,
                         },
-                        $unset:
                         {
-                            "editedPost.imgUrl": ""
+                            $set:
+                            {
+                                "editedPost.timeOfLastEdit": timeOfLastEdit,
+                            },
+                            $unset:
+                            {
+                                "editedPost.imgUrl": ""
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error("Error in deleting intro pic of posted draft. Error message: ", error)
+                            };
+                            console.log("User deleted intro pic from draft that was posted. Draft updated, numsAffected: ", numsAffected);
                         }
-                    },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error("Error in deleting intro pic of posted draft. Error message: ", error)
-                        };
-                        console.log("User deleted intro pic from draft that was posted. Draft updated, numsAffected: ", numsAffected);
-                    }
-                );
+                    );
+                } else {
+                    // GOAL:  get all of the tag info for the posted article, when the  
+                    delete postContent.imgUrl;
+                    const _editedPost = {
+                        ...postContent,
+                        timeOfLastEdit
+                    };
+                    BlogPost.updateOne(
+                        {
+                            _id: postId,
+                        },
+                        {
+                            $set:
+                            {
+                                editedPost: _editedPost,
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error("Error in deleting intro pic of posted draft. Error message: ", error)
+                            };
+                            console.log("User deleted intro pic from draft that was posted. Draft updated, numsAffected: ", numsAffected);
+                        }
+                    );
+                }
 
                 res.json({ message: 'Edit made to copy of posted article.' });
             });
@@ -503,40 +547,125 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                     )
 
                 } else {
-                    const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, ...postContent } = postInfo._doc
-                    Tag.find({})
-                        .then(tags => {
-                            console.log('tags: ', tags);
-                            // GOAL:  get all of the tag info for the posted article, when the  
-                            const _editedPost = {
-                                ...postContent,
-                                timeOfLastEdit,
-                                [field]: draftUpdate,
-                            };
+                    const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, previousVersions, editsPublishedAt, ...postContent } = postInfo._doc
+                    // GOAL:  get all of the tag info for the posted article, when the  
+                    const _editedPost = {
+                        ...postContent,
+                        timeOfLastEdit,
+                        [field]: draftUpdate,
+                    };
 
-                            BlogPost.updateOne(
-                                {
-                                    _id: postId,
-                                },
-                                {
-                                    $set:
-                                    {
-                                        editedPost: _editedPost,
-                                    }
-                                },
-                                (error, numsAffected) => {
-                                    if (error) {
-                                        console.error("error message: ", error);
-                                    } else {
-                                        console.log(`First edit. The field '${field}' was updated, numsAffected: `, numsAffected);
-                                        res.json({ message: 'First edit. Edit made to copy of posted article.' });
-                                    }
-                                }
-                            )
-                        });
-                }
+                    BlogPost.updateOne(
+                        {
+                            _id: postId,
+                        },
+                        {
+                            $set:
+                            {
+                                editedPost: _editedPost,
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error("error message: ", error);
+                            } else {
+                                console.log(`First edit. The field '${field}' was updated, numsAffected: `, numsAffected);
+                                res.json({ message: 'First edit. Edit made to copy of posted article.' });
+                            }
+                        }
+                    );
+                };
             })
         }
+    } else if (name === 'publishEdits') {
+        // GOAL: set the following fields: title, body, subtitle (if exist), imgUrl (if exist), and tags 
+        // GOAL: push the old version of the draft into the oldVersions field
+        // console.log('newPostEdits: ', newPostEdits);
+        // console.log('postId: ', postId);
+        const { title, body, subtitle, imgUrl, _id: postId } = data;
+        BlogPost.findOne(
+            { _id: postId }, { body: 1, title: 1, tags: 1, subtitle: 1, imgUrl: 1, publicationDate: 1, editsPublishedAt: 1 },
+            error => {
+                if (error) {
+                    console.error('Something happen in getting the post to publish its edits.')
+                }
+            }
+        ).then(result => {
+            const { body: previousBody, title: previousTitle, subtitle: previousSubtitle, imgUrl: previousImgUrl, tags: previousTags, publicationDate, editsPublishedAt } = result;
+            let newPostEdits;
+            let previousPost;
+            let fieldsToDel = {
+                editedPost: ''
+            }
+
+            if (subtitle) {
+                newPostEdits = { subtitle: subtitle };
+            } else {
+                fieldsToDel = {
+                    ...fieldsToDel,
+                    subtitle: ''
+                }
+            }
+            if (imgUrl) {
+                newPostEdits = newPostEdits ? { ...newPostEdits, imgUrl } : { imgUrl };
+            } else {
+                fieldsToDel = {
+                    ...fieldsToDel,
+                    imgUrl: ''
+                }
+            }
+
+            newPostEdits = newPostEdits ? { ...newPostEdits, title: title, body: body, editsPublishedAt: getTime() } : { title: title, body: body, editsPublishedAt: getTime() };
+
+            if (previousSubtitle) {
+                previousPost = { subtitle: previousSubtitle };
+            }
+            if (previousImgUrl) {
+                previousPost = previousPost ? { ...previousPost, imgUrl: previousImgUrl } : { imgUrl: previousImgUrl };
+            }
+            previousPost = previousPost ? { ...previousPost, _id: uuidv4(), body: previousBody, title: previousTitle, tags: previousTags, publicationDate: editsPublishedAt ?? publicationDate } : { _id: uuidv4(), body: previousBody, title: previousTitle, tags: previousTags, publicationDate: editsPublishedAt ?? publicationDate };
+
+            console.log({ newPostEdits });
+            console.log('imgUrl: ', imgUrl);
+            if (fieldsToDel) {
+                BlogPost.updateOne(
+                    {
+                        _id: postId,
+                    },
+                    {
+                        $unset: fieldsToDel,
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error("error message: ", error);
+                        } else {
+                            console.log(`'imgUrl' or 'subtitle' field was deleted, numsAffected: `, numsAffected);
+                        }
+                    }
+                );
+            }
+
+            BlogPost.updateOne(
+                {
+                    _id: postId,
+                },
+                {
+                    $set: newPostEdits,
+                    $push:
+                    {
+                        previousVersions: previousPost
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                    } else {
+                        console.log(`Edits were posted, numsAffected: `, numsAffected);
+                        res.json({ message: 'Edits were posted.' });
+                    }
+                }
+            );
+        });
     }
 });
 
@@ -572,24 +701,56 @@ router.route('/blogPosts/editPostAddPic').post(postIntroPicUpload.single('file')
     const timeOfLastEdit_ = JSON.parse(timeOfLastEdit);
     console.log({ timeOfLastEdit_ });
     const introPicUrl = timeOfLastEdit_.miliSeconds + '_' + userId + '_' + postId + extname;
-    BlogPost.updateOne(
-        {
-            _id: postId,
-        },
-        {
-            $set: {
-                "editedPost.timeOfLastEdit": timeOfLastEdit_,
-                "editedPost.imgUrl": introPicUrl
-            }
-        },
-        (error, numsAffected) => {
-            if (error) {
-                console.error("error message: ", error);
-            }
-            console.log("Pic update for posted draft that is being edited. NumsAffected: ", numsAffected);
-            res.json({ imgUrl: introPicUrl });
+    BlogPost.findOne({ _id: postId }).then(result => {
+        console.log("result: ", result);
+        // GOAL:  get all of the tag info for the posted article, when the  
+        const { editedPost, ...postInfo } = result;
+        const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, editsPublishedAt, previousVersions, ...postContent } = postInfo._doc
+
+        if (!editedPost) {
+            const _editedPost = {
+                ...postContent,
+                imgUrl: introPicUrl,
+                timeOfLastEdit: timeOfLastEdit_
+            };
+            BlogPost.updateOne(
+                {
+                    _id: postId,
+                },
+                {
+                    $set: {
+                        editedPost: _editedPost
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                    }
+                    console.log("Pic update for posted draft that is being edited. NumsAffected: ", numsAffected);
+                    res.json({ imgUrl: introPicUrl });
+                }
+            )
+        } else {
+            BlogPost.updateOne(
+                {
+                    _id: postId,
+                },
+                {
+                    $set: {
+                        "editedPost.timeOfLastEdit": timeOfLastEdit_,
+                        "editedPost.imgUrl": introPicUrl
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("error message: ", error);
+                    }
+                    console.log("Pic update for posted draft that is being edited. NumsAffected: ", numsAffected);
+                    res.json({ imgUrl: introPicUrl });
+                }
+            )
         }
-    )
+    })
 }, (error, req, res, next) => {
     const { status } = res;
     if (status === 400 && error) {
@@ -742,7 +903,56 @@ router.route("/blogPosts/:package").get((req, res) => {
                 }
             }
         ).then(posts => {
-            posts.length ? res.json({ publishedPosts: posts }) : res.json({ isEmpty: true });
+            Tag.find({})
+                .then(tags => {
+                    if (posts.length) {
+                        const _posts = posts.map(post => {
+                            const { editedPost, tags: postTags } = post;
+                            if (editedPost) {
+                                const editedPostTags = editedPost.tags.map(tag => {
+                                    const { isNew, _id: tagId } = tag;
+                                    if (!isNew) {
+                                        const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
+
+                                        return allTagInfo;
+                                    };
+
+                                    return tag;
+                                });
+                                console.log('editedPost: ', editedPost);
+                                return {
+                                    ...post._doc,
+                                    editedPost: {
+                                        ...editedPost,
+                                        tags: editedPostTags
+                                    }
+                                }
+                            }
+                            // if the post has editedPost field, then get all of the tag info for that field 
+                            // if the post doesn't have an editedPost field, then get all of the tag info for that field 
+
+                            const _tags = postTags.map(tag => {
+                                const { isNew, _id: tagId } = tag;
+                                if (!isNew) {
+                                    const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
+
+                                    return allTagInfo;
+                                };
+
+                                return tag;
+                            });
+
+                            return {
+                                ...post._doc,
+                                tags: _tags
+                            }
+                        });
+
+                        res.json({ publishedPosts: _posts });
+                    } else {
+                        res.json({ isEmpty: true });
+                    }
+                });
         })
     } else if (name === 'getPostToEdit') {
         console.log('will get published post to edit it.');
@@ -751,31 +961,17 @@ router.route("/blogPosts/:package").get((req, res) => {
             { _id: draftId },
             error => {
                 if (error) {
-                    console.error('An error has occurred in getting the published posts by current user.')
+                    console.error('An error has occurred in getting the published post by current user.')
                 } else {
-                    console.log('No error has occurred in getting the published posts by current user.')
+                    console.log('No error has occurred in getting the published post by current user.')
                 }
             }
         ).then(post => {
             Tag.find({})
                 .then(tags => {
                     const { editedPost, ...postedArticle } = post;
-                    // GOAL:  get all of the tag info for the posted article, when the  
-                    // const _postTags = postedArticle._doc.tags.map(tag => {
-                    //     const { isNew, _id: postTagId } = tag;
-                    //     if (!isNew) {
-                    //         const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postTagId));
-
-                    //         return _tag;
-                    //     };
-
-                    //     return tag;
-                    // });
-                    // const _postedArticle = {
-                    //     ...postedArticle._doc,
-                    //     tags: _postTags
-                    // }
-                    const _postTags = editedPost ? getPostTags(editedPost.tags, tags) : getPostTags(postedArticle._doc.tags, tags);
+                    const { tags: _tags } = postedArticle._doc;
+                    const _postTags = editedPost ? getPostTags(editedPost.tags, tags) : getPostTags(_tags, tags);
                     const postToEdit = editedPost ?
                         {
                             ...editedPost,
@@ -783,11 +979,57 @@ router.route("/blogPosts/:package").get((req, res) => {
                         }
                         :
                         {
-                            ...postedArticle,
+                            ...postedArticle._doc,
                             tags: _postTags
                         };
                     res.json({ ...postToEdit, isPostPublished: true });
                 });
+        });
+    } else if (name === 'checkIfEditsOccurred') {
+        // GOAL: check if edits actually occurred for the post 
+
+        // BRAINSTORM ROUGH DRAFT:
+        // if there is no 'editedPost' field, then send a false boolean to the client side to disable the publish button
+        // if there is an 'editedPost' field, then compare the body, title, subtitle (if present), tags, and the imgUrl (if present) if they are the same 
+        // if they are the same then send a false boolean to the client side to disable the publish button 
+        BlogPost.findOne(
+            { _id: draftId },
+            error => {
+                if (error) {
+                    console.error('An error has occurred in getting the published post by current user.')
+                } else {
+                    console.log('No error has occurred in getting the published post by current user.')
+                }
+            }
+        ).then(post => {
+            if (post.editedPost) {
+                const { ...postedDraft } = post;
+                let { _doc: _postedDraft } = postedDraft;
+                let { subtitle, imgUrl, publicationDate, editedPost, _id, userIdsOfLikes, authorId, __v, comments, previousVersions, editsPublishedAt, ...__postedDraft } = _postedDraft;
+                let { subtitle: editPostSubtitle, imgUrl: editPostImgUrl, timeOfLastEdit, ..._editedPost } = editedPost;
+
+                if (subtitle) {
+                    __postedDraft = { ...__postedDraft, subtitle };
+                };
+                if (imgUrl) {
+                    __postedDraft = { ...__postedDraft, imgUrl }
+                };
+                if (editPostSubtitle) {
+                    _editedPost = { ..._editedPost, subtitle: editPostSubtitle };
+                }
+                if (editPostImgUrl) {
+                    _editedPost = { ..._editedPost, imgUrl: editPostImgUrl };
+                };
+
+                console.log({
+                    _editedPost,
+                    __postedDraft
+                });
+                const wasEdited = !(JSON.stringify(_editedPost) === JSON.stringify(__postedDraft));
+                res.json(wasEdited);
+            } else {
+                res.json(false);
+            }
         });
     }
 });

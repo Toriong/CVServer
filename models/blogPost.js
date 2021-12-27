@@ -41,7 +41,9 @@ const BlogPostSchema = new Mongoose.Schema(
         comments: Array,
         userIdsOfLikes: Array,
         authorId: String,
-        editedPost: Object
+        editedPost: Object,
+        previousVersions: Array,
+        editsPublishedAt: Object
     }
 )
 

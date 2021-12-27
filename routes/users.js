@@ -407,7 +407,6 @@ router.route("/users").post((request, response) => {
 
 
 router.route("/users/updateInfo").post((request, response) => {
-    console.log('request.body: ', request.body);
     const { name, data, userId, username, listName, isPostPresent, isCommentAuthorPresent, notifyUserId } = request.body
     if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
@@ -457,7 +456,7 @@ router.route("/users/updateInfo").post((request, response) => {
     } else if (name === "updateDraft") {
         const { draftId, field, userId, wasPicDeleted, imgUrl } = request.body;
         const { timeOfLastEdit, data: draftUpdate } = data;
-        console.log("request.body: ", request.body);
+        // console.log("request.body: ", request.body);
         if (wasPicDeleted) {
             fs.unlink(`./postIntroPics/${imgUrl}`, err => {
                 if (err) {
@@ -571,7 +570,7 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         );
         console.log("draft has been deleted")
-    } else if (name === "draftCheck") {
+    } else if (name === "postDraft") {
         // how to check if a value is present in the database?
         console.log("check if draft is ok to be published")
         User.find({
@@ -581,11 +580,11 @@ router.route("/users/updateInfo").post((request, response) => {
             const drafts = user[0].roughDrafts;
             const draftInDB = drafts.find(({ _id: _draftId }) => _draftId === draftId);
             const { _id, defaultTitle, timeOfLastEdit, subtitle: subtitleInDb, imgUrl: imgUrlInDb, creation, ...draftInDB_ } = draftInDB;
+            const isDraftSame = JSON.stringify(draftInDB_) === JSON.stringify(draftFromFrontEnd);
             console.log({
                 draftInDB_,
                 draftFromFrontEnd
             })
-            const isDraftSame = JSON.stringify(draftInDB_) === JSON.stringify(draftFromFrontEnd);
             const wasNoSubtitleChosen = (subtitleFromClient === undefined) && (subtitleInDb === '' || subtitleInDb === undefined)
             const isSubtitleSame = wasNoSubtitleChosen ? undefined : subtitleFromClient === subtitleInDb;
             const wasNoImageChosen = (imgUrlInDb === undefined) && (imgUrlFromClient === undefined);
@@ -606,16 +605,68 @@ router.route("/users/updateInfo").post((request, response) => {
                         $push: { publishedDrafts: draftId }
                     },
                     (error, numsAffected) => {
-                        if (error) console.error("Error in updating user.roughDrafts: ", error);
-                        else {
+                        if (error) {
+                            console.error("Error in updating user.roughDrafts: ", error);
+                            response.sendStatus(404)
+                        } else {
                             console.log("User has been updated. numsAffected: ", numsAffected);
-                            response.sendStatus(200)
+                            let newPost;
+                            const { title, tags, body } = draftInDB;
+                            if (subtitleInDb && imgUrlInDb) {
+                                console.log("I was executed")
+                                newPost = new BlogPost({
+                                    _id,
+                                    title,
+                                    authorId: userId,
+                                    subtitle: subtitleInDb,
+                                    imgUrl: imgUrlInDb,
+                                    body,
+                                    tags,
+                                    publicationDate: getTime()
+                                });
+                            } else if (!subtitleInDb && imgUrlInDb) {
+                                console.log("no subtitle present, publishing post")
+                                newPost = new BlogPost({
+                                    _id,
+                                    title,
+                                    authorId: userId,
+                                    imgUrl: imgUrlInDb,
+                                    body,
+                                    tags,
+                                    publicationDate: getTime()
+                                });
+                            } else if (subtitleInDb && !imgUrlInDb) {
+                                console.log("no intro pic present, publishing post");
+                                newPost = new BlogPost({
+                                    _id,
+                                    title,
+                                    authorId: userId,
+                                    subtitle: subtitleInDb,
+                                    body,
+                                    tags,
+                                    publicationDate: getTime()
+                                });
+                            } else {
+                                newPost = new BlogPost({
+                                    _id,
+                                    title,
+                                    authorId: userId,
+                                    body,
+                                    tags,
+                                    publicationDate: getTime()
+                                });
+                            };
+                            newPost.save()
+                            console.log("post published")
+                            response.json({
+                                message: "blog post successfully posted onto feed."
+                            });
                         }
                     }
                 );
             } else {
                 console.error('Draft check Failed!');
-                response.sendStatus(404)
+                response.status(404).json('Draft check failed.');
             }
         }).catch(error => {
             console.log("Query failed, message: ", error)
@@ -1207,14 +1258,15 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     } else if (name === 'updateReadingListInfo') {
-        const { editedListName, description, isPrivate } = data;
+        const { editedListName, description, isPrivate, editedAt } = data;
         if (description) {
             User.updateOne(
                 { _id: userId },
                 {
                     $set:
                     {
-                        [`readingLists.${listName}.description`]: description
+                        [`readingLists.${listName}.description`]: description,
+                        [`readingLists.${listName}.editedAt`]: editedAt
                     }
                 },
                 (error, numsAffected) => {
@@ -1232,7 +1284,9 @@ router.route("/users/updateInfo").post((request, response) => {
                 {
                     $set:
                     {
-                        [`readingLists.${listName}.isPrivate`]: isPrivate
+                        [`readingLists.${listName}.isPrivate`]: isPrivate,
+                        [`readingLists.${listName}.editedAt`]: editedAt
+
                     }
                 },
                 (error, numsAffected) => {
@@ -1248,16 +1302,36 @@ router.route("/users/updateInfo").post((request, response) => {
             User.updateOne(
                 { _id: userId },
                 {
-                    $rename:
+                    $set:
                     {
-                        [`readingLists.${listName}`]: `readingLists.${editedListName}`
+                        [`readingLists.${listName}.editedAt`]: editedAt,
+                    },
+                    $push:
+                    {
+                        [`readingLists.${listName}.previousNames`]: { oldName: listName, timeOfChange: editedAt },
                     }
                 },
                 (error, numsAffected) => {
                     if (error) {
                         console.error('Error in updating reading list of user has occurred: ', error);
                     } else {
-                        console.log('Reading list has been updated, numsAffected: ', numsAffected);
+                        console.log('Reading list has been updated. Previous name has been saved. Will change the name of the list. NumsAffected: ', numsAffected);
+                        User.updateOne(
+                            { _id: userId },
+                            {
+                                $rename:
+                                {
+                                    [`readingLists.${listName}`]: `readingLists.${editedListName}`
+                                }
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('Error in updating reading list of user has occurred: ', error);
+                                } else {
+                                    console.log('Reading list has been updated. Name has been changed. numsAffected: ', numsAffected);
+                                }
+                            }
+                        );
                     }
                 }
             );
@@ -2598,7 +2672,7 @@ router.route("/users/:package").get((request, response) => {
             }
         ).then(result => {
             Tag.find({}).then(tags => {
-                const { _id, ...targetedDraft } = result.roughDrafts.find(({ _id }) => _id === draftId);
+                const targetedDraft = result.roughDrafts.find(({ _id }) => _id === draftId);
                 const _tags = targetedDraft.tags && getPostTags(targetedDraft.tags, tags);
                 const _draftToEdit = _tags ? { ...targetedDraft, tags: _tags } : { ...targetedDraft };
                 response.json(_draftToEdit);
