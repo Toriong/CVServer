@@ -114,16 +114,26 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         );
     } else if (name === "commentEdited") {
         const { commentId } = req.body;
-        const { _editedComment, updatedAt } = data;
+        const { editedComment, updatedAt, oldCommentCreatedAt, oldComment } = data;
+        const previousComment = {
+            id: uuidv4(),
+            createdAt: oldCommentCreatedAt,
+            text: oldComment
+        }
         BlogPost.updateOne(
             {
                 _id: postId,
                 "comments.commentId": commentId
             },
             {
-                $set: {
-                    "comments.$.comment": _editedComment,
+                $set:
+                {
+                    "comments.$.comment": editedComment,
                     "comments.$.updatedAt": updatedAt
+                },
+                $push:
+                {
+                    "comments.$.previousComments": previousComment
                 }
             },
             (error, numbersAffected) => {
@@ -131,9 +141,9 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                     console.error(`Error message: ${error}`);
                 }
                 console.log("User edited comment. NumbersAffected: ", numbersAffected)
+                res.json('Comment was edited.')
             }
         );
-        res.json("post requested received, commented updated");
     } else if (name === "newReply") {
         const { commentId } = req.body;
         console.log("data: ", data);
@@ -174,7 +184,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 $set:
                 {
                     "comments.$.replies.$[reply]._reply": _editedReply,
-                    "comments.$.replies.$[reply].updatedAt": updatedAt
+                    "comments.$.replies.$[reply].updatedAt": e
                 },
                 $push:
                 {
@@ -189,6 +199,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 if (error) throw error;
                 else {
                     console.log("reply edited, numbersAffected: ", numbersAffected);
+                    res.json('Reply was edited.');
                 }
             }
         )

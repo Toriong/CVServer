@@ -12,6 +12,7 @@ const { getPostTags } = blogPostFns;
 const router = express.Router();
 const path = require('path');
 const addNotificationToDel = require('../functions/addNotificationsToDel');
+const { v4: uuidv4 } = require('uuid');
 
 
 // GOAL: if the current user is following the user that they want to block, delete that user from their following list  
@@ -1308,7 +1309,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     },
                     $push:
                     {
-                        [`readingLists.${listName}.previousNames`]: { oldName: listName, timeOfChange: editedAt },
+                        [`readingLists.${listName}.previousNames`]: { id: uuidv4(), oldName: listName, newName: editedListName, timeOfChange: editedAt },
                     }
                 },
                 (error, numsAffected) => {
