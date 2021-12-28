@@ -3860,7 +3860,7 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getUserActivities') {
-        const { willGetReplyLikes, willGetReplies } = package;
+        const { willGetReplyLikes, willGetReplies, willGetCommentLikes } = package;
         User.findOne(
             { _id: userId },
             { activities: 1, _id: 0 },
@@ -3930,7 +3930,10 @@ router.route("/users/:package").get((request, response) => {
                         })
                     }
                 })
+            } else if (willGetReplyLikes) {
+                response.json({ isEmpty: true });
             }
+
             if (willGetReplies && result?.activities?.replies) {
                 const { replies: repliesByUser } = result.activities;
                 const postIds = repliesByUser.map(({ postId }) => postId);
@@ -4006,6 +4009,81 @@ router.route("/users/:package").get((request, response) => {
                             _repliesByUser.length ? response.json({ repliesByUser: _repliesByUser }) : response.json({ isEmpty: true });
                         })
                     };
+                })
+            } else if (willGetReplies) {
+                response.json({ isEmpty: true })
+            }
+
+            if (willGetCommentLikes && result?.activities?.likes?.replies) {
+                const { comments: likedComments } = result.activities.likes;
+                const postIds = likedComments.map(({ postIdOfComment }) => postIdOfComment);
+                const commentIds = likedComments.map(({ likedCommentIds }) => likedCommentIds).flat();
+                console.log('commentIds: ', commentIds);
+                BlogPost.find(
+                    { _id: { $in: postIds } },
+                    { comments: 1, _id: 1, title: 1, authorId: 1 },
+                    error => {
+                        if (error) {
+                            console.error('An error has occurred in getting the posts of liked replies.')
+                        }
+                    }
+                ).then(posts => {
+                    console.log('posts: ', posts)
+                    if (posts?.length) {
+                        // GOAL: for each liked reply get the following and store them into an array {postId, the title of the post,the comment id (check if the comment is written by the current user and if the comment still exist), the reply id (check if the reply is written by the current user and if the current user still liked it, if the reply still exist)
+                        let userIds = posts.map(({ authorId }) => authorId).filter(authorId => authorId !== userId);
+                        posts.forEach(({ comments }) => {
+                            comments.forEach(({ commentId, userId: commentAuthorId }) => {
+                                (commentIds.includes(commentId) && !userIds.includes(commentAuthorId)) && userIds.push(commentAuthorId);
+                            })
+                        });
+                        User.find(
+                            { _id: { $in: userIds } },
+                            { username: 1 },
+                            error => {
+                                if (error) {
+                                    console.log('An error has occurred in getting the authors of post.')
+                                }
+                            }
+                        ).then(usernames => {
+                            let _likedComments = [];
+                            likedComments.forEach(({ postIdOfComment, likedCommentIds }) => {
+                                const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postIdOfComment));
+                                if (targetPost) {
+                                    // console.log('targetPost: ', targetPost);
+                                    const { comments, title, _id: postId, authorId: postAuthorId } = targetPost;
+                                    likedCommentIds.forEach(_commentId => {
+                                        // GOAL: get the following info: if the comment was written by the current user, the title of the post, post id, username of the author of the post   
+                                        const targetComment = comments.find(({ commentId }) => commentId === _commentId);
+                                        if (targetComment) {
+                                            const { userIdsOfLikes, userId: commentAuthorId, commentId } = targetComment;
+                                            const didUserLikeComment = userIdsOfLikes.map(({ userId }) => userId).includes(userId);
+                                            if (didUserLikeComment) {
+                                                const isCommentByUser = commentAuthorId === userId
+                                                const isPostByUser = postAuthorId === userId;
+                                                const postAuthor = !isPostByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
+                                                const commentAuthor = !isCommentByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId));
+                                                let UIText;
+                                                if (isCommentByUser && isPostByUser) {
+                                                    UIText = `You liked your own comment on your post titled `
+                                                } else if (isCommentByUser && !isPostByUser) {
+                                                    UIText = `You liked your own comment on post titled `
+                                                } else if (!isCommentByUser && isPostByUser) {
+                                                    UIText = `You liked ${commentAuthor.username}'s comment on your post titled `
+                                                } else {
+                                                    UIText = `You liked ${commentAuthor.username}'s comment on post titled `
+                                                };
+
+                                                const likedComment = !(postAuthorId === userId) ? { postId, username: postAuthor.username, commentId, UIText, title } : { postId, commentId, UIText, title };
+                                                _likedComments.push(likedComment)
+                                            };
+                                        };
+                                    });
+                                };
+                            });
+                            _likedComments.length ? response.json({ likedComments: _likedComments }) : response.json({ isEmpty: true });
+                        })
+                    }
                 })
             }
         })

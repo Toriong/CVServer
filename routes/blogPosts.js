@@ -184,7 +184,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 $set:
                 {
                     "comments.$.replies.$[reply]._reply": _editedReply,
-                    "comments.$.replies.$[reply].updatedAt": e
+                    "comments.$.replies.$[reply].updatedAt": updatedAt
                 },
                 $push:
                 {
