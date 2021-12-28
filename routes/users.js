@@ -2556,16 +2556,13 @@ router.route("/users/:package").get((request, response) => {
     console.log('package: ', package);
     if (name === "signInAttempt") {
         console.log("user wants to sign in")
-        User.find({ username: username }).then(user => {
-            if ((user[0] && user[0].password) === passwordAttempt) {
-                const { username, firstName, lastName, iconPath, _id, readingLists, topics, activities, isUserNew, bio, socialMedia, blockedUsers, publishedDrafts } = user[0];
+        User.findOne({ username: username }).then(user => {
+            if (user?.password === passwordAttempt) {
+                const { username, firstName, lastName, iconPath, _id, readingLists, topics, isUserNew, bio, socialMedia, blockedUsers, publishedDrafts } = user;
                 console.log('password matches user signed backed in.')
                 console.log("user signed back in")
                 const defaultUserInfo = { username, firstName, lastName, iconPath, _id, isUserNew, bio };
                 let user_;
-                if (activities) {
-                    user_ = { activities: activities }
-                }
                 if (readingLists && Object.keys(readingLists).length) {
                     user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { readingLists }
                 }
@@ -3861,10 +3858,157 @@ router.route("/users/:package").get((request, response) => {
             } else {
                 response.json({ isEmpty: true });
             }
-
-
         })
+    } else if (name === 'getUserActivities') {
+        const { willGetReplyLikes, willGetReplies } = package;
+        User.findOne(
+            { _id: userId },
+            { activities: 1, _id: 0 },
+            error => {
+                if (error) {
+                    console.error('An error has occurred in getting current user profile info.')
+                }
+            }
+        ).then(result => {
+            // console.log('result: ', activities);
+            if (willGetReplyLikes && result?.activities?.likes?.replies) {
+                console.log('sup there')
+                const { replies: likedReplies } = result.activities.likes;
+                const postIds = likedReplies.map(({ postIdOfReply }) => postIdOfReply);
+                BlogPost.find(
+                    { _id: { $in: postIds } },
+                    { comments: 1, _id: 1, title: 1, authorId: 1 },
+                    error => {
+                        if (error) {
+                            console.error('An error has occurred in getting the posts of liked replies.')
+                        }
+                    }
+                ).then(posts => {
+                    console.log('posts: ', posts)
+                    if (posts?.length) {
+                        // GOAL: for each liked reply get the following and store them into an array {postId, the title of the post,the comment id (check if the comment is written by the current user and if the comment still exist), the reply id (check if the reply is written by the current user and if the current user still liked it, if the reply still exist)
+                        const authorIds = posts.map(({ authorId }) => authorId).filter(authorId => authorId !== userId);
+                        User.find(
+                            { _id: { $in: authorIds } },
+                            { username: 1 },
+                            error => {
+                                if (error) {
+                                    console.log('An error has occurred in getting the authors of post.')
+                                }
+                            }
+                        ).then(usernames => {
+                            let _likedReplies = [];
+                            likedReplies.forEach(({ postIdOfReply, repliedToComments }) => {
+                                const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postIdOfReply));
+                                if (targetPost) {
+                                    // console.log('targetPost: ', targetPost);
+                                    const { comments, title, _id: postId, authorId } = targetPost;
+                                    console.log('authorId: ', authorId);
+                                    repliedToComments.forEach(({ id: _commentId, likedReplyIds }) => {
+                                        const repliedToComment = comments?.length && comments.find(({ commentId }) => commentId === _commentId);
+                                        if (repliedToComment) {
+                                            const { commentId, replies } = repliedToComment;
+                                            // GOAL: get the liked the reply
+                                            likedReplyIds.forEach(_replyId => {
+                                                const reply = replies.find(({ replyId }) => replyId === _replyId);
+                                                if (reply) {
+                                                    const { replyId, userIdsOfLikes } = reply;
+                                                    const isLikedByUser = userIdsOfLikes?.length && userIdsOfLikes.map(({ userId }) => userId).includes(userId);
+                                                    if (isLikedByUser) {
+                                                        const authorUsername = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                                        const likedReply = authorUsername ? { postId, username: authorUsername.username, title, commentId, replyId } : { postId, title, commentId, replyId };
+                                                        _likedReplies.push(likedReply);
+                                                    }
+                                                }
+                                            })
+                                        }
+                                    })
+                                }
+                            });
+                            _likedReplies.length ? response.json({ likedReplies: _likedReplies }) : response.json({ isEmpty: true });
+                            console.log('end of getting reply likes')
+                        })
+                    }
+                })
+            }
+            if (willGetReplies && result?.activities?.replies) {
+                const { replies: repliesByUser } = result.activities;
+                const postIds = repliesByUser.map(({ postId }) => postId);
+                let commentIds = [];
+                repliesByUser.forEach(({ commentsRepliedTo }) => {
+                    commentsRepliedTo.forEach(commentId => { commentIds.push(commentId) });
+                });
 
+                BlogPost.find(
+                    { _id: { $in: postIds } },
+                    { title: 1, comments: 1, authorId: 1 },
+                    error => {
+                        if (error) {
+                            console.error('An error has occurred in getting the post of replies by user.')
+                        }
+                    }
+                ).then(posts => {
+                    if (posts.length) {
+                        let userIds = posts.map(({ authorId }) => authorId);
+                        posts.forEach(({ comments }) => {
+                            comments.forEach(({ commentId, userId: commentAuthorId }) => {
+                                (commentIds.includes(commentId) && !userIds.includes(commentAuthorId)) && userIds.push(commentAuthorId);
+                            })
+                        });
+
+                        User.find(
+                            { _id: { $in: userIds } },
+                            { username: 1 },
+                            error => {
+                                if (error) {
+                                    console.error('An error has occurred in getting the users of reply activities.')
+                                }
+                            }
+                        ).then(usernames => {
+                            let _repliesByUser = [];
+                            repliesByUser.forEach(({ postId, commentsRepliedTo, deletedRepliesActivity }) => {
+                                const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
+                                if (targetPost) {
+                                    const { comments, _id: postId, title, author: postAuthorId } = targetPost;
+                                    if (comments.length) {
+                                        commentsRepliedTo.forEach(_commentId => {
+                                            const targetComment = comments.find(({ commentId }) => commentId === _commentId);
+                                            if (targetComment) {
+                                                const { commentId, replies, userId: commentAuthorId } = targetComment;
+                                                const repliesByUser = replies?.length && replies.filter(({ userId: replyAuthorId }) => userId === replyAuthorId);
+                                                if (repliesByUser?.length) {
+                                                    repliesByUser.forEach(({ replyId, _reply }) => {
+                                                        if (!deletedRepliesActivity?.includes(replyId)) {
+                                                            const postAuthor = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
+                                                            const isCommentByUser = commentAuthorId === userId;
+                                                            const commentAuthor = !isCommentByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId))
+                                                            let UItext;
+                                                            if (postAuthor && isCommentByUser) {
+                                                                UItext = 'You replied to your comment on your post titled '
+                                                            } else if (postAuthor && !isCommentByUser) {
+                                                                UItext = `You replied to ${commentAuthor.username}'s comment on your post titled `
+                                                            } else if (!postAuthor && isCommentByUser) {
+                                                                UItext = `You replied to your comment on post titled `
+                                                            } else {
+                                                                UItext = `You replied to ${commentAuthor.username}'s comment on post titled `
+                                                            }
+                                                            const reply = postAuthor ? { postId, username: postAuthor.username, title, commentId, replyId, UItext, _reply } : { postId, title, commentId, replyId, UItext, _reply };
+                                                            _repliesByUser.push(reply);
+                                                        };
+                                                    });
+                                                }
+                                            }
+                                        });
+                                    }
+                                };
+                                console.log('end of getting replies by user')
+                            })
+                            _repliesByUser.length ? response.json({ repliesByUser: _repliesByUser }) : response.json({ isEmpty: true });
+                        })
+                    };
+                })
+            }
+        })
     }
 })
 
