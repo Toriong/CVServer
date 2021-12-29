@@ -4120,7 +4120,19 @@ router.route("/users/:package").get((request, response) => {
                                     const didTitleChanged = titleWordCountA !== titleWordCountB;
                                     const didSubtitleChanged = subtitleWordCountA !== subtitleWordCountB;
                                     const didBodyChanged = bodyWordCountA !== bodyWordCountB;
-                                    const didImgChanged = !(imgUrlA !== undefined) ? imgUrlB !== imgUrlA : 'Intro pic was deleted.';
+                                    let introPicStatus;
+                                    if ((imgUrlB === undefined) && (imgUrlA === undefined)) {
+                                        introPicStatus = 'No intro pic available.'
+                                    } else if ((imgUrlB === undefined) && imgUrlA) {
+                                        introPicStatus = 'Intro pic was added.'
+                                    } else if (imgUrlB && (imgUrlA === undefined)) {
+                                        introPicStatus = 'Intro pic was deleted.'
+                                    } else if ((imgUrlB && imgUrlA) && (imgUrlB === imgUrlA)) {
+                                        introPicStatus = 'No changes to intro pic of article.'
+                                    } else if ((imgUrlB && imgUrlA) && (imgUrlB !== imgUrlA)) {
+                                        introPicStatus = 'Intro pic was updated.'
+
+                                    }
                                     const _tagsB = tagsB.map(tag => {
                                         const { _id, isNew, topic } = tag;
                                         if (isNew) {
@@ -4180,7 +4192,7 @@ router.route("/users/:package").get((request, response) => {
 
                                     return {
                                         ..._versionA,
-                                        didImgChanged
+                                        introPicStatus
                                     }
                                 };
 
