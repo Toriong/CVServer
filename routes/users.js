@@ -3908,12 +3908,13 @@ router.route("/users/:package").get((request, response) => {
             }
         ).then(result => {
             // console.log('result: ', activities);
+            const blockedUserIds = result?.blockedUserIds ? blockedUserIds.map(({ userId }) => userId) : [];
             if (willGetReplyLikes && result?.activities?.likes?.replies) {
                 console.log('sup there')
                 const { replies: likedReplies } = result.activities.likes;
                 const postIds = likedReplies.map(({ postIdOfReply }) => postIdOfReply);
                 BlogPost.find(
-                    { _id: { $in: postIds } },
+                    { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] },
                     { comments: 1, _id: 1, title: 1, authorId: 1 },
                     error => {
                         if (error) {
@@ -3924,51 +3925,60 @@ router.route("/users/:package").get((request, response) => {
                     console.log('posts: ', posts)
                     if (posts?.length) {
                         // GOAL: for each liked reply get the following and store them into an array {postId, the title of the post,the comment id (check if the comment is written by the current user and if the comment still exist), the reply id (check if the reply is written by the current user and if the current user still liked it, if the reply still exist)
-                        const authorIds = posts.map(({ authorId }) => authorId).filter(authorId => authorId !== userId);
-                        User.find(
-                            { _id: { $in: authorIds } },
-                            { username: 1 },
-                            error => {
-                                if (error) {
-                                    console.log('An error has occurred in getting the authors of post.')
+                        let authorIds = posts.map(({ authorId }) => authorId).filter(authorId => authorId !== userId);
+                        authorIds = blockedUserIds?.length ? authorIds.filter(authorId => !blockedUserIds.includes(authorId)) : authorIds;
+                        if (authorIds.length) {
+                            User.find(
+                                { _id: { $in: authorIds } },
+                                { username: 1 },
+                                error => {
+                                    if (error) {
+                                        console.log('An error has occurred in getting the authors of post.')
+                                    }
                                 }
-                            }
-                        ).then(usernames => {
-                            let _likedReplies = [];
-                            likedReplies.forEach(({ postIdOfReply, repliedToComments }) => {
-                                const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postIdOfReply));
-                                if (targetPost) {
-                                    // console.log('targetPost: ', targetPost);
-                                    const { comments, title, _id: postId, authorId } = targetPost;
-                                    console.log('authorId: ', authorId);
-                                    repliedToComments.forEach(({ id: _commentId, likedReplyIds }) => {
-                                        const repliedToComment = comments?.length && comments.find(({ commentId }) => commentId === _commentId);
-                                        if (repliedToComment) {
-                                            const { commentId, replies } = repliedToComment;
-                                            // GOAL: get the liked the reply
-                                            likedReplyIds.forEach(_replyId => {
-                                                const reply = replies.find(({ replyId }) => replyId === _replyId);
-                                                if (reply) {
-                                                    const { replyId, userIdsOfLikes } = reply;
-                                                    const isLikedByUser = userIdsOfLikes?.length && userIdsOfLikes.map(({ userId }) => userId).includes(userId);
-                                                    if (isLikedByUser) {
-                                                        const authorUsername = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                                        const likedReply = authorUsername ? { postId, username: authorUsername.username, title, commentId, replyId } : { postId, title, commentId, replyId };
-                                                        _likedReplies.push(likedReply);
+                            ).then(usernames => {
+
+                                let _likedReplies = [];
+                                likedReplies.forEach(({ postIdOfReply, repliedToComments }) => {
+                                    const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postIdOfReply));
+                                    if (targetPost) {
+                                        // console.log('targetPost: ', targetPost);
+                                        const { comments, title, _id: postId, authorId } = targetPost;
+                                        console.log('authorId: ', authorId);
+                                        repliedToComments.forEach(({ id: _commentId, likedReplyIds }) => {
+                                            const commentRepliedTo = comments?.length && comments.find(({ commentId }) => commentId === _commentId);
+                                            const isCommentAuthorBlocked = commentRepliedTo && blockedUserIds.includes(commentRepliedTo.userId);
+                                            if (commentRepliedTo && !isCommentAuthorBlocked) {
+                                                const { commentId, replies } = commentRepliedTo;
+                                                // GOAL: get the liked the reply
+                                                likedReplyIds.forEach(_replyId => {
+                                                    const reply = replies.find(({ replyId }) => replyId === _replyId);
+                                                    const isReplyAuthorBlocked = (reply && blockedUserIds?.length) && blockedUserIds.includes(reply.userId);
+                                                    if (reply && !isReplyAuthorBlocked) {
+                                                        const { replyId, userIdsOfLikes } = reply;
+                                                        const isLikedByUser = userIdsOfLikes?.length && userIdsOfLikes.map(({ userId }) => userId).includes(userId);
+                                                        if (isLikedByUser) {
+                                                            const authorUsername = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                                            const likedReply = authorUsername ? { postId, username: authorUsername.username, title, commentId, replyId } : { postId, title, commentId, replyId };
+                                                            _likedReplies.push(likedReply);
+                                                        }
                                                     }
-                                                }
-                                            })
-                                        }
-                                    })
-                                }
-                            });
-                            _likedReplies.length ? response.json({ likedReplies: _likedReplies }) : response.json({ isEmpty: true });
-                            console.log('end of getting reply likes')
-                        })
+                                                })
+                                            }
+                                        })
+                                    }
+                                });
+                                _likedReplies.length ? response.json({ likedReplies: _likedReplies }) : response.json({ isEmpty: true });
+                                console.log('end of getting reply likes')
+                            })
+                        } else {
+                            response.json({ isEmpty: true });
+                        }
                     }
                 })
             } else if (willGetReplyLikes) {
                 response.json({ isEmpty: true });
+                // get the replies that were made by the current user
             } else if (willGetReplies && result?.activities?.replies) {
                 const { replies: repliesByUser } = result.activities;
                 const postIds = repliesByUser.map(({ postId }) => postId);
@@ -3977,8 +3987,9 @@ router.route("/users/:package").get((request, response) => {
                     commentsRepliedTo.forEach(commentId => { commentIds.push(commentId) });
                 });
 
+
                 BlogPost.find(
-                    { _id: { $in: postIds } },
+                    { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] },
                     { title: 1, comments: 1, authorId: 1 },
                     error => {
                         if (error) {
@@ -3993,6 +4004,7 @@ router.route("/users/:package").get((request, response) => {
                                 (commentIds.includes(commentId) && !userIds.includes(commentAuthorId)) && userIds.push(commentAuthorId);
                             })
                         });
+                        userIds = blockedUserIds?.length ? userIds.filter(userId => !blockedUserIds.includes(userId)) : userIds;
 
                         User.find(
                             { _id: { $in: userIds } },
@@ -4003,6 +4015,7 @@ router.route("/users/:package").get((request, response) => {
                                 }
                             }
                         ).then(usernames => {
+                            // goal: GET THE REPLIES THAT THE USER MADE 
                             let _repliesByUser = [];
                             repliesByUser.forEach(({ postId, commentsRepliedTo, deletedRepliesActivity }) => {
                                 const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
@@ -4011,7 +4024,8 @@ router.route("/users/:package").get((request, response) => {
                                     if (comments.length) {
                                         commentsRepliedTo.forEach(_commentId => {
                                             const targetComment = comments.find(({ commentId }) => commentId === _commentId);
-                                            if (targetComment) {
+                                            const isCommentAuthorBlocked = (targetComment && blockedUserIds?.length) && blockedUserIds.includes(targetComment.userId)
+                                            if (targetComment && isCommentAuthorBlocked) {
                                                 const { commentId, replies, userId: commentAuthorId } = targetComment;
                                                 const repliesByUser = replies?.length && replies.filter(({ userId: replyAuthorId }) => userId === replyAuthorId);
                                                 if (repliesByUser?.length) {
@@ -4047,13 +4061,14 @@ router.route("/users/:package").get((request, response) => {
                 })
             } else if (willGetReplies) {
                 response.json({ isEmpty: true })
+                // get the comments that were liked by the current user
             } else if (willGetCommentLikes && result?.activities?.likes?.replies) {
                 const { comments: likedComments } = result.activities.likes;
                 const postIds = likedComments.map(({ postIdOfComment }) => postIdOfComment);
                 const commentIds = likedComments.map(({ likedCommentIds }) => likedCommentIds).flat();
                 console.log('commentIds: ', commentIds);
                 BlogPost.find(
-                    { _id: { $in: postIds } },
+                    { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] },
                     { comments: 1, _id: 1, title: 1, authorId: 1 },
                     error => {
                         if (error) {
@@ -4070,52 +4085,56 @@ router.route("/users/:package").get((request, response) => {
                                 (commentIds.includes(commentId) && !userIds.includes(commentAuthorId)) && userIds.push(commentAuthorId);
                             })
                         });
-                        User.find(
-                            { _id: { $in: userIds } },
-                            { username: 1 },
-                            error => {
-                                if (error) {
-                                    console.log('An error has occurred in getting the authors of post.')
+                        userIds = blockedUserIds?.length ? userIds.filter(userId => !blockedUserIds.includes(userId)) : userIds;
+                        if (userIds.length) {
+                            User.find(
+                                { _id: { $in: userIds } },
+                                { username: 1 },
+                                error => {
+                                    if (error) {
+                                        console.log('An error has occurred in getting the authors of post.')
+                                    }
                                 }
-                            }
-                        ).then(usernames => {
-                            let _likedComments = [];
-                            likedComments.forEach(({ postIdOfComment, likedCommentIds }) => {
-                                const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postIdOfComment));
-                                if (targetPost) {
-                                    // console.log('targetPost: ', targetPost);
-                                    const { comments, title, _id: postId, authorId: postAuthorId } = targetPost;
-                                    likedCommentIds.forEach(_commentId => {
-                                        // GOAL: get the following info: if the comment was written by the current user, the title of the post, post id, username of the author of the post   
-                                        const targetComment = comments.find(({ commentId }) => commentId === _commentId);
-                                        if (targetComment) {
-                                            const { userIdsOfLikes, userId: commentAuthorId, commentId } = targetComment;
-                                            const didUserLikeComment = userIdsOfLikes.map(({ userId }) => userId).includes(userId);
-                                            if (didUserLikeComment) {
+                            ).then(usernames => {
+                                let _likedComments = [];
+                                likedComments.forEach(({ postIdOfComment, likedCommentIds }) => {
+                                    const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postIdOfComment));
+                                    if (targetPost) {
+                                        // console.log('targetPost: ', targetPost);
+                                        const { comments, title, _id: postId, authorId: postAuthorId } = targetPost;
+                                        likedCommentIds.forEach(_commentId => {
+                                            // GOAL: get the following info: if the comment was written by the current user, the title of the post, post id, username of the author of the post   
+                                            const targetComment = comments.find(({ commentId }) => commentId === _commentId);
+                                            if (targetComment) {
+                                                const { userIdsOfLikes, userId: commentAuthorId, commentId } = targetComment;
                                                 const isCommentByUser = commentAuthorId === userId
-                                                const isPostByUser = postAuthorId === userId;
-                                                const postAuthor = !isPostByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
-                                                const commentAuthor = !isCommentByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId));
-                                                let UIText;
-                                                if (isCommentByUser && isPostByUser) {
-                                                    UIText = `You liked your own comment on your post titled `
-                                                } else if (isCommentByUser && !isPostByUser) {
-                                                    UIText = `You liked your own comment on post titled `
-                                                } else if (!isCommentByUser && isPostByUser) {
-                                                    UIText = `You liked ${commentAuthor.username}'s comment on your post titled `
-                                                } else {
-                                                    UIText = `You liked ${commentAuthor.username}'s comment on post titled `
-                                                };
+                                                const isCommentAuthorBlocked = (blockedUserIds?.length && !isCommentByUser) && blockedUserIds.includes(commentAuthorId);
+                                                const didUserLikeComment = userIdsOfLikes.map(({ userId }) => userId).includes(userId);
+                                                if (didUserLikeComment && !isCommentAuthorBlocked) {
+                                                    const isPostByUser = postAuthorId === userId;
+                                                    const postAuthor = !isPostByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
+                                                    const commentAuthor = !isCommentByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId));
+                                                    let UIText;
+                                                    if (isCommentByUser && isPostByUser) {
+                                                        UIText = `You liked your own comment on your post titled `
+                                                    } else if (isCommentByUser && !isPostByUser) {
+                                                        UIText = `You liked your own comment on post titled `
+                                                    } else if (!isCommentByUser && isPostByUser) {
+                                                        UIText = `You liked ${commentAuthor.username}'s comment on your post titled `
+                                                    } else {
+                                                        UIText = `You liked ${commentAuthor.username}'s comment on post titled `
+                                                    };
 
-                                                const likedComment = !(postAuthorId === userId) ? { postId, username: postAuthor.username, commentId, UIText, title } : { postId, commentId, UIText, title };
-                                                _likedComments.push(likedComment)
+                                                    const likedComment = !(postAuthorId === userId) ? { postId, username: postAuthor.username, commentId, UIText, title } : { postId, commentId, UIText, title };
+                                                    _likedComments.push(likedComment)
+                                                };
                                             };
-                                        };
-                                    });
-                                };
-                            });
-                            _likedComments.length ? response.json({ likedComments: _likedComments }) : response.json({ isEmpty: true });
-                        })
+                                        });
+                                    };
+                                });
+                                _likedComments.length ? response.json({ likedComments: _likedComments }) : response.json({ isEmpty: true });
+                            })
+                        };
                     }
                 })
             } else if (willGetPostsByUser && result?.publishedDrafts?.length) {
@@ -4236,12 +4255,6 @@ router.route("/users/:package").get((request, response) => {
                                             didTagsChanged
                                         }
                                     };
-                                    // if (didImgChanged) {
-                                    //     _versionA = {
-                                    //         ..._versionA,
-                                    //         didImgChanged
-                                    //     }
-                                    // };
 
                                     return {
                                         ..._versionA,
@@ -4287,7 +4300,7 @@ router.route("/users/:package").get((request, response) => {
                 });
                 if (postIds.length) {
                     BlogPost.find(
-                        { _id: { $in: postIds } },
+                        { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] },
                         { authorId: 1, title: 1 }
                     ).then(posts => {
                         if (posts.length) {
