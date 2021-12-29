@@ -2881,8 +2881,9 @@ router.route("/users/:package").get((request, response) => {
                                             // CASE1: THE COMMENT AUTHOR DOESN'T EXIST
                                             // CASE2: THE COMMENT DOESN'T EXIST
                                             const { commentsRepliedTo, commentAuthorId } = replyInfo;
-                                            const doesCommentUserExist = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId))
-                                            if (doesCommentUserExist) {
+                                            const doesCommentUserExist = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId)) !== undefined;
+                                            const isCommentUserBlocked = (doesCommentUserExist && blockedUserIds?.length) && blockedUserIds.includes(commentAuthorId);
+                                            if (doesCommentUserExist && !isCommentUserBlocked) {
                                                 const _commentsRepliedTo = commentsRepliedTo.map(comment => {
                                                     const { id: _commentId, replies } = comment;
                                                     // does the comment on the post exist?
@@ -2891,7 +2892,8 @@ router.route("/users/:package").get((request, response) => {
                                                         const _replies = replies.map(replyInfo => {
                                                             const { authorId, replyIds } = replyInfo;
                                                             const replyAuthor = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                                            if (replyAuthor && replyIds && replyIds.length) {
+                                                            const isReplyAuthorBlocked = (replyAuthor && blockedUserIds?.length) && blockedUserIds.includes(authorId);
+                                                            if (replyAuthor && (replyIds && replyIds.length) && isReplyAuthorBlocked) {
                                                                 const _replyIds = replyIds.map(reply => {
                                                                     // const { _reply, createdAt } = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
                                                                     const targetReply = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
@@ -3043,6 +3045,7 @@ router.route("/users/:package").get((request, response) => {
                                             replies.forEach(replyAuthor => {
                                                 const { authorId, replyIds } = replyAuthor;
                                                 replyIds.forEach(reply => {
+                                                    // check if the notification is in existence by checking if the 'createdAt' field exist
                                                     if (reply.createdAt && postAuthorUN) {
                                                         const { id: replyId, ..._reply } = reply
                                                         _replyNotifications.push(
@@ -3121,7 +3124,7 @@ router.route("/users/:package").get((request, response) => {
                         const postAuthors = targetPosts.map(({ authorId }) => authorId);
                         userIds = [...userIds, ...postAuthors];
                         userIds = [...new Set(userIds)];
-
+                        userIds = blockedUserIds?.length ? userIds.filter(userId => !blockedUserIds.includes(userId)) : userIds;
                         User.find(
                             { _id: { $in: userIds } },
                             { username: 1, iconPath: 1, publishedDrafts: 1 },
@@ -3139,22 +3142,25 @@ router.route("/users/:package").get((request, response) => {
                                 const targetPost = targetPosts.find(({ _id }) => _id === postId);
                                 const postAuthor = users.find(user => user.publishedDrafts && user.publishedDrafts.includes(postId));
                                 const isPostByCU = publishedDrafts.includes(postId);
+                                const isPostAuthorBlocked = blockedUserIds?.length && blockedUserIds.includes(postAuthor?._id);
                                 // check if the post exist, and there are still comments on the post 
-                                if ((postAuthor || isPostByCU) && targetPost && targetPost.comments && targetPost.comments.length) {
+                                if ((postAuthor || isPostByCU) && targetPost && !isPostAuthorBlocked && targetPost?.comments?.length) {
                                     const _commentsRepliedTo = commentsRepliedTo.map(comment => {
                                         const { replies, commentId } = comment;
                                         // THE COMMENT WON'T EXIST WHEN THE USER DELETES THEIR ACCOUNT
                                         // check if the comment exist
                                         const targetComment = targetPost.comments.find(({ commentId: _commentId }) => _commentId === commentId);
-                                        if (targetComment) {
+                                        const isCommentAuthorBlocked = blockedUserIds?.length && blockedUserIds.includes(targetComment?.userId);
+                                        if (targetComment && !isCommentAuthorBlocked) {
                                             const _replies = replies.map(reply => {
                                                 const targetReply = targetComment.replies.find(({ replyId }) => replyId === reply.replyId);
                                                 // check if the reply exist
-                                                if (targetReply && reply.userIdsOfLikes && reply.userIdsOfLikes.length) {
+                                                if (targetReply && reply?.userIdsOfLikes?.length) {
                                                     const _userIdsOfLikes = reply.userIdsOfLikes.map(user => {
                                                         const userOfLike = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
                                                         // check if the user still exist
-                                                        if (userOfLike) {
+                                                        const isUserOfLikeBlocked = (userOfLike && blockedUserIds?.length) && blockedUserIds.includes(user.userId);
+                                                        if (userOfLike && !isUserOfLikeBlocked) {
                                                             const { likedAt } = targetReply.userIdsOfLikes.find(({ userId }) => userId === user.userId);
                                                             const timeElapsedText = _getTimeElapsedText(likedAt);
                                                             const { iconPath, username } = userOfLike;
@@ -3177,10 +3183,10 @@ router.route("/users/:package").get((request, response) => {
                                                         } else {
                                                             // if the user doesn't exist, then find the user in the userIdsOfLikes and delete the userId from replies 
                                                             // delNotifications.push({ postId, commentId, replyId: reply.replyId, userId });
-
-                                                            return user
                                                         }
-                                                    })
+
+                                                        return user
+                                                    });
 
                                                     return {
                                                         ...reply,
@@ -3190,8 +3196,8 @@ router.route("/users/:package").get((request, response) => {
                                                     // if the reply doesn't exist, then delete the rely
                                                     // delNotifications.push({ postId, commentId, replyId: reply.replyId });
 
-                                                    return reply
                                                 };
+                                                return reply
                                             });
 
                                             return {
@@ -3307,135 +3313,141 @@ router.route("/users/:package").get((request, response) => {
                         const postAuthorIds = targetPosts.map(({ authorId }) => authorId);
                         userIds = [...userIds, ...postAuthorIds];
                         userIds = [...new Set(userIds)];
-
-                        User.find(
-                            { _id: userIds },
-                            { username: 1, iconPath: 1, publishedDrafts: 1 },
-                            error => {
-                                if (error) {
-                                    console.error('An error has occurred in getting the users of the reply likes');
-                                } else {
-                                    console.log('No error has occurred in getting the users of the reply likes.')
-                                }
-                            }
-                        ).then(users => {
-                            let delNotifications;
-                            if (targetPosts.length && users.length) {
-                                let _commentLikes = commentLikes.map(commentLike => {
-                                    const { postId, comments } = commentLike;
-                                    const targetPost = targetPosts.find(({ _id }) => _id === postId);
-                                    const postAuthor = users.find(user => user.publishedDrafts.includes(postId));
-                                    const isPostByCU = publishedDrafts.includes(postId);
-                                    // check if the post exist, and there are still comments on the post 
-                                    if ((postAuthor || isPostByCU) && targetPost && targetPost.comments && targetPost.comments.length) {
-                                        const _comments = comments.map(comment => {
-                                            const { commentId, userIdsOfLikes } = comment;
-                                            const targetComment = targetPost.comments.find(({ commentId: _commentId }) => commentId === _commentId);
-                                            // check if the comment exist
-                                            if (targetComment && userIdsOfLikes && userIdsOfLikes.length) {
-                                                const _userIdsOfLikes = userIdsOfLikes.map(user => {
-                                                    const userOfLike = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
-                                                    if (userOfLike) {
-                                                        const { likedAt } = targetComment.userIdsOfLikes.find(({ userId }) => userId === user.userId);
-                                                        const timeElapsedText = _getTimeElapsedText(likedAt);
-                                                        // CU = current user 
-                                                        const { username, iconPath } = userOfLike;
-                                                        const notificationText = isPostByCU ? 'liked your comment on your post ' : 'liked your comment on post ';
-                                                        const { date, time, miliSeconds } = likedAt
-
-                                                        return {
-                                                            ...user,
-                                                            timeElapsedText,
-                                                            notificationText,
-                                                            userIcon: iconPath,
-                                                            username,
-                                                            likedAt: {
-                                                                date: date,
-                                                                time: time
-                                                            },
-                                                            timeStampSort: miliSeconds
-                                                        }
-
-                                                    } else {
-                                                        return user;
-                                                    };
-                                                });
-
-                                                return {
-                                                    ...comment,
-                                                    userIdsOfLikes: _userIdsOfLikes
-                                                }
-                                            } else {
-                                                return comment;
-                                            }
-                                        });
-
-                                        return isPostByCU ?
-                                            {
-                                                ...commentLike,
-                                                comments: _comments,
-                                                title: targetPost.title.trim()
-                                            }
-                                            :
-                                            {
-                                                ...commentLike,
-                                                comments: _comments,
-                                                postAuthorUN: postAuthor.username,
-                                                title: targetPost.title.trim()
-                                            };
+                        userIds = blockedUserIds?.length ? userIds.filter(userId => !blockedUserIds.includes(userId)) : userIds;
+                        if (userIds.length) {
+                            User.find(
+                                { _id: userIds },
+                                { username: 1, iconPath: 1, publishedDrafts: 1 },
+                                error => {
+                                    if (error) {
+                                        console.error('An error has occurred in getting the users of the reply likes');
                                     } else {
-                                        // if postId is not found im the blogPost collection, then delete the whole entire object by using the post id 
-                                        // delNotifications.push({ postId });
-                                    };
+                                        console.log('No error has occurred in getting the users of the reply likes.')
+                                    }
+                                }
+                            ).then(users => {
+                                let delNotifications;
+                                if (targetPosts.length && users.length) {
+                                    let _commentLikes = commentLikes.map(commentLike => {
+                                        const { postId, comments } = commentLike;
+                                        const targetPost = targetPosts.find(({ _id }) => _id === postId);
+                                        const postAuthor = users.find(user => user.publishedDrafts.includes(postId));
+                                        const isPostByCU = publishedDrafts.includes(postId);
+                                        const isPostAuthorBlocked = blockedUserIds?.length && blockedUserIds.includes(postAuthor?._id);
+                                        // check if the post exist, and there are still comments on the post 
+                                        if ((postAuthor || isPostByCU) && targetPost && !isPostAuthorBlocked && targetPost?.comments?.length) {
+                                            const _comments = comments.map(comment => {
+                                                const { commentId, userIdsOfLikes } = comment;
+                                                const targetComment = targetPost.comments.find(({ commentId: _commentId }) => commentId === _commentId);
+                                                // check if the comment exist
+                                                if (targetComment && userIdsOfLikes && userIdsOfLikes.length) {
+                                                    const _userIdsOfLikes = userIdsOfLikes.map(user => {
+                                                        const userOfLike = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
+                                                        const isUserOfLikeBlocked = (userOfLike && blockedUserIds?.length) && blockedUserIds.includes(user.userId);
+                                                        if (userOfLike && !isUserOfLikeBlocked) {
+                                                            const { likedAt } = targetComment.userIdsOfLikes.find(({ userId }) => userId === user.userId);
+                                                            const timeElapsedText = _getTimeElapsedText(likedAt);
+                                                            // CU = current user 
+                                                            const { username, iconPath } = userOfLike;
+                                                            const notificationText = isPostByCU ? 'liked your comment on your post ' : 'liked your comment on post ';
+                                                            const { date, time, miliSeconds } = likedAt
 
-                                    return commentLike;
-                                });
-
-                                if (delNotifications) {
-
-                                    response.json({ commentLikes: _commentLikes });
-                                } else {
-                                    // if the array is not empty, then send the below to the client 
-                                    let _commentLikesNotifications = [];
-                                    _commentLikes.forEach(post => {
-                                        const { postId, title, comments, postAuthorUN } = post;
-                                        comments.forEach(comment => {
-                                            const { commentId, userIdsOfLikes } = comment;
-                                            if (userIdsOfLikes?.length) {
-                                                userIdsOfLikes.forEach(userOfLike => {
-                                                    if (userOfLike?.likedAt && postAuthorUN) {
-                                                        _commentLikesNotifications.push(
-                                                            {
-                                                                isCommentLike: true,
-                                                                postId,
-                                                                title,
-                                                                postAuthorUN,
-                                                                commentId,
-                                                                notification: userOfLike
+                                                            return {
+                                                                ...user,
+                                                                timeElapsedText,
+                                                                notificationText,
+                                                                userIcon: iconPath,
+                                                                username,
+                                                                likedAt: {
+                                                                    date: date,
+                                                                    time: time
+                                                                },
+                                                                timeStampSort: miliSeconds
                                                             }
-                                                        )
-                                                    } else if (userOfLike?.likedAt) {
-                                                        _commentLikesNotifications.push(
-                                                            {
-                                                                isCommentLike: true,
-                                                                postId,
-                                                                title,
-                                                                commentId,
-                                                                notification: userOfLike
-                                                            }
-                                                        )
-                                                    };
-                                                })
-                                            }
-                                        })
+
+                                                        } else {
+                                                            return user;
+                                                        };
+                                                    });
+
+                                                    return {
+                                                        ...comment,
+                                                        userIdsOfLikes: _userIdsOfLikes
+                                                    }
+                                                } else {
+                                                    return comment;
+                                                }
+                                            });
+
+                                            return isPostByCU ?
+                                                {
+                                                    ...commentLike,
+                                                    comments: _comments,
+                                                    title: targetPost.title.trim()
+                                                }
+                                                :
+                                                {
+                                                    ...commentLike,
+                                                    comments: _comments,
+                                                    postAuthorUN: postAuthor.username,
+                                                    title: targetPost.title.trim()
+                                                };
+                                        } else {
+                                            // if postId is not found im the blogPost collection, then delete the whole entire object by using the post id 
+                                            // delNotifications.push({ postId });
+                                        };
+
+                                        return commentLike;
                                     });
 
-                                    _commentLikesNotifications.length ? response.json({ commentLikes: _commentLikesNotifications }) : response.json({ isEmpty: true })
+                                    if (delNotifications) {
+
+                                        response.json({ commentLikes: _commentLikes });
+                                    } else {
+                                        // if the array is not empty, then send the below to the client 
+                                        let _commentLikesNotifications = [];
+                                        _commentLikes.forEach(post => {
+                                            const { postId, title, comments, postAuthorUN } = post;
+                                            comments.forEach(comment => {
+                                                const { commentId, userIdsOfLikes } = comment;
+                                                if (userIdsOfLikes?.length) {
+                                                    userIdsOfLikes.forEach(userOfLike => {
+                                                        if (userOfLike?.likedAt && postAuthorUN) {
+                                                            _commentLikesNotifications.push(
+                                                                {
+                                                                    isCommentLike: true,
+                                                                    postId,
+                                                                    title,
+                                                                    postAuthorUN,
+                                                                    commentId,
+                                                                    notification: userOfLike
+                                                                }
+                                                            )
+                                                        } else if (userOfLike?.likedAt) {
+                                                            _commentLikesNotifications.push(
+                                                                {
+                                                                    isCommentLike: true,
+                                                                    postId,
+                                                                    title,
+                                                                    commentId,
+                                                                    notification: userOfLike
+                                                                }
+                                                            )
+                                                        };
+                                                    })
+                                                }
+                                            })
+                                        });
+
+                                        _commentLikesNotifications.length ? response.json({ commentLikes: _commentLikesNotifications }) : response.json({ isEmpty: true })
+                                    }
+                                } else {
+                                    response.json({ isEmpty: true })
                                 }
-                            } else {
-                                response.json({ isEmpty: true })
-                            }
-                        })
+                            })
+                        } else {
+                            response.json({ isEmpty: true })
+                        }
                     })
                 } else if (willGetCommentLikes) {
                     response.json({ isEmpty: true })
@@ -3455,98 +3467,106 @@ router.route("/users/:package").get((request, response) => {
                         userIdsOfLikes.forEach(({ userId }) => {
                             !userIdsOfPostLikes.includes(userId) && userIdsOfPostLikes.push(userId);
                         })
-                    })
-                    User.find(
-                        { _id: { $in: userIdsOfPostLikes } },
-                        { username: 1, iconPath: 1 },
-                        error => {
-                            if (error) {
-                                console.error('An error has occurred in getting the users of the reply likes');
-                            } else {
-                                console.log('No error has occurred in getting the users of the reply likes.')
-                            }
-                        }
-                    ).then(postLikesUsers => {
-                        BlogPost.find(
-                            { _id: { $in: postIds } },
-                            { userIdsOfLikes: 1, title: 1 },
+                    });
+                    userIdsOfPostLikes = blockedUserIds ? userIdsOfPostLikes.filter(userId => !blockedUserIds.includes(userId)) : userIdsOfPostLikes;
+
+                    if (userIdsOfPostLikes.length) {
+                        User.find(
+                            { _id: { $in: userIdsOfPostLikes } },
+                            { username: 1, iconPath: 1 },
                             error => {
                                 if (error) {
-                                    console.error("THE ERROR YOO: ", error);
-                                }
-                            }
-                        ).then(targetPosts => {
-                            let delNotifications;
-                            if (targetPosts.length && postLikesUsers.length) {
-                                const _postLikes = postLikes.map(postLike => {
-                                    const { postId, userIdsOfLikes: userIdsLikeAlert } = postLike;
-                                    const targetPost = targetPosts.find(({ _id }) => _id === postId);
-                                    let _userIdsOfLikes;
-                                    // check if the target post has any likes and check if the userIdsLikeAlert has any users 
-                                    if ((targetPost && targetPost.userIdsOfLikes && targetPost.userIdsOfLikes.length) && (userIdsLikeAlert && userIdsLikeAlert.length)) {
-                                        _userIdsOfLikes = userIdsLikeAlert.map(user => {
-                                            const userOfLike = postLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
-                                            if (userOfLike) {
-                                                const { likedAt } = targetPost.userIdsOfLikes.find(({ userId }) => userId === user.userId);
-                                                const timeElapsedText = _getTimeElapsedText(likedAt);
-                                                const { date, time, miliSeconds } = likedAt
-                                                const { iconPath, username } = userOfLike
-                                                return {
-                                                    ...user,
-                                                    timeElapsedText,
-                                                    userIcon: iconPath,
-                                                    username,
-                                                    notificationText: `liked your post `,
-                                                    likedAt: {
-                                                        date: date,
-                                                        time: time
-                                                    },
-                                                    timeStampSort: miliSeconds
-                                                }
-                                            }
-                                        })
-                                    } else {
-                                        // push the notification the will be deleted here
-                                    }
-
-                                    return _userIdsOfLikes ?
-                                        {
-                                            ...postLike,
-                                            userIdsOfLikes: _userIdsOfLikes,
-                                            title: targetPost.title
-                                        }
-                                        :
-                                        postLike
-                                });
-
-                                if (delNotifications) {
-
-                                    response.json({ postLikes: _postLikes });
+                                    console.error('An error has occurred in getting the users of the reply likes');
                                 } else {
-                                    // if the array is not empty, then send the below to the client
-                                    let _postLikeNotifications = [];
-                                    _postLikes.forEach(post => {
-                                        const { postId, title, userIdsOfLikes } = post;
-                                        if (userIdsOfLikes.length) {
-                                            userIdsOfLikes.forEach(userOfLike => {
-                                                _postLikeNotifications.push(
-                                                    {
-                                                        isPostLike: true,
-                                                        postId,
-                                                        title,
-                                                        notification: userOfLike
-                                                    }
-                                                )
-                                            })
-                                        };
-                                    });
-                                    _postLikeNotifications.length ? response.json({ postLikes: _postLikeNotifications }) : response.json({ isEmpty: true });
+                                    console.log('No error has occurred in getting the users of the reply likes.')
                                 }
-                            } else {
-                                response.json({ isEmpty: true })
                             }
+                        ).then(postLikesUsers => {
+                            BlogPost.find(
+                                { _id: { $in: postIds } },
+                                { userIdsOfLikes: 1, title: 1 },
+                                error => {
+                                    if (error) {
+                                        console.error("THE ERROR YOO: ", error);
+                                    }
+                                }
+                            ).then(targetPosts => {
+                                let delNotifications;
+                                if (targetPosts.length && postLikesUsers.length) {
+                                    const _postLikes = postLikes.map(postLike => {
+                                        const { postId, userIdsOfLikes: userIdsLikeAlert } = postLike;
+                                        const targetPost = targetPosts.find(({ _id }) => _id === postId);
+                                        const isPostAuthorBlocked = blockedUserIds?.length && blockedUserIds.includes(targetPost?.authorId);
+                                        // check if the target post has any likes and check if the userIdsLikeAlert has any users 
+                                        if (targetPost?.userIdsOfLikes?.length && userIdsLikeAlert?.length && !isPostAuthorBlocked) {
+                                            const { userIdsOfLikes, title } = targetPost;
+                                            const _userIdsOfLikes = userIdsLikeAlert.map(user => {
+                                                const userOfLike = postLikesUsers.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
+                                                const isUserOfLikeBlocked = (userOfLike && blockedUserIds?.length) && blockedUserIds.includes(user.userId);
+                                                if (userOfLike && !isUserOfLikeBlocked) {
+                                                    const { likedAt } = userIdsOfLikes.find(({ userId }) => userId === user.userId);
+                                                    const timeElapsedText = _getTimeElapsedText(likedAt);
+                                                    const { date, time, miliSeconds } = likedAt
+                                                    const { iconPath, username } = userOfLike
+                                                    return {
+                                                        ...user,
+                                                        timeElapsedText,
+                                                        userIcon: iconPath,
+                                                        username,
+                                                        notificationText: `liked your post `,
+                                                        likedAt: {
+                                                            date: date,
+                                                            time: time
+                                                        },
+                                                        timeStampSort: miliSeconds
+                                                    }
+                                                }
+                                            });
+
+                                            return {
+                                                ...postLike,
+                                                userIdsOfLikes: _userIdsOfLikes,
+                                                title: title
+                                            }
+                                        } else {
+                                            // push the notification the will be deleted here
+                                        }
+
+                                        return postLike;
+                                    });
+
+                                    if (delNotifications) {
+
+                                        response.json({ postLikes: _postLikes });
+                                    } else {
+                                        // if the array is not empty, then send the below to the client
+                                        let _postLikeNotifications = [];
+                                        _postLikes.forEach(post => {
+                                            const { postId, title, userIdsOfLikes } = post;
+                                            if (userIdsOfLikes.length) {
+                                                userIdsOfLikes.forEach(userOfLike => {
+                                                    _postLikeNotifications.push(
+                                                        {
+                                                            isPostLike: true,
+                                                            postId,
+                                                            title,
+                                                            notification: userOfLike
+                                                        }
+                                                    )
+                                                })
+                                            };
+                                        });
+                                        _postLikeNotifications.length ? response.json({ postLikes: _postLikeNotifications }) : response.json({ isEmpty: true });
+                                    }
+                                } else {
+                                    response.json({ isEmpty: true })
+                                }
+                            })
                         })
-                    })
+                    } else {
+                        response.json({ isEmpty: true });
+                    }
+
                 } else if (willGetPostLikes) {
                     response.json({ isEmpty: true })
                 }
@@ -3572,6 +3592,7 @@ router.route("/users/:package").get((request, response) => {
                         const postAuthorIds = postsOfComments.map(({ authorId }) => authorId);
                         userIds = [...userIds, ...postAuthorIds];
                         userIds = [...new Set(userIds)];
+                        userIds = blockedUserIds?.length ? userIds.filter(userId => !blockedUserIds.includes(userId)) : userIds;
                         User.find(
                             { _id: { $in: userIds } },
                             { username: 1, iconPath: 1, publishedDrafts: 1, iconPath: 1 },
@@ -3590,12 +3611,14 @@ router.route("/users/:package").get((request, response) => {
                                     const { postId, comments: commentsOnPost } = post;
                                     const targetPost = postsOfComments.find(({ _id }) => _id === postId);
                                     const postAuthor = users.find(user => user.publishedDrafts && user.publishedDrafts.includes(postId));
+                                    const isPostAuthorBlocked = (postAuthor && blockedUserIds?.length) && blockedUserIds.includes(postAuthor._id);
                                     const isPostByCU = publishedDrafts.includes(postId);
-                                    if ((postAuthor || isPostByCU) && targetPost && targetPost.comments && targetPost.comments.length) {
+                                    if ((postAuthor || isPostByCU) && targetPost && !isPostAuthorBlocked && targetPost?.comments?.length) {
                                         const _comments = commentsOnPost.map(commentInfo => {
                                             const { authorId, commentsByAuthor } = commentInfo;
                                             const commentAuthor = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                            if (commentAuthor) {
+                                            const isCommentAuthorBlocked = (commentAuthor && blockedUserIds?.length) && blockedUserIds.includes(commentAuthor._id);
+                                            if (!isCommentAuthorBlocked && commentAuthor) {
                                                 const _commentsByAuthor = commentsByAuthor.map(commentByAuthor => {
                                                     const targetComment = targetPost.comments.find(({ commentId }) => commentId === commentByAuthor.id);
                                                     if (targetComment) {
@@ -3710,119 +3733,124 @@ router.route("/users/:package").get((request, response) => {
                     response.json({ isEmpty: true })
                 }
 
-                if (willGetPostsFromFollowing && newPostsFromFollowing && newPostsFromFollowing.length) {
-                    const authorIdsOfPosts = newPostsFromFollowing.map(({ authorId }) => authorId);
+                if (willGetPostsFromFollowing && newPostsFromFollowing?.length) {
+                    let authorIdsOfPosts = newPostsFromFollowing.map(({ authorId }) => authorId);
+                    authorIdsOfPosts = blockedUserIds?.length ? authorIdsOfPosts.filter(userId => !blockedUserIds.includes(userId)) : authorIdsOfPosts;
                     let postIds = [];
-                    newPostsFromFollowing.forEach(({ newPostIds }) => {
+                    const _newPostsFromFollowing = blockedUserIds?.length ? newPostsFromFollowing.filter(({ authorId }) => !blockedUserIds.includes(authorId)) : newPostsFromFollowing;
+                    _newPostsFromFollowing.forEach(({ newPostIds }) => {
                         newPostIds.forEach(({ postId }) => {
                             !postIds.includes(postId) && postIds.push(postId);
                         })
-                    })
-                    User.find(
-                        { _id: { $in: authorIdsOfPosts } },
-                        { username: 1, iconPath: 1 },
-                        error => {
-                            if (error) {
-                                console.error('An error has occurred in getting authors of posts')
-                            } else {
-                                console.log('No error has occurred in getting authors of posts.')
-                            }
-                        }
-                    ).then(authorsOfPosts => {
-                        BlogPost.find(
-                            { _id: { $in: postIds } },
-                            { title: 1, publicationDate: 1 },
+                    });
+                    if (authorIdsOfPosts.length) {
+                        User.find(
+                            { _id: { $in: authorIdsOfPosts } },
+                            { username: 1, iconPath: 1 },
                             error => {
                                 if (error) {
-                                    console.error('An error has occurred in getting posts.')
+                                    console.error('An error has occurred in getting authors of posts')
                                 } else {
-                                    console.log('No error has occurred in getting posts.')
+                                    console.log('No error has occurred in getting authors of posts.')
                                 }
                             }
-                        ).then(newPosts => {
-                            if (newPosts.length && authorsOfPosts.length) {
-                                const _newPosts = newPostsFromFollowing.map(post => {
-                                    const { authorId, newPostIds } = post;
-                                    const author = authorsOfPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                    // check if the author still exist 
-                                    if (author) {
-                                        const { username, iconPath } = author;
-                                        const _newPostIds = newPostIds.map(newPost => {
-                                            const targetPost = newPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(newPost.postId));
-                                            // check if the post still exist
-                                            if (targetPost) {
-                                                const { publicationDate, title } = targetPost;
-                                                const timeElapsedText = _getTimeElapsedText(publicationDate);
-                                                const { date, time, miliSeconds } = publicationDate;
-                                                return {
-                                                    ...newPost,
-                                                    timeElapsedText,
-                                                    title,
-                                                    notificationText: `posted a new article titled: `,
-                                                    createdAt: {
-                                                        date,
-                                                        time
-                                                    },
-                                                    timeStampSort: miliSeconds
-                                                }
-                                            };
-
-                                            return newPost
-                                        });
-
-                                        return {
-                                            ...post,
-                                            // CHANGE 'newPostIds' to 'newPosts'
-                                            authorUsername: username,
-                                            userIcon: iconPath,
-                                            newPostIds: _newPostIds
-                                        }
+                        ).then(authorsOfPosts => {
+                            BlogPost.find(
+                                { _id: { $in: postIds } },
+                                { title: 1, publicationDate: 1 },
+                                error => {
+                                    if (error) {
+                                        console.error('An error has occurred in getting posts.')
+                                    } else {
+                                        console.log('No error has occurred in getting posts.')
                                     }
-
-                                    return post;
-                                });
-                                let _followingNewPosts = [];
-                                _newPosts.forEach(newPost => {
-                                    const { authorId, newPostIds, authorUsername, userIcon } = newPost;
-                                    if (newPostIds?.length) {
-                                        newPostIds.forEach(post => {
-                                            const { postId, title, ..._post } = post;
-                                            if (post.createdAt) {
-                                                _followingNewPosts.push(
-                                                    {
-                                                        isPostFromFollowing: true,
+                                }
+                            ).then(newPosts => {
+                                if (newPosts.length && authorsOfPosts.length) {
+                                    const _newPosts = _newPostsFromFollowing.map(post => {
+                                        const { authorId, newPostIds } = post;
+                                        const author = authorsOfPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                        // check if the author still exist 
+                                        if (author) {
+                                            const { username, iconPath } = author;
+                                            const _newPostIds = newPostIds.map(newPost => {
+                                                const targetPost = newPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(newPost.postId));
+                                                // check if the post still exist
+                                                if (targetPost) {
+                                                    const { publicationDate, title } = targetPost;
+                                                    const timeElapsedText = _getTimeElapsedText(publicationDate);
+                                                    const { date, time, miliSeconds } = publicationDate;
+                                                    return {
+                                                        ...newPost,
+                                                        timeElapsedText,
                                                         title,
-                                                        postId,
-                                                        postAuthorUN: authorUsername,
-                                                        notification: {
-                                                            ..._post,
-                                                            userId: authorId,
-                                                            userIcon: userIcon,
-                                                        }
+                                                        notificationText: `posted a new article titled: `,
+                                                        createdAt: {
+                                                            date,
+                                                            time
+                                                        },
+                                                        timeStampSort: miliSeconds
                                                     }
-                                                )
-                                            }
-                                        })
-                                    }
-                                });
+                                                };
 
-                                _followingNewPosts.length ? response.json({ newPosts: _followingNewPosts }) : response.json({ isEmpty: true })
-                            };
+                                                return newPost
+                                            });
+
+                                            return {
+                                                ...post,
+                                                // CHANGE 'newPostIds' to 'newPosts'
+                                                authorUsername: username,
+                                                userIcon: iconPath,
+                                                newPostIds: _newPostIds
+                                            }
+                                        }
+
+                                        return post;
+                                    });
+                                    let _followingNewPosts = [];
+                                    _newPosts.forEach(newPost => {
+                                        const { authorId, newPostIds, authorUsername, userIcon } = newPost;
+                                        if (newPostIds?.length) {
+                                            newPostIds.forEach(post => {
+                                                const { postId, title, ..._post } = post;
+                                                if (post.createdAt) {
+                                                    _followingNewPosts.push(
+                                                        {
+                                                            isPostFromFollowing: true,
+                                                            title,
+                                                            postId,
+                                                            postAuthorUN: authorUsername,
+                                                            notification: {
+                                                                ..._post,
+                                                                userId: authorId,
+                                                                userIcon: userIcon,
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            })
+                                        }
+                                    });
+
+                                    _followingNewPosts.length ? response.json({ newPosts: _followingNewPosts }) : response.json({ isEmpty: true })
+                                };
+                            })
                         })
-                    })
+                    };
                 } else if (willGetPostsFromFollowing) {
                     response.json({ isEmpty: true })
                 };
 
                 if (willGetNewFollowers && newFollowers && newFollowers.length) {
+                    // followers = current followers of the user 
                     let newFollowersIds = followers.map(({ userId }) => userId);
-                    newFollowersIds = blockedUserIds ? newFollowersIds.filter(userId => !blockedUserIds.includes(userId)) : newFollowersIds;
-                    console.log('newFollowersIds: ', newFollowersIds)
-                    if (newFollowersIds.length) {
+                    newFollowersIds = blockedUserIds?.length ? newFollowersIds.filter(userId => !blockedUserIds.includes(userId)) : newFollowersIds;
+                    let _newFollowers = blockedUserIds ? newFollowers.filter(({ userId }) => !blockedUserIds.includes(userId)) : newFollowers;
+
+                    if (newFollowersIds.length && _newFollowers?.length) {
                         User.find({ _id: { $in: newFollowersIds } }, { username: 1, iconPath: 1 })
                             .then(users => {
-                                let _newFollowers = blockedUserIds ? newFollowers.filter(({ userId }) => !blockedUserIds.includes(userId)) : newFollowers;
-                                if (users.length && _newFollowers.length) {
+                                if (users.length) {
                                     _newFollowers = newFollowers.map(follower => {
                                         const user = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(follower.userId));
                                         // check if the user still exists
@@ -3872,7 +3900,7 @@ router.route("/users/:package").get((request, response) => {
         User.findOne(
             { _id: userId },
             // postActivities = posts by the current user
-            { activities: 1, _id: 0, publishedDrafts: 1, postsActivitiesNotToShow: 1, readingLists: 1 },
+            { activities: 1, _id: 0, publishedDrafts: 1, postsActivitiesNotToShow: 1, readingLists: 1, blockedUsers: 1 },
             error => {
                 if (error) {
                     console.error('An error has occurred in getting current user profile info.')
