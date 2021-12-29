@@ -1,18 +1,16 @@
 
+const { getTime, computeTimeElapsed, getTimeElapsedText, getTimeElapsedInfo } = require("../functions/getTime");
+const { getWordCount } = require('../functions/getWordCount');
+const { getPostTags } = require("../functions/blogPostsFns/blogPostFns");
+const { v4: uuidv4 } = require('uuid');
 const express = require('express');
 const multer = require('multer');
 const User = require("../models/user");
 const BlogPost = require('../models/blogPost');
 const Tag = require("../models/tag");
 const fs = require('fs');
-const timeFns = require("../functions/getTime");
-const { getTime, computeTimeElapsed, getTimeElapsedText, getTimeElapsedInfo } = timeFns;
-const blogPostFns = require("../functions/blogPostsFns/blogPostFns");
-const { getPostTags } = blogPostFns;
 const router = express.Router();
 const path = require('path');
-const addNotificationToDel = require('../functions/addNotificationsToDel');
-const { v4: uuidv4 } = require('uuid');
 
 
 // GOAL: if the current user is following the user that they want to block, delete that user from their following list  
@@ -3860,10 +3858,11 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getUserActivities') {
-        const { willGetReplyLikes, willGetReplies, willGetCommentLikes, willGetPostsByUser } = package;
+        const { willGetReplyLikes, willGetReplies, willGetCommentLikes, willGetPostsByUser, willGetReadingLists } = package;
         User.findOne(
             { _id: userId },
-            { activities: 1, _id: 0, publishedDrafts: 1, postsActivitiesNotToShow: 1 },
+            // postActivities = posts by the current user
+            { activities: 1, _id: 0, publishedDrafts: 1, postsActivitiesNotToShow: 1, readingLists: 1 },
             error => {
                 if (error) {
                     console.error('An error has occurred in getting current user profile info.')
@@ -4084,17 +4083,7 @@ router.route("/users/:package").get((request, response) => {
             } else if (willGetPostsByUser && result?.publishedDrafts?.length) {
                 const { publishedDrafts } = result;
                 const postIds = result.postsActivitiesNotToShow ? publishedDrafts.filter(draftId => !(result.postsActivitiesNotToShow.includes(draftId))) : publishedDrafts;
-                const getWordCount = str => {
-                    if ((str === null) || (str === '')) {
-                        return 0;
-                    } else {
-                        str = str.toString();
-                        const htmlRemovedStr = str.replace(/(<([^>]+)>)/ig, '');
-                        const whiteSpaceRemovedStr = htmlRemovedStr.replace(/&nbsp;/g, ' ');
-                        const bodyWords = whiteSpaceRemovedStr.split(" ").filter(word => word !== "");
-                        return bodyWords.length;
-                    }
-                };
+
                 BlogPost.find(
                     { _id: { $in: postIds } },
                     { publicationDate: 1, previousVersions: 1, editsPublished: 1, title: 1 },
@@ -4104,34 +4093,44 @@ router.route("/users/:package").get((request, response) => {
                 ).then(posts => {
                     // show the edits that were done to the previous versions
                     const _posts = posts.map(post => {
-                        const { _id: postId, previousVersions, ..._post } = post;
-                        if (previousVersions) {
+                        const { _id: postId, previousVersions } = post;
+                        if (previousVersions.length) {
                             const _previousVersions = previousVersions.map((versionA, index) => {
                                 if (index > 0) {
                                     const { title, body, subtitle, tags: tagsA, imgUrl: imgUrlA } = versionA;
                                     const titleWordCountA = getWordCount(title);
-                                    const subtitleWordCountA = subtitle ? getWordCount(subtitle) : 0;
+                                    const subtitleWordCountA = subtitle && getWordCount(subtitle);
                                     const bodyWordCountA = getWordCount(body);
                                     const versionB = previousVersions[index - 1];
                                     const { title: editedTitleB, body: editedBodyB, subtitle: editedSubtitleB, tags: tagsB, imgUrl: imgUrlB } = versionB;
                                     const titleWordCountB = getWordCount(editedTitleB);
-                                    const subtitleWordCountB = editedSubtitleB ? getWordCount(editedSubtitleB) : 0;
+                                    const subtitleWordCountB = editedSubtitleB && getWordCount(editedSubtitleB)
                                     const bodyWordCountB = getWordCount(editedBodyB);
                                     const didTitleChanged = titleWordCountA !== titleWordCountB;
-                                    const didSubtitleChanged = subtitleWordCountA !== subtitleWordCountB;
                                     const didBodyChanged = bodyWordCountA !== bodyWordCountB;
+                                    let subtitleStatus;
                                     let introPicStatus;
                                     if ((imgUrlB === undefined) && (imgUrlA === undefined)) {
-                                        introPicStatus = 'No intro pic available.'
+                                        introPicStatus = 'introPicUnavailable'
                                     } else if ((imgUrlB === undefined) && imgUrlA) {
-                                        introPicStatus = 'Intro pic was added.'
+                                        introPicStatus = 'introPicAdded'
                                     } else if (imgUrlB && (imgUrlA === undefined)) {
-                                        introPicStatus = 'Intro pic was deleted.'
+                                        introPicStatus = 'introPicDel'
                                     } else if ((imgUrlB && imgUrlA) && (imgUrlB === imgUrlA)) {
-                                        introPicStatus = 'No changes to intro pic of article.'
+                                        introPicStatus = 'sameIntroPic'
                                     } else if ((imgUrlB && imgUrlA) && (imgUrlB !== imgUrlA)) {
-                                        introPicStatus = 'Intro pic was updated.'
-
+                                        introPicStatus = 'introPicUpdated'
+                                    }
+                                    if ((editedSubtitleB === undefined) && (subtitle === undefined)) {
+                                        subtitleStatus = 'subtitleUnavailable'
+                                    } else if ((editedSubtitleB === undefined) && subtitle) {
+                                        subtitleStatus = 'subtitleAdded'
+                                    } else if (editedSubtitleB && (subtitle === undefined)) {
+                                        subtitleStatus = 'subtitleDel'
+                                    } else if ((editedSubtitleB && subtitle) && (editedSubtitleB === subtitle)) {
+                                        subtitleStatus = 'sameSubtitle'
+                                    } else if ((editedSubtitleB && subtitle) && (editedSubtitleB !== subtitle)) {
+                                        subtitleStatus = 'subtitleUpdated'
                                     }
                                     const _tagsB = tagsB.map(tag => {
                                         const { _id, isNew, topic } = tag;
@@ -4155,10 +4154,18 @@ router.route("/users/:package").get((request, response) => {
                                     console.log('titleWordCountB: ', titleWordCountB);
                                     const titleWordCountChange = didTitleChanged && (titleWordCountA - titleWordCountB);
                                     console.log('titleWordCountChange: ', titleWordCountChange);
-                                    const subtitleWordCountChange = didSubtitleChanged && (subtitleWordCountA - subtitleWordCountB);
-                                    let _versionA = {
-                                        ...versionA
-                                    }
+                                    const subtitleWordCountChange = subtitle && (subtitleWordCountA - (subtitleWordCountB ?? 0));
+                                    let _versionA = versionA.subtitle ?
+                                        {
+                                            ...versionA,
+                                            subtitle: {
+                                                text: versionA.subtitle
+                                            }
+                                        }
+                                        :
+                                        {
+                                            ...versionA
+                                        }
                                     if (bodyWordCountChange) {
                                         _versionA = {
                                             ..._versionA,
@@ -4174,8 +4181,16 @@ router.route("/users/:package").get((request, response) => {
                                     if (subtitleWordCountChange) {
                                         _versionA = {
                                             ..._versionA,
-                                            subtitleWordCountChange
-                                        }
+                                            subtitle: _versionA.subtitle ?
+                                                {
+                                                    ..._versionA.subtitle,
+                                                    wordCount: subtitleWordCountChange
+                                                }
+                                                :
+                                                {
+                                                    wordCount: subtitleWordCountChange
+                                                }
+                                        };
                                     };
                                     if (didTagsChanged) {
                                         _versionA = {
@@ -4192,7 +4207,16 @@ router.route("/users/:package").get((request, response) => {
 
                                     return {
                                         ..._versionA,
-                                        introPicStatus
+                                        introPicStatus,
+                                        subtitle: _versionA.subtitle ?
+                                            {
+                                                ..._versionA.subtitle,
+                                                status: subtitleStatus
+                                            }
+                                            :
+                                            {
+                                                status: subtitleStatus
+                                            }
                                     }
                                 };
 
@@ -4200,21 +4224,76 @@ router.route("/users/:package").get((request, response) => {
                             });
 
                             return {
-                                ..._post._doc,
+                                ...post._doc,
                                 postId,
                                 previousVersions: _previousVersions,
                             }
                         };
 
                         return {
-                            ..._post._doc,
+                            ...post._doc,
                             postId
                         };
                     });
 
                     response.json({ postsByUser: _posts })
                 })
+            } else if (willGetPostsByUser) {
+                response.json({ isEmpty: true })
+            } else if (willGetReadingLists && result?.readingLists) {
+                let postIds = [];
+                let { readingLists } = result;
+                Object.keys(readingLists).forEach(listName => {
+                    const { list } = readingLists[listName];
+                    list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
+                });
+                if (postIds.length) {
+                    BlogPost.find(
+                        { _id: { $in: postIds } },
+                        { authorId: 1, title: 1 }
+                    ).then(posts => {
+                        if (posts.length) {
+                            const userIds = posts.map(({ authorId }) => authorId);
+                            User.find(
+                                { _id: { $in: userIds } },
+                                { username: 1 }
+                            ).then(usernames => {
+                                Object.keys(readingLists).forEach(listName => {
+                                    const { list: savedPosts } = readingLists[listName];
+                                    if (savedPosts.length) {
+                                        const _savedPosts = savedPosts.map(post => {
+                                            const savedPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.postId));
+                                            if (savedPost) {
+                                                const { title, authorId } = savedPost;
+                                                const { username } = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                                const UIText = `You saved ${username}'s post titled `
+                                                return {
+                                                    ...post,
+                                                    title,
+                                                    username,
+                                                    UIText
+                                                }
+                                            }
+                                        })
+                                        readingLists = {
+                                            ...readingLists,
+                                            [listName]: {
+                                                ...readingLists[listName],
+                                                list: _savedPosts
+                                            }
+                                        }
+                                    };
+                                });
 
+                                response.json({ readingLists });
+                            })
+                        };
+                    })
+                } else {
+                    response.json({ isEmpty: true })
+                }
+            } else if (willGetReadingLists) {
+                response.json({ isEmpty: true });
             }
         })
     }
