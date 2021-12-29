@@ -43,7 +43,7 @@ const BlogPostSchema = new Mongoose.Schema(
         authorId: String,
         editedPost: Object,
         previousVersions: Array,
-        editsPublishedAt: Object
+        editsPublishedAt: Object,
     }
 )
 

@@ -3860,10 +3860,10 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getUserActivities') {
-        const { willGetReplyLikes, willGetReplies, willGetCommentLikes } = package;
+        const { willGetReplyLikes, willGetReplies, willGetCommentLikes, willGetPostsByUser } = package;
         User.findOne(
             { _id: userId },
-            { activities: 1, _id: 0 },
+            { activities: 1, _id: 0, publishedDrafts: 1, postsActivitiesNotToShow: 1 },
             error => {
                 if (error) {
                     console.error('An error has occurred in getting current user profile info.')
@@ -3932,9 +3932,7 @@ router.route("/users/:package").get((request, response) => {
                 })
             } else if (willGetReplyLikes) {
                 response.json({ isEmpty: true });
-            }
-
-            if (willGetReplies && result?.activities?.replies) {
+            } else if (willGetReplies && result?.activities?.replies) {
                 const { replies: repliesByUser } = result.activities;
                 const postIds = repliesByUser.map(({ postId }) => postId);
                 let commentIds = [];
@@ -4012,9 +4010,7 @@ router.route("/users/:package").get((request, response) => {
                 })
             } else if (willGetReplies) {
                 response.json({ isEmpty: true })
-            }
-
-            if (willGetCommentLikes && result?.activities?.likes?.replies) {
+            } else if (willGetCommentLikes && result?.activities?.likes?.replies) {
                 const { comments: likedComments } = result.activities.likes;
                 const postIds = likedComments.map(({ postIdOfComment }) => postIdOfComment);
                 const commentIds = likedComments.map(({ likedCommentIds }) => likedCommentIds).flat();
@@ -4085,6 +4081,128 @@ router.route("/users/:package").get((request, response) => {
                         })
                     }
                 })
+            } else if (willGetPostsByUser && result?.publishedDrafts?.length) {
+                const { publishedDrafts } = result;
+                const postIds = result.postsActivitiesNotToShow ? publishedDrafts.filter(draftId => !(result.postsActivitiesNotToShow.includes(draftId))) : publishedDrafts;
+                const getWordCount = str => {
+                    if ((str === null) || (str === '')) {
+                        return 0;
+                    } else {
+                        str = str.toString();
+                        const htmlRemovedStr = str.replace(/(<([^>]+)>)/ig, '');
+                        const whiteSpaceRemovedStr = htmlRemovedStr.replace(/&nbsp;/g, ' ');
+                        const bodyWords = whiteSpaceRemovedStr.split(" ").filter(word => word !== "");
+                        return bodyWords.length;
+                    }
+                };
+                BlogPost.find(
+                    { _id: { $in: postIds } },
+                    { publicationDate: 1, previousVersions: 1, editsPublished: 1, title: 1 },
+                    error => {
+                        if (error) console.error('An error has occurred in getting published drafts of user.');
+                    }
+                ).then(posts => {
+                    // show the edits that were done to the previous versions
+                    const _posts = posts.map(post => {
+                        const { _id: postId, previousVersions, ..._post } = post;
+                        if (previousVersions) {
+                            const _previousVersions = previousVersions.map((versionA, index) => {
+                                if (index > 0) {
+                                    const { title, body, subtitle, tags: tagsA, imgUrl: imgUrlA } = versionA;
+                                    const titleWordCountA = getWordCount(title);
+                                    const subtitleWordCountA = subtitle ? getWordCount(subtitle) : 0;
+                                    const bodyWordCountA = getWordCount(body);
+                                    const versionB = previousVersions[index - 1];
+                                    const { title: editedTitleB, body: editedBodyB, subtitle: editedSubtitleB, tags: tagsB, imgUrl: imgUrlB } = versionB;
+                                    const titleWordCountB = getWordCount(editedTitleB);
+                                    const subtitleWordCountB = editedSubtitleB ? getWordCount(editedSubtitleB) : 0;
+                                    const bodyWordCountB = getWordCount(editedBodyB);
+                                    const didTitleChanged = titleWordCountA !== titleWordCountB;
+                                    const didSubtitleChanged = subtitleWordCountA !== subtitleWordCountB;
+                                    const didBodyChanged = bodyWordCountA !== bodyWordCountB;
+                                    const didImgChanged = !(imgUrlA !== undefined) ? imgUrlB !== imgUrlA : 'Intro pic was deleted.';
+                                    const _tagsB = tagsB.map(tag => {
+                                        const { _id, isNew, topic } = tag;
+                                        if (isNew) {
+                                            return topic.toLowerCase().trim();
+                                        };
+
+                                        return _id;
+                                    }).sort();
+                                    const _tagsA = tagsA.map(tag => {
+                                        const { _id, isNew, topic } = tag;
+                                        if (isNew) {
+                                            return topic.toLowerCase().trim();
+                                        };
+
+                                        return _id;
+                                    }).sort();
+                                    const didTagsChanged = JSON.stringify(_tagsB) !== JSON.stringify(_tagsA);
+                                    const bodyWordCountChange = didBodyChanged && (bodyWordCountA - bodyWordCountB);
+                                    console.log('titleWordCountA: ', titleWordCountA);
+                                    console.log('titleWordCountB: ', titleWordCountB);
+                                    const titleWordCountChange = didTitleChanged && (titleWordCountA - titleWordCountB);
+                                    console.log('titleWordCountChange: ', titleWordCountChange);
+                                    const subtitleWordCountChange = didSubtitleChanged && (subtitleWordCountA - subtitleWordCountB);
+                                    let _versionA = {
+                                        ...versionA
+                                    }
+                                    if (bodyWordCountChange) {
+                                        _versionA = {
+                                            ..._versionA,
+                                            bodyWordCountChange
+                                        }
+                                    };
+                                    if (titleWordCountChange) {
+                                        _versionA = {
+                                            ..._versionA,
+                                            titleWordCountChange
+                                        }
+                                    };
+                                    if (subtitleWordCountChange) {
+                                        _versionA = {
+                                            ..._versionA,
+                                            subtitleWordCountChange
+                                        }
+                                    };
+                                    if (didTagsChanged) {
+                                        _versionA = {
+                                            ..._versionA,
+                                            didTagsChanged
+                                        }
+                                    };
+                                    // if (didImgChanged) {
+                                    //     _versionA = {
+                                    //         ..._versionA,
+                                    //         didImgChanged
+                                    //     }
+                                    // };
+
+                                    return {
+                                        ..._versionA,
+                                        didImgChanged
+                                    }
+                                };
+
+                                return versionA
+                            });
+
+                            return {
+                                ..._post._doc,
+                                postId,
+                                previousVersions: _previousVersions,
+                            }
+                        };
+
+                        return {
+                            ..._post._doc,
+                            postId
+                        };
+                    });
+
+                    response.json({ postsByUser: _posts })
+                })
+
             }
         })
     }
