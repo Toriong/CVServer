@@ -2810,8 +2810,9 @@ router.route("/users/:package").get((request, response) => {
 
         // GOAL: GET ALL OF THE REPLY NOTIFICATIONS
         // CASE#1:
-        User.findOne({ _id: userId }, { _id: 0, notifications: 1, publishedDrafts: 1, followers: 1 }).then(result => {
-            const { publishedDrafts, notifications, followers } = result;
+        User.findOne({ _id: userId }, { _id: 0, notifications: 1, publishedDrafts: 1, followers: 1, blockedUsers: 1 }).then(result => {
+            const { publishedDrafts, notifications, followers, blockedUsers } = result;
+            const blockedUserIds = blockedUsers && blockedUsers.map(({ userId }) => userId);
             if (notifications) {
                 const { replies, comments, likes, newPostsFromFollowing, newFollowers } = notifications;
                 if (willGetReplies && (replies && replies.length)) {
@@ -2848,6 +2849,7 @@ router.route("/users/:package").get((request, response) => {
                         const _infoOfAuthors = postsOfReplies.map(({ authorId }) => authorId);
                         authorIds = [...authorIds, ..._infoOfAuthors];
                         authorIds = [...new Set(authorIds)];
+                        authorIds = blockedUserIds ? authorIds.filter(userId => !blockedUserIds.includes(userId)) : authorIds;
                         User.find(
                             { _id: authorIds },
                             { username: 1, iconPath: 1, publishedDrafts: 1 },
@@ -2873,8 +2875,8 @@ router.route("/users/:package").get((request, response) => {
                                     // the comments doesn't exist
                                     // the user deleted the comments
                                     // if the user deleted the comments, then delete the reply notification 
-                                    console.log(postAuthor)
-                                    if ((postAuthor || isPostByCU) && targetPost && targetPost.comments && targetPost.comments.length) {
+                                    console.log('postAuthor: ', postAuthor);
+                                    if ((postAuthor || isPostByCU) && !blockedUserIds.includes(postAuthor?._id) && targetPost && targetPost.comments && targetPost.comments.length) {
                                         const repliesInfo_ = repliesInfo.map(replyInfo => {
                                             // CASE1: THE COMMENT AUTHOR DOESN'T EXIST
                                             // CASE2: THE COMMENT DOESN'T EXIST
@@ -3030,7 +3032,7 @@ router.route("/users/:package").get((request, response) => {
                                 // };
 
                                 // response.json({ replies: _notifications })
-                            } else {
+                            } else if (replies_) {
                                 let _replyNotifications = [];
                                 replies_.forEach(post => {
                                     const { postId, repliesInfo, title, postAuthorUN } = post;
@@ -3813,40 +3815,48 @@ router.route("/users/:package").get((request, response) => {
                 };
 
                 if (willGetNewFollowers && newFollowers && newFollowers.length) {
-                    const newFollowersIds = followers.map(({ userId }) => userId);
-                    User.find({ _id: { $in: newFollowersIds } }, { username: 1, iconPath: 1 })
-                        .then(users => {
-                            if (users.length) {
-                                const _newFollowers = newFollowers.map(follower => {
-                                    const user = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(follower.userId));
-                                    // check if the user still exists
-                                    if (user) {
-                                        const { wasFollowedAt } = followers.find(({ userId }) => userId === follower.userId);
-                                        const timeElapsedText = _getTimeElapsedText(wasFollowedAt);
-                                        const { date, time, miliSeconds } = wasFollowedAt;
+                    let newFollowersIds = followers.map(({ userId }) => userId);
+                    newFollowersIds = blockedUserIds ? newFollowersIds.filter(userId => !blockedUserIds.includes(userId)) : newFollowersIds;
+                    console.log('newFollowersIds: ', newFollowersIds)
+                    if (newFollowersIds.length) {
+                        User.find({ _id: { $in: newFollowersIds } }, { username: 1, iconPath: 1 })
+                            .then(users => {
+                                let _newFollowers = blockedUserIds ? newFollowers.filter(({ userId }) => !blockedUserIds.includes(userId)) : newFollowers;
+                                if (users.length && _newFollowers.length) {
+                                    _newFollowers = newFollowers.map(follower => {
+                                        const user = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(follower.userId));
+                                        // check if the user still exists
+                                        if (user) {
+                                            const { wasFollowedAt } = followers.find(({ userId }) => userId === follower.userId);
+                                            const timeElapsedText = _getTimeElapsedText(wasFollowedAt);
+                                            const { date, time, miliSeconds } = wasFollowedAt;
 
-                                        return {
-                                            notification: {
-                                                ...follower,
-                                                timeElapsedText,
-                                                userIcon: user.iconPath,
-                                                username: user.username,
-                                                followedAt: {
-                                                    date,
-                                                    time
+                                            return {
+                                                notification: {
+                                                    ...follower,
+                                                    timeElapsedText,
+                                                    userIcon: user.iconPath,
+                                                    username: user.username,
+                                                    followedAt: {
+                                                        date,
+                                                        time
+                                                    },
+                                                    timeStampSort: miliSeconds
                                                 },
-                                                timeStampSort: miliSeconds
-                                            },
-                                            isNewFollower: true
+                                                isNewFollower: true
+                                            }
                                         }
-                                    }
 
-                                    return follower
-                                });
-                                response.json({ newFollowers: _newFollowers });
-                            };
-
-                        });
+                                        return follower
+                                    });
+                                    response.json({ newFollowers: _newFollowers });
+                                } else {
+                                    response.json({ isEmpty: true });
+                                }
+                            });
+                    } else {
+                        response.json({ isEmpty: true });
+                    }
                 } else if (willGetNewFollowers) {
                     response.json({ isEmpty: true });
                 }
@@ -4294,6 +4304,8 @@ router.route("/users/:package").get((request, response) => {
                 }
             } else if (willGetReadingLists) {
                 response.json({ isEmpty: true });
+            } else if (willGetBlocks) {
+
             }
         })
     }
