@@ -79,8 +79,11 @@ const userSchema = new Schema({
     followers: Array,
     readingLists: Object,
     blockedUsers: Array,
-    notifications: Object
+    notifications: Object,
+    deleteActivities: Object
 });
+
+// deleteActivities will consist of the following: {ids of replies, ids of comments,ids of posts by user, ids of liked replies, ids of liked comments, ids of liked posts, for reading list, don't show it if the user request to delete the log from their activity log (store a boolean that will determine whether or not to sho the reading list activity),  }
 
 
 // what is mongoose.model is doing?

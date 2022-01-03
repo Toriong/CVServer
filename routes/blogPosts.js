@@ -593,7 +593,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
         // GOAL: push the old version of the draft into the oldVersions field
         // console.log('newPostEdits: ', newPostEdits);
         // console.log('postId: ', postId);
-        const { title, body, subtitle, imgUrl, _id: postId } = data;
+        const { title, body, subtitle, imgUrl, _id: postId, tags } = data;
         BlogPost.findOne(
             { _id: postId }, { body: 1, title: 1, tags: 1, subtitle: 1, imgUrl: 1, publicationDate: 1, editsPublishedAt: 1 },
             error => {
@@ -625,8 +625,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                     imgUrl: ''
                 }
             }
-
-            newPostEdits = newPostEdits ? { ...newPostEdits, title: title, body: body, editsPublishedAt: getTime() } : { title: title, body: body, editsPublishedAt: getTime() };
+            newPostEdits = newPostEdits ? { ...newPostEdits, title: title, body: body, tags: tags, editsPublishedAt: getTime() } : { title: title, body: body, tags: tags, editsPublishedAt: getTime() };
 
             if (previousSubtitle) {
                 previousPost = { subtitle: previousSubtitle };
