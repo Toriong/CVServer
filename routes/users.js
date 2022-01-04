@@ -4155,8 +4155,8 @@ router.route("/users/:package").get((request, response) => {
                     Tag.find({}).then(tags => {
                         // GOAL: get all of the info for the tags that were selected if the tags were the default tags on the site
                         const _posts = posts.map(post => {
-                            const { _id: postId, previousVersions, body, imgUrl, title, subtitle, tags: postTags, editsPublishedAt } = post;
-                            const bodyHtmlStriped = body.replace(/<[^>]+>/g, '');
+                            const { _id: postId, previousVersions, body: postedBody, imgUrl, title, subtitle, tags: postTags, editsPublishedAt } = post;
+                            const bodyHtmlStriped = postedBody.replace(/<[^>]+>/g, '');
                             const decodedBodyHtmlStriped = he.decode(bodyHtmlStriped);
                             const wordCount = getWordCount(decodedBodyHtmlStriped);
                             let bodyPreview;
@@ -4167,7 +4167,7 @@ router.route("/users/:package").get((request, response) => {
                             }
                             // const isGreaterThan50Words = decodedBodyHtmlStriped.split(' ').length > 50;
                             if (previousVersions.length) {
-                                const publishedVersion = { isPublished: true, title, subtitle, tags: postTags, imgUrl, wordCount, publicationDate: editsPublishedAt };
+                                const publishedVersion = { isPublished: true, title, subtitle, tags: postTags, imgUrl, wordCount, publicationDate: editsPublishedAt, body: postedBody };
                                 let _previousVersions = [...previousVersions, publishedVersion];
                                 _previousVersions = _previousVersions.map((versionA, index) => {
                                     console.log('versionA: ', versionA);
@@ -4185,19 +4185,24 @@ router.route("/users/:package").get((request, response) => {
 
                                         return tag;
                                     });
-                                    const { title, body, subtitle, tags: tagsA, imgUrl: imgUrlA, wordCount } = versionA;
-                                    const bodyWordCountA = wordCount ?? getWordCount(body);
+                                    const { title, body: versionABody, subtitle, tags: tagsA, imgUrl: imgUrlA } = versionA;
+                                    const imgUrl = (imgUrlA && index === 0) && { path: imgUrlA };
+                                    console.log('ribeye: ', versionABody);
+                                    const bodyWordCountA = getWordCount(versionABody)
                                     if (index > 0) {
                                         const titleWordCountA = getWordCount(title);
                                         const subtitleWordCountA = subtitle && getWordCount(subtitle);
-                                        const versionB = previousVersions[index - 1];
+                                        const versionB = _previousVersions[index - 1];
+                                        console.log('versionB: ', versionB);
                                         const { title: editedTitleB, body: editedBodyB, subtitle: editedSubtitleB, tags: tagsB, imgUrl: imgUrlB } = versionB;
+                                        console.log('editedBodyB: ', editedBodyB);
+                                        const didBodyContentChange = editedBodyB !== versionABody;
                                         const titleWordCountB = getWordCount(editedTitleB);
                                         const subtitleWordCountB = editedSubtitleB && getWordCount(editedSubtitleB)
                                         const bodyWordCountB = getWordCount(editedBodyB);
                                         const didTitleWordCountChange = (titleWordCountA !== titleWordCountB);
                                         const didTitleContentChange = title !== editedTitleB;
-                                        const didBodyChanged = bodyWordCountA !== bodyWordCountB;
+                                        const didBodyCountChange = bodyWordCountA !== bodyWordCountB;
                                         let subtitleStatus;
                                         let introPicStatus;
                                         if ((imgUrlB === undefined) && (imgUrlA === undefined)) {
@@ -4211,6 +4216,7 @@ router.route("/users/:package").get((request, response) => {
                                         } else if ((imgUrlB && imgUrlA) && (imgUrlB !== imgUrlA)) {
                                             introPicStatus = 'introPicUpdated'
                                         }
+                                        const _imgUrl = { status: introPicStatus, path: imgUrlA }
                                         if ((editedSubtitleB === undefined) && (subtitle === undefined)) {
                                             subtitleStatus = 'subtitleUnavailable'
                                         } else if ((editedSubtitleB === undefined) && subtitle) {
@@ -4239,31 +4245,53 @@ router.route("/users/:package").get((request, response) => {
                                             return _id;
                                         }).sort();
                                         const didTagsChanged = JSON.stringify(_tagsB) !== JSON.stringify(_tagsA);
-                                        const bodyWordCountChange = didBodyChanged && (bodyWordCountA - bodyWordCountB);
+                                        const bodyWordCountChange = didBodyCountChange && (bodyWordCountA - bodyWordCountB);
                                         const titleWordCountChange = didTitleWordCountChange && (titleWordCountA - titleWordCountB);
                                         const subtitleWordCountChange = subtitle && (subtitleWordCountA - (subtitleWordCountB ?? 0));
                                         console.log('bodyWordCountChange: ', bodyWordCountChange);
-                                        let _versionA = versionA.subtitle ?
+                                        // const { body, ...__versionA } = versionA;
+                                        // console.log('__versionA', __versionA);
+                                        let _versionA = subtitle ?
                                             {
                                                 ...versionA,
                                                 title: {
-                                                    text: versionA.title
+                                                    text: title
+                                                },
+                                                body: {
+                                                    wordCount: bodyWordCountA,
+                                                    text: versionABody
                                                 },
                                                 subtitle: {
-                                                    text: versionA.subtitle
+                                                    text: subtitle
                                                 }
                                             }
                                             :
                                             {
                                                 ...versionA,
                                                 title: {
-                                                    text: versionA.title
+                                                    text: title
+                                                },
+                                                body: {
+                                                    wordCount: bodyWordCountA,
+                                                    text: versionABody
                                                 }
                                             }
+                                        if (didBodyContentChange) {
+                                            _versionA = {
+                                                ..._versionA,
+                                                body: {
+                                                    ..._versionA.body,
+                                                    didChange: didBodyContentChange
+                                                }
+                                            }
+                                        }
                                         if (bodyWordCountChange) {
                                             _versionA = {
                                                 ..._versionA,
-                                                bodyWordCountChange
+                                                body: {
+                                                    ..._versionA.body,
+                                                    wordCountChange: bodyWordCountChange
+                                                }
                                             }
                                         };
                                         if (titleWordCountChange) {
@@ -4280,7 +4308,7 @@ router.route("/users/:package").get((request, response) => {
                                                 ..._versionA,
                                                 title: {
                                                     ..._versionA.title,
-                                                    didContentChange: didTitleContentChange
+                                                    didChange: didTitleContentChange
                                                 }
                                             }
                                         }
@@ -4308,9 +4336,7 @@ router.route("/users/:package").get((request, response) => {
                                         delete _versionA._id;
                                         return {
                                             ..._versionA,
-                                            introPicStatus,
-                                            body,
-                                            bodyWordCount: bodyWordCountA,
+                                            imgUrl: _imgUrl,
                                             tags: _tags,
                                             subtitle: _versionA.subtitle ?
                                                 {
@@ -4328,15 +4354,18 @@ router.route("/users/:package").get((request, response) => {
                                     return {
                                         ...versionA,
                                         tags: _tags,
-                                        body,
-                                        bodyWordCount: bodyWordCountA
+                                        imgUrl,
+                                        body: {
+                                            wordCount: bodyWordCountA,
+                                            text: versionABody.text ?? versionABody
+                                        }
                                     }
                                 });
-                                _previousVersions = _previousVersions.map(prevVersion => {
-                                    const _prevVersion = { ...prevVersion };
-                                    _prevVersion.body && delete _prevVersion.body;
-                                    return _prevVersion;
-                                })
+                                // _previousVersions = _previousVersions.map(prevVersion => {
+                                //     const _prevVersion = { ...prevVersion };
+                                //     _prevVersion.body && delete _prevVersion.body;
+                                //     return _prevVersion;
+                                // })
 
 
 

@@ -521,9 +521,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 res.json({ message: 'Edit made to copy of posted article.' });
             });
         } else {
-            // check if the editedPost exist 
-            // if the editedPost field doesn't exist, then insert the current version of the draft into the field 'editedPost'
-            // if the editedPost field does exist, then set the updates into the editedPost and using dot notation insert the edits into the field that was changed 
+            // insert new edits into the editPost field 
             BlogPost.findOne(
                 { _id: postId },
                 error => {
@@ -534,6 +532,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                     }
                 }
             ).then(result => {
+                // GOAL: whenever there is an update to whatever aspect of the draft that was updated, updated the whole entire field of 'editedPost'
                 const { editedPost, ...postInfo } = result;
                 if (editedPost) {
                     BlogPost.updateOne(
@@ -559,7 +558,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
 
                 } else {
                     const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, previousVersions, editsPublishedAt, ...postContent } = postInfo._doc
-                    // GOAL:  get all of the tag info for the posted article, when the  
                     const _editedPost = {
                         ...postContent,
                         timeOfLastEdit,
