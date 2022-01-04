@@ -439,7 +439,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
 
     } else if (name === 'editPost') {
         const { draftId: postId, field, wasPicDeleted, imgUrl } = req.body;
-        const { timeOfLastEdit, data: draftUpdate } = data;
+        const { timeOfLastEdit, draftUpdated } = data;
 
         if (wasPicDeleted) {
             // Don't delete the image if it is the only one in the file system
@@ -450,14 +450,12 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             // check if the field 'editedPost' exist. If it does, then proceed with the code below. If it doesn't, then create the editedPost field 
 
             BlogPost.findOne({ _id: postId }).then(result => {
-                console.log("result: ", result);
                 // GOAL:  get all of the tag info for the posted article, when the  
-                const { editedPost, ...postInfo } = result;
-                const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, editsPublishedAt, previousVersions, ...postContent } = postInfo._doc
-                const { imgUrl: postIntroPic } = postContent;
+                const { editedPost, imgUrl: postIntroPic } = result;
                 const isSamePic = postIntroPic === imgUrl;
 
-                if (!isSamePic) {
+                // only delete the image that is stored in 'editedPost' field of the targeted post, not the image that is posted on the blog
+                if (!isSamePic && imgUrl) {
                     console.log('Will delete the intro pic of post that is being edited.')
                     fs.unlink(`./postIntroPics/${imgUrl}`, err => {
                         if (err) {
@@ -494,9 +492,9 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                     );
                 } else {
                     // GOAL:  get all of the tag info for the posted article, when the  
-                    delete postContent.imgUrl;
+                    delete draftUpdated.imgUrl;
                     const _editedPost = {
-                        ...postContent,
+                        ...draftUpdated,
                         timeOfLastEdit
                     };
                     BlogPost.updateOne(
@@ -521,70 +519,68 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 res.json({ message: 'Edit made to copy of posted article.' });
             });
         } else {
-            // insert new edits into the editPost field 
-            BlogPost.findOne(
-                { _id: postId },
-                error => {
+            // insert new edits into the editPost field
+            // GOAL: update the whole entire field of editedPost whenever the user updates any of the fields in the front-end
+            BlogPost.updateOne(
+                {
+                    _id: postId,
+                },
+                {
+                    $set:
+                    {
+                        editedPost: { ...draftUpdated, timeOfLastEdit }
+                    }
+                },
+                (error, numsAffected) => {
                     if (error) {
-                        console.error('An error has occurred in getting the target post to be edited: ', error);
+                        console.error("error message: ", error);
                     } else {
-                        console.log('No error has occurred in getting the target post to be edited.')
+                        console.log(`First edit. The field '${field}' was updated, numsAffected: `, numsAffected);
+                        res.json({ message: 'First edit. Edit made to copy of posted article.' });
                     }
                 }
-            ).then(result => {
-                // GOAL: whenever there is an update to whatever aspect of the draft that was updated, updated the whole entire field of 'editedPost'
-                const { editedPost, ...postInfo } = result;
-                if (editedPost) {
-                    BlogPost.updateOne(
-                        {
-                            _id: postId,
-                        },
-                        {
-                            $set:
-                            {
-                                [`editedPost.${field}`]: draftUpdate,
-                                'editedPost.timeOfLastEdit': timeOfLastEdit
-                            }
-                        },
-                        (error, numsAffected) => {
-                            if (error) {
-                                console.error("error message: ", error);
-                            } else {
-                                console.log(`${field} was updated, numsAffected: `, numsAffected);
-                                res.json({ message: 'Edit made to copy of posted article.' });
-                            }
-                        }
-                    )
+            );
 
-                } else {
-                    const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, previousVersions, editsPublishedAt, ...postContent } = postInfo._doc
-                    const _editedPost = {
-                        ...postContent,
-                        timeOfLastEdit,
-                        [field]: draftUpdate,
-                    };
 
-                    BlogPost.updateOne(
-                        {
-                            _id: postId,
-                        },
-                        {
-                            $set:
-                            {
-                                editedPost: _editedPost,
-                            }
-                        },
-                        (error, numsAffected) => {
-                            if (error) {
-                                console.error("error message: ", error);
-                            } else {
-                                console.log(`First edit. The field '${field}' was updated, numsAffected: `, numsAffected);
-                                res.json({ message: 'First edit. Edit made to copy of posted article.' });
-                            }
-                        }
-                    );
-                };
-            })
+
+            // BlogPost.findOne(
+            //     { _id: postId },
+            //     error => {
+            //         if (error) {
+            //             console.error('An error has occurred in getting the target post to be edited: ', error);
+            //         } else {
+            //             console.log('No error has occurred in getting the target post to be edited.')
+            //         }
+            //     }
+            // ).then(result => {
+            //     // GOAL: whenever there is an update to whatever aspect of the draft that was updated, updated the whole entire field of 'editedPost'
+            //     const { editedPost, ...postInfo } = result;
+            //     if (editedPost) {
+            //         BlogPost.updateOne(
+            //             {
+            //                 _id: postId,
+            //             },
+            //             {
+            //                 $set:
+            //                 {
+            //                     [`editedPost.${field}`]: draftUpdate,
+            //                     'editedPost.timeOfLastEdit': timeOfLastEdit
+            //                 }
+            //             },
+            //             (error, numsAffected) => {
+            //                 if (error) {
+            //                     console.error("error message: ", error);
+            //                 } else {
+            //                     console.log(`${field} was updated, numsAffected: `, numsAffected);
+            //                     res.json({ message: 'Edit made to copy of posted article.' });
+            //                 }
+            //             }
+            //         )
+
+            //     } else {
+            //         const { _id, authorId, __v, comments, userIdsOfLikes, publicationDate, previousVersions, editsPublishedAt, ...postContent } = postInfo._doc
+            //     };
+            // })
         }
     } else if (name === 'publishEdits') {
         // GOAL: set the following fields: title, body, subtitle (if exist), imgUrl (if exist), and tags 
