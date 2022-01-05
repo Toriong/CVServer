@@ -4404,8 +4404,11 @@ router.route("/users/:package").get((request, response) => {
                                 return {
                                     ...post._doc,
                                     imgUrl,
-                                    wordCount,
-                                    bodyPreview: bodyPreview ?? decodedBodyHtmlStriped,
+                                    body: {
+                                        preview: bodyPreview ?? decodedBodyHtmlStriped,
+                                        full: postedBody,
+                                        wordCount
+                                    },
                                     previousVersions: _previousVersions.reverse()
                                 }
                             };
@@ -4415,8 +4418,11 @@ router.route("/users/:package").get((request, response) => {
                             return {
                                 ...post._doc,
                                 imgUrl,
-                                wordCount,
-                                bodyPreview: bodyPreview ?? decodedBodyHtmlStriped
+                                body: {
+                                    preview: bodyPreview ?? decodedBodyHtmlStriped,
+                                    full: postedBody,
+                                    wordCount
+                                }
                             };
                         });
 
@@ -4474,9 +4480,17 @@ router.route("/users/:package").get((request, response) => {
                                 { _id: { $in: userIds } },
                                 { username: 1 }
                             ).then(usernames => {
+                                // GOAL: put each reading list into its own value in an array
+                                // notes brainstorm:
+                                // get all name of the list
+                                // use the name of the list to get the values of the reading list
+                                // create the following object: {listName, all of the values of the list}
+                                // push the values into an array
+                                let _readingLists = [];
                                 Object.keys(readingLists).forEach(listName => {
-                                    const { list: savedPosts } = readingLists[listName];
+                                    const { list: savedPosts, createdAt, editedAt } = readingLists[listName];
                                     if (savedPosts.length) {
+                                        // insert all of the info pertaining to the post
                                         const _savedPosts = savedPosts.map(post => {
                                             const savedPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.postId));
                                             if (savedPost) {
@@ -4498,10 +4512,75 @@ router.route("/users/:package").get((request, response) => {
                                                 list: _savedPosts
                                             }
                                         }
+                                        // GOAL: put all reading list that were created on the same date in the same object that will be stored in an array of objects
+                                        // brain storm notes:
+                                        // for each object that will stored in the array that will be sent to the client, its data structure will be as follows: {publicationDate, isReadingList: true, list: [put 'readingList' into here]}
+                                        // for the first reading list, put the above dataStructure into _readingLists
+                                        // then for the next loop, check if the current date is already in the _readingList. If it is, then find the list and push the 'readingList' into posts. 
+                                        const { time, date } = createdAt;
+                                        let _previousNames;
+                                        if (readingLists[listName].previousNames) {
+                                            _previousNames = readingLists[listName].previousNames.map(name => {
+                                                const _time = convertToStandardTime(name.timeOfChange.time)
+                                                return {
+                                                    ...name,
+                                                    timeOfChange: {
+                                                        ...name.timeOfChange,
+                                                        time: _time
+                                                    }
+                                                }
+                                            }).reverse()
+                                        }
+                                        let _readingList = {
+                                            ...readingLists[listName],
+                                            listName,
+                                            createdAt: time
+                                        };
+                                        if (editedAt) {
+                                            _readingList = {
+                                                ..._readingList,
+                                                editsPublishedAt: {
+                                                    ...editedAt,
+                                                    time: convertToStandardTime(editedAt.time)
+                                                }
+                                            }
+                                            delete _readingList.editedAt;
+                                        }
+                                        if (_previousNames) {
+                                            _readingList = {
+                                                ..._readingList,
+                                                previousNames: _previousNames
+                                            }
+                                        }
+                                        const isDatePresent = _readingLists.map(({ publicationDate }) => publicationDate).includes(date);
+                                        if (isDatePresent) {
+                                            _readingLists = _readingLists.map(readingList => {
+                                                const { publicationDate, activities } = readingList;
+                                                if (publicationDate === date) {
+                                                    return {
+                                                        ...readingList,
+                                                        activities: [...activities, _readingList]
+                                                    }
+                                                };
+
+                                                return readingList;
+                                            })
+                                        } else {
+                                            const creationOfLists = { publicationDate: date, isReadingLists: true, activities: [_readingList] }
+                                            _readingLists.push(creationOfLists)
+                                        }
                                     };
                                 });
-
-                                response.json({ readingLists });
+                                if (_readingLists.length) {
+                                    _readingLists = _readingLists.sort(({ publicationDate: publicationDateA }, { publicationDate: publicationDateB }) => {
+                                        if (publicationDateA > publicationDateB) return -1;
+                                        if (publicationDateA < publicationDateB) return 1;
+                                        return 0;
+                                    })
+                                    response.json({ readingLists: _readingLists })
+                                } else {
+                                    response.json({ isEmpty: true });
+                                }
                             })
                         };
                     })
