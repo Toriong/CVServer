@@ -2411,6 +2411,37 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             );
         }
+    } else if (name === 'deleteActivity') {
+        // WHAT I WANT: delete the activity from the database by not showing the post id when gathering the posts that were by the current user when displaying user activities on the DOM
+        // GOAL: when the user deletes a post activity, get the post id and insert it into the activitiesDeleted.posts
+        // push the id of the post into activities.posts
+        // the user is found by using the user id
+        // the following package is received from the client side: {the user id, the name of the package, the id of the post, type === 'deletedPostByUser'}
+        // have two fields for the likes activity (likes.comments, likes.replies, likes.posts)
+        const { activityId, field1, field2 } = data;
+        if (field2) {
+
+        } else {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $push:
+                    {
+                        [`activitiesDeleted.${field1}`]: activityId
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in deleting post activity from user. ', error)
+                    } else {
+                        console.log(`An activity was deleted from ${field1}`, numsAffected);
+                        response.sendStatus(200);
+                    }
+                }
+            )
+        }
+
+
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -3899,11 +3930,11 @@ router.route("/users/:package").get((request, response) => {
         })
     } else if (name === 'getUserActivities') {
         const { willGetReplyLikes, willGetReplies, willGetCommentLikes, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetComments, willGetPostLikes, willGetFollowing } = package;
-        console.log('willGetPostLikes: ', willGetPostLikes);
+        // GOAL: get the deleted post activities 
         User.findOne(
             { _id: userId },
             // postActivities = posts by the current user
-            { activities: 1, _id: 0, publishedDrafts: 1, postsActivitiesNotToShow: 1, readingLists: 1, blockedUsers: 1 },
+            { activities: 1, _id: 0, publishedDrafts: 1, postsActivitiesNotToShow: 1, readingLists: 1, blockedUsers: 1, activitiesDeleted: 1 },
             error => {
                 if (error) {
                     console.error('An error has occurred in getting current user profile info.')
@@ -4142,8 +4173,8 @@ router.route("/users/:package").get((request, response) => {
                     }
                 })
             } else if (willGetPosts && result?.publishedDrafts?.length) {
-                const { publishedDrafts } = result;
-                const postIds = result.postsActivitiesNotToShow ? publishedDrafts.filter(draftId => !(result.postsActivitiesNotToShow.includes(draftId))) : publishedDrafts;
+                const { publishedDrafts, activitiesDeleted } = result;
+                const postIds = activitiesDeleted?.posts ? publishedDrafts.filter(draftId => !activitiesDeleted.posts.includes(draftId)) : publishedDrafts;
 
                 BlogPost.find(
                     { _id: { $in: postIds } },
@@ -4388,9 +4419,8 @@ router.route("/users/:package").get((request, response) => {
                                 bodyPreview: bodyPreview ?? decodedBodyHtmlStriped
                             };
                         });
-                        // if two or more posts were posted on the same date, then put them into the same object with the publication.date at the top level of the object
-                        // have all of the posts be placed in the posts field 
-                        // have the following data structure: {isPostsByUser, publicationDate, posts}
+
+                        // putting posts that were posted on the same date in the same object
                         let postsSorted = [];
                         _posts.forEach(post => {
                             const { editsPublishedAt, publicationDate, ...postInfo } = post;
@@ -4399,12 +4429,12 @@ router.route("/users/:package").get((request, response) => {
                             const doesDateExist = postsSorted.map(({ publicationDate }) => publicationDate).includes(date);
                             if (doesDateExist) {
                                 postsSorted = postsSorted.map(post => {
-                                    const { publicationDate: _publicationDate, posts } = post;
+                                    const { publicationDate: _publicationDate, activities } = post;
                                     if (date === _publicationDate) {
                                         const _post = editsPublishedAt ? { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) }, editsPublishedAt: { ...editsPublishedAt, time: convertToStandardTime(editsPublishedAt.time) } } : { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) } }
                                         return {
                                             ...post,
-                                            posts: [...posts, _post]
+                                            activities: [...activities, _post]
                                         }
                                     };
 
@@ -4412,12 +4442,16 @@ router.route("/users/:package").get((request, response) => {
                                 })
                             } else {
                                 const _post = editsPublishedAt ? { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) }, editsPublishedAt: { ...editsPublishedAt, time: convertToStandardTime(editsPublishedAt.time) } } : { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) } }
-                                const postActivity = { publicationDate: publicationDate.date, isPostByUser: true, posts: [_post] };
+                                const postActivity = { publicationDate: publicationDate.date, isPostByUser: true, activities: [_post] };
                                 postsSorted.push(postActivity);
                             }
                         })
-
-                        response.json({ postsByUser: postsSorted })
+                        const _postSorted = postsSorted.sort((postA, postB) => {
+                            if (postA.publicationDate > postB.publicationDate) return -1;
+                            if (postA.publicationDate < postB.publicationDate) return 1;
+                            return 0;
+                        })
+                        response.json({ postsByUser: _postSorted })
                     });
                 })
             } else if (willGetPosts) {
