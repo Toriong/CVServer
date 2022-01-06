@@ -4520,16 +4520,41 @@ router.route("/users/:package").get((request, response) => {
                                         const { time, date } = createdAt;
                                         let _previousNames;
                                         if (readingLists[listName].previousNames) {
-                                            _previousNames = readingLists[listName].previousNames.map(name => {
-                                                const _time = convertToStandardTime(name.timeOfChange.time)
-                                                return {
-                                                    ...name,
-                                                    timeOfChange: {
-                                                        ...name.timeOfChange,
-                                                        time: _time
-                                                    }
+                                            // _previousNames = readingLists[listName].previousNames.map(name => {
+                                            //     const _time = convertToStandardTime(name.timeOfChange.time)
+                                            //     return {
+                                            //         ...name,
+                                            //         timeOfChange: {
+                                            //             ...name.timeOfChange,
+                                            //             time: _time
+                                            //         }
+                                            //     }
+                                            // }).reverse()
+
+                                            // GOAL: put the following data structure into previousNames: {date of the readingList creation, }
+                                            readingLists[listName].previousNames.reverse().forEach(name => {
+                                                const { oldName, newName, timeOfChange } = name
+                                                const { date: dateOfChange, time } = timeOfChange;
+                                                const previousName = { oldName, newName, time: convertToStandardTime(time) };
+                                                const isDatePresent = _previousNames && _previousNames.map(({ date }) => date).includes(dateOfChange);
+                                                if (isDatePresent) {
+                                                    _previousNames = _previousNames.map(name => {
+                                                        const { date: _dateOfChange, previousNames } = name;
+                                                        if (_dateOfChange === dateOfChange) {
+                                                            return {
+                                                                ...name,
+                                                                previousNames: [...previousNames, previousName]
+                                                            }
+                                                        };
+
+                                                        return name
+                                                    })
+                                                } else {
+                                                    const previousNameDefault = { date: dateOfChange, previousNames: [previousName] }
+                                                    _previousNames = _previousNames ? [..._previousNames, previousNameDefault] : [previousNameDefault]
                                                 }
-                                            }).reverse()
+
+                                            })
                                         }
                                         let _readingList = {
                                             ...readingLists[listName],
