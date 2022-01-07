@@ -12,6 +12,7 @@ const router = express.Router();
 const path = require('path');
 const moment = require('moment');
 const he = require('he');
+const { sortListNamesByCreation } = require("../functions/sortListNamesByCreation");
 
 
 
@@ -994,7 +995,8 @@ router.route("/users/updateInfo").post((request, response) => {
                     $set:
                     {
                         [`readingLists.${title}.isPrivate`]: isPrivate,
-                        [`readingLists.${title}.createdAt`]: listCreatedAt
+                        [`readingLists.${title}.createdAt`]: listCreatedAt,
+                        [`readingLists.${title}.id`]: uuidv4()
                     }
                 },
                 (error, numsAffected) => {
@@ -1278,8 +1280,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 }
             );
-        }
-        if (isPrivate || (isPrivate === false)) {
+        } else if (isPrivate || (isPrivate === false)) {
             User.updateOne(
                 { _id: userId },
                 {
@@ -1298,8 +1299,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 }
             );
-        };
-        if (editedListName) {
+        } else if (editedListName) {
             User.updateOne(
                 { _id: userId },
                 {
@@ -2576,7 +2576,9 @@ router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req,
     console.log('Request completed')
 });
 
-
+// user presses on the previous names button
+// send a get request to get the previous names from the db
+// the previous name is received 
 
 
 
@@ -4463,11 +4465,17 @@ router.route("/users/:package").get((request, response) => {
             } else if (willGetPosts) {
                 response.json({ isEmpty: true })
             } else if (willGetReadingLists && result?.readingLists) {
+                // GOAL: don't get the reading list that was deleted from activities. 
                 let postIds = [];
-                let { readingLists } = result;
+                let { readingLists, activitiesDeleted } = result;
+                const dontShowReadingLists = activitiesDeleted?.readingLists;
                 Object.keys(readingLists).forEach(listName => {
-                    const { list } = readingLists[listName];
-                    list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
+                    const { list, _id: readingListId } = readingLists[listName];
+                    list.length && list.forEach(({ postId }) => {
+                        if (!dontShowReadingLists?.includes(readingListId)) {
+                            !postIds.includes(postId) && postIds.push(postId)
+                        }
+                    });
                 });
                 if (postIds.length) {
                     BlogPost.find(
@@ -4488,8 +4496,10 @@ router.route("/users/:package").get((request, response) => {
                                 // push the values into an array
                                 let _readingLists = [];
                                 Object.keys(readingLists).forEach(listName => {
-                                    const { list: savedPosts, createdAt, editedAt } = readingLists[listName];
-                                    if (savedPosts.length) {
+                                    const { list: savedPosts, createdAt, editedAt, _id: readingListId } = readingLists[listName];
+                                    const { time, date } = createdAt;
+                                    const isActivityDeleted = dontShowReadingLists?.includes(readingListId)
+                                    if (savedPosts.length && !isActivityDeleted) {
                                         // insert all of the info pertaining to the post
                                         const _savedPosts = savedPosts.map(post => {
                                             const savedPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.postId));
@@ -4512,26 +4522,8 @@ router.route("/users/:package").get((request, response) => {
                                                 list: _savedPosts
                                             }
                                         }
-                                        // GOAL: put all reading list that were created on the same date in the same object that will be stored in an array of objects
-                                        // brain storm notes:
-                                        // for each object that will stored in the array that will be sent to the client, its data structure will be as follows: {publicationDate, isReadingList: true, list: [put 'readingList' into here]}
-                                        // for the first reading list, put the above dataStructure into _readingLists
-                                        // then for the next loop, check if the current date is already in the _readingList. If it is, then find the list and push the 'readingList' into posts. 
-                                        const { time, date } = createdAt;
                                         let _previousNames;
                                         if (readingLists[listName].previousNames) {
-                                            // _previousNames = readingLists[listName].previousNames.map(name => {
-                                            //     const _time = convertToStandardTime(name.timeOfChange.time)
-                                            //     return {
-                                            //         ...name,
-                                            //         timeOfChange: {
-                                            //             ...name.timeOfChange,
-                                            //             time: _time
-                                            //         }
-                                            //     }
-                                            // }).reverse()
-
-                                            // GOAL: put the following data structure into previousNames: {date of the readingList creation, }
                                             readingLists[listName].previousNames.reverse().forEach(name => {
                                                 const { oldName, newName, timeOfChange } = name
                                                 const { date: dateOfChange, time } = timeOfChange;
@@ -4558,6 +4550,7 @@ router.route("/users/:package").get((request, response) => {
                                         }
                                         let _readingList = {
                                             ...readingLists[listName],
+                                            _id: readingListId,
                                             listName,
                                             createdAt: time
                                         };
@@ -4591,8 +4584,8 @@ router.route("/users/:package").get((request, response) => {
                                                 return readingList;
                                             })
                                         } else {
-                                            const creationOfLists = { publicationDate: date, isReadingLists: true, activities: [_readingList] }
-                                            _readingLists.push(creationOfLists)
+                                            const dayOfListsCreation = { publicationDate: date, isReadingLists: true, activities: [_readingList] }
+                                            _readingLists.push(dayOfListsCreation)
                                         }
                                     };
                                 });
@@ -4737,6 +4730,16 @@ router.route("/users/:package").get((request, response) => {
                     followingUsers.length ? response.json({ followingUsers: followingUsers }) : response.json({ isEmpty: true });
                 })
             }
+        })
+    } else if (name === 'getPreviousListNames') {
+        const { listName } = package;
+        User.findOne(
+            { _id: userId },
+            { _id: 0, [`readingLists.${listName}`]: 1 }
+        ).then(list => {
+            const targetList = list.readingLists[listName];
+            const namesSortedByCreation = sortListNamesByCreation(targetList.previousNames.reverse())
+            response.json({ previousNames: namesSortedByCreation })
         })
     }
 })
