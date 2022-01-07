@@ -1474,7 +1474,6 @@ router.route("/users/updateInfo").post((request, response) => {
                             notifyUserOfNewReply(newReplyNotification, notifyUserId);
                         }
                     } else {
-                        console.log("case 5, ribeye");
                         notifyUserOfNewReply(newReplyNotification, notifyUserId);
                     }
                 })
@@ -1484,7 +1483,7 @@ router.route("/users/updateInfo").post((request, response) => {
         const { userIds } = request.body;
         const { postId, commentId } = data;
         // const isOneUserId = userIds.constructor !== Array;
-        // MAIN GOAL: when the current user leaves a comment on a post, notify the following users:
+        // MAIN GOAL: when the current uƒser leaves a comment on a post, notify the following users:
         // all users who left a comment on the post if at least one of them isn't the current user 
         // the author of the post, if the author of the post isn't the current user
 
@@ -2585,8 +2584,7 @@ router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req,
 
 router.route("/users/:package").get((request, response) => {
     const package = JSON.parse(request.params.package);
-    const { password: passwordAttempt, name, userId, username } = package;
-    console.log('package: ', package);
+    const { password: passwordAttempt, name, userId, userƒame } = package;
     if (name === "signInAttempt") {
         console.log("user wants to sign in")
         User.findOne({ username: username }).then(user => {
@@ -2910,7 +2908,6 @@ router.route("/users/:package").get((request, response) => {
                                     // the comments doesn't exist
                                     // the user deleted the comments
                                     // if the user deleted the comments, then delete the reply notification 
-                                    console.log('postAuthor: ', postAuthor);
                                     if ((postAuthor || isPostByCU) && !blockedUserIds.includes(postAuthor?._id) && targetPost && targetPost.comments && targetPost.comments.length) {
                                         const repliesInfo_ = repliesInfo.map(replyInfo => {
                                             // CASE1: THE COMMENT AUTHOR DOESN'T EXIST
@@ -3338,12 +3335,7 @@ router.route("/users/:package").get((request, response) => {
 
                     BlogPost.find(
                         { _id: { $in: postIds } },
-                        { comments: 1, title: 1, authorId: 1 },
-                        error => {
-                            if (error) {
-                                console.error("THE ERROR YOO: ", error);
-                            }
-                        }
+                        { comments: 1, title: 1, authorId: 1 }
                     ).then(targetPosts => {
                         const postAuthorIds = targetPosts.map(({ authorId }) => authorId);
                         userIds = [...userIds, ...postAuthorIds];
@@ -3352,14 +3344,7 @@ router.route("/users/:package").get((request, response) => {
                         if (userIds.length) {
                             User.find(
                                 { _id: userIds },
-                                { username: 1, iconPath: 1, publishedDrafts: 1 },
-                                error => {
-                                    if (error) {
-                                        console.error('An error has occurred in getting the users of the reply likes');
-                                    } else {
-                                        console.log('No error has occurred in getting the users of the reply likes.')
-                                    }
-                                }
+                                { username: 1, iconPath: 1, publishedDrafts: 1 }
                             ).then(users => {
                                 let delNotifications;
                                 if (targetPosts.length && users.length) {
@@ -3519,12 +3504,7 @@ router.route("/users/:package").get((request, response) => {
                         ).then(postLikesUsers => {
                             BlogPost.find(
                                 { _id: { $in: postIds } },
-                                { userIdsOfLikes: 1, title: 1 },
-                                error => {
-                                    if (error) {
-                                        console.error("THE ERROR YOO: ", error);
-                                    }
-                                }
+                                { userIdsOfLikes: 1, title: 1 }
                             ).then(targetPosts => {
                                 let delNotifications;
                                 if (targetPosts.length && postLikesUsers.length) {
@@ -3615,14 +3595,7 @@ router.route("/users/:package").get((request, response) => {
 
                     BlogPost.find(
                         { _id: { $in: postIdsOfComments } },
-                        { title: 1, comments: 1 },
-                        error => {
-                            if (error) {
-                                console.error('An error has occurred in getting the posts of the replies')
-                            } else {
-                                console.log('No error has occurred in getting the posts of the replies')
-                            }
-                        }
+                        { title: 1, comments: 1 }
                     ).then(postsOfComments => {
                         const postAuthorIds = postsOfComments.map(({ authorId }) => authorId);
                         userIds = [...userIds, ...postAuthorIds];
@@ -3630,14 +3603,7 @@ router.route("/users/:package").get((request, response) => {
                         userIds = blockedUserIds?.length ? userIds.filter(userId => !blockedUserIds.includes(userId)) : userIds;
                         User.find(
                             { _id: { $in: userIds } },
-                            { username: 1, iconPath: 1, publishedDrafts: 1, iconPath: 1 },
-                            error => {
-                                if (error) {
-                                    console.error('An error has occurred in getting the user info of the author of replies');
-                                } else {
-                                    console.log('No error has occurred in getting the user info of the author of replies.')
-                                }
-                            }
+                            { username: 1, iconPath: 1, publishedDrafts: 1, iconPath: 1 }
                         ).then(users => {
                             let notificationsToDel;
                             let commentNotifications;
@@ -3959,7 +3925,6 @@ router.route("/users/:package").get((request, response) => {
                         }
                     }
                 ).then(posts => {
-                    console.log('posts: ', posts)
                     if (posts?.length) {
                         // GOAL: for each liked reply get the following and store them into an array {postId, the title of the post,the comment id (check if the comment is written by the current user and if the comment still exist), the reply id (check if the reply is written by the current user and if the current user still liked it, if the reply still exist)
                         let authorIds = posts.map(({ authorId }) => authorId).filter(authorId => authorId !== userId);
@@ -3981,7 +3946,6 @@ router.route("/users/:package").get((request, response) => {
                                     if (targetPost) {
                                         // console.log('targetPost: ', targetPost);
                                         const { comments, title, _id: postId, authorId } = targetPost;
-                                        console.log('authorId: ', authorId);
                                         repliedToComments.forEach(({ id: _commentId, likedReplyIds }) => {
                                             const commentRepliedTo = comments?.length && comments.find(({ commentId }) => commentId === _commentId);
                                             const isCommentAuthorBlocked = commentRepliedTo && blockedUserIds.includes(commentRepliedTo.userId);
@@ -4017,6 +3981,12 @@ router.route("/users/:package").get((request, response) => {
                 response.json({ isEmpty: true });
                 // get the replies that were made by the current user
             } else if (willGetReplies && result?.activities?.replies) {
+                console.log('what is upppp')
+                // GOAL: get both the replies and comments by the current
+                // brain dump:
+                // get all of the posts that the comments and the replies reside in
+                // clear any duplicates 
+                // 
                 const { replies: repliesByUser } = result.activities;
                 const postIds = repliesByUser.map(({ postId }) => postId);
                 let commentIds = [];
@@ -4034,8 +4004,9 @@ router.route("/users/:package").get((request, response) => {
                         }
                     }
                 ).then(posts => {
+
                     if (posts.length) {
-                        let userIds = posts.map(({ authorId }) => authorId);
+                        let userIds = posts.map(({ authorId }) => authorId).filter(_userId => _userId !== userId)
                         posts.forEach(({ comments }) => {
                             comments.forEach(({ commentId, userId: commentAuthorId }) => {
                                 (commentIds.includes(commentId) && !userIds.includes(commentAuthorId)) && userIds.push(commentAuthorId);
@@ -4045,15 +4016,20 @@ router.route("/users/:package").get((request, response) => {
 
                         User.find(
                             { _id: { $in: userIds } },
-                            { username: 1 },
-                            error => {
-                                if (error) {
-                                    console.error('An error has occurred in getting the users of reply activities.')
-                                }
-                            }
+                            { username: 1 }
                         ).then(usernames => {
-                            // goal: GET THE REPLIES THAT THE USER MADE 
-                            let _repliesByUser = [];
+                            // goal: get the replies and comments that were by the current user and put them in the following data structure: {isCommentOrReply: true, publishedOn: (get date of the publication of the comment or reply), activities: [postId, post author username, commentsAndReplies:[{commentId or replyId, the reply or comment text, the comment author username if the activity is a reply by the current user. the id of the comment that the current user replied to, previousVersions}]]}
+                            // sort out the previousVersions as follows:
+                            // [{the date of the publication of the version, old comment or reply, new comment or reply  }]
+
+                            // brain dump:
+                            // get all of the posts that the comments and the replies resides in
+                            // get the reply activities first
+                            // check if the of the reply posted exists in repliesAndCommentsByUser
+                            // if it does, then find the date, and push the following data structure: {replyId, text (the text of the reply), repliedToCommentId, commentAuthorUsername (if the comment author is not the current user)}
+                            // push the following data structure into the repliesAndCommentsByUser for the replies = {publishedAt, postId, author username, commentsAndReplies: [{replyId, text (the text of the reply), repliedToCommentId, commentAuthorUsername (if the comment author is not the current user)}]}
+
+                            let repliesAndCommentsByUser;
                             repliesByUser.forEach(({ postId, commentsRepliedTo, deletedRepliesActivity }) => {
                                 const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
                                 if (targetPost) {
@@ -4062,37 +4038,59 @@ router.route("/users/:package").get((request, response) => {
                                         commentsRepliedTo.forEach(_commentId => {
                                             const targetComment = comments.find(({ commentId }) => commentId === _commentId);
                                             const isCommentAuthorBlocked = (targetComment && blockedUserIds?.length) && blockedUserIds.includes(targetComment.userId)
-                                            if (targetComment && isCommentAuthorBlocked) {
+                                            if (targetComment && !isCommentAuthorBlocked) {
                                                 const { commentId, replies, userId: commentAuthorId } = targetComment;
                                                 const repliesByUser = replies?.length && replies.filter(({ userId: replyAuthorId }) => userId === replyAuthorId);
                                                 if (repliesByUser?.length) {
-                                                    repliesByUser.forEach(({ replyId, _reply }) => {
+                                                    repliesByUser.forEach((reply => {
+                                                        const { replyId, _reply, createdAt } = reply;
+                                                        const { date: replyPostedOn, time } = createdAt;
                                                         if (!deletedRepliesActivity?.includes(replyId)) {
                                                             const postAuthor = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
                                                             const isCommentByUser = commentAuthorId === userId;
                                                             const commentAuthor = !isCommentByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId))
                                                             let UItext;
-                                                            if (postAuthor && isCommentByUser) {
+                                                            if (!postAuthor && isCommentByUser) {
                                                                 UItext = 'You replied to your comment on your post titled '
-                                                            } else if (postAuthor && !isCommentByUser) {
+                                                            } else if (!postAuthor && !isCommentByUser) {
                                                                 UItext = `You replied to ${commentAuthor.username}'s comment on your post titled `
-                                                            } else if (!postAuthor && isCommentByUser) {
+                                                            } else if (postAuthor && isCommentByUser) {
                                                                 UItext = `You replied to your comment on post titled `
                                                             } else {
                                                                 UItext = `You replied to ${commentAuthor.username}'s comment on post titled `
                                                             }
-                                                            const reply = postAuthor ? { postId, username: postAuthor.username, title, commentId, replyId, UItext, _reply, isReplyOrComment: true } : { postId, title, commentId, replyId, UItext, _reply, isReplyOrComment: true };
-                                                            _repliesByUser.push(reply);
+                                                            const reply = { commentId, replyId, UItext, _reply, postedAtTime: time };
+                                                            const doesDateExist = repliesAndCommentsByUser && repliesAndCommentsByUser.map(replyOrComment => replyOrComment?.publishedAt).includes(replyPostedOn);
+                                                            if (doesDateExist) {
+                                                                console.log('repliesAndCommentsByUser: ', repliesAndCommentsByUser)
+                                                                repliesAndCommentsByUser = repliesAndCommentsByUser.map(replyOrComment => {
+                                                                    const { publishedAt: _replyPostedAt, commentsAndReplies } = replyOrComment;
+                                                                    if (_replyPostedAt === replyPostedOn) {
+                                                                        return {
+                                                                            ...replyOrComment,
+                                                                            commentsAndReplies: [...commentsAndReplies, reply]
+                                                                        }
+                                                                    };
+
+                                                                    return replyOrComment
+                                                                })
+                                                            } else {
+                                                                const replyActivity = postAuthor ? { postId, title, publishedAt: replyPostedOn, authorUsername: postAuthor.username, commentsAndReplies: [reply] } : { postId, title, isReplyOrComment: true, publishedAt: replyPostedOn, commentsAndReplies: [reply] };
+                                                                console.log('replyActivity: ', replyActivity);
+                                                                console.log('repliesAndCommentsByUser: ', repliesAndCommentsByUser)
+                                                                repliesAndCommentsByUser = repliesAndCommentsByUser ? [...repliesAndCommentsByUser, replyActivity] : [replyActivity]
+                                                                console.log('repliesAndCommentsByUser: ', repliesAndCommentsByUser)
+                                                            }
                                                         };
-                                                    });
+                                                    }))
                                                 }
                                             }
                                         });
                                     }
                                 };
-                                console.log('end of getting replies by user')
-                            })
-                            _repliesByUser.length ? response.json({ repliesByUser: _repliesByUser }) : response.json({ isEmpty: true });
+                            });
+                            console.log('wazzzz up')
+                            repliesAndCommentsByUser ? response.json({ repliesAndComments: repliesAndCommentsByUser }) : response.json({ isEmpty: true })
                         })
                     };
                 })
@@ -4203,7 +4201,6 @@ router.route("/users/:package").get((request, response) => {
                                 const publishedVersion = { isPublished: true, title, subtitle, tags: postTags, imgUrl, wordCount, publicationDate: editsPublishedAt, body: postedBody };
                                 let _previousVersions = [...previousVersions, publishedVersion];
                                 _previousVersions = _previousVersions.map((versionA, index) => {
-                                    console.log('versionA: ', versionA);
                                     const _tags = versionA.tags.map(tag => {
                                         const { _id: tagId, isNew } = tag;
                                         if (!isNew) {
@@ -4220,15 +4217,12 @@ router.route("/users/:package").get((request, response) => {
                                     });
                                     const { title, body: versionABody, subtitle, tags: tagsA, imgUrl: imgUrlA } = versionA;
                                     const imgUrl = (imgUrlA && index === 0) && { path: imgUrlA };
-                                    console.log('ribeye: ', versionABody);
                                     const bodyWordCountA = getWordCount(versionABody)
                                     if (index > 0) {
                                         const titleWordCountA = getWordCount(title);
                                         const subtitleWordCountA = subtitle && getWordCount(subtitle);
                                         const versionB = _previousVersions[index - 1];
-                                        console.log('versionB: ', versionB);
                                         const { title: editedTitleB, body: editedBodyB, subtitle: editedSubtitleB, tags: tagsB, imgUrl: imgUrlB } = versionB;
-                                        console.log('editedBodyB: ', editedBodyB);
                                         const didBodyContentChange = editedBodyB !== versionABody;
                                         const titleWordCountB = getWordCount(editedTitleB);
                                         const subtitleWordCountB = editedSubtitleB && getWordCount(editedSubtitleB)
