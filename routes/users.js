@@ -3897,7 +3897,7 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getUserActivities') {
-        const { willGetReplyLikes, willGetRepliesAndComments, willGetCommentLikes, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetComments, willGetPostLikes, willGetFollowing } = package;
+        const { willGetReplyLikes, willGetReplies, willGetCommentLikes, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetComments, willGetPostLikes, willGetFollowing } = package;
         // GOAL: get the deleted post activities 
         User.findOne(
             { _id: userId },
@@ -3980,7 +3980,7 @@ router.route("/users/:package").get((request, response) => {
             } else if (willGetReplyLikes) {
                 response.json({ isEmpty: true });
                 // get the replies that were made by the current user
-            } else if (willGetRepliesAndComments && (result?.activities?.replies || result?.activities?.comments)) {
+            } else if (willGetReplies && (result?.activities?.replies || result?.activities?.comments)) {
                 // GOAL: get both the replies and comments by the current
                 // brain dump:
                 // get all of the posts that the comments and the replies reside in
@@ -4022,18 +4022,18 @@ router.route("/users/:package").get((request, response) => {
                             { _id: { $in: userIds } },
                             { username: 1 }
                         ).then(usernames => {
-                            // goal: get the replies and comments that were by the current user and put them in the following data structure: {isCommentOrReply: true, publicationDate: (get date of the publication of the comment or reply), activities: [postId, post author username, commentsAndReplies:[{commentId or replyId, the reply or comment text, the comment author username if the activity is a reply by the current user. the id of the comment that the current user replied to, previousVersions}]]}
+                            // goal: get the replies and comments that were by the current user and put them in the following data structure: {isCommentOrReply: true, publishedOn: (get date of the publication of the comment or reply), activities: [postId, post author username, commentsAndReplies:[{commentId or replyId, the reply or comment text, the comment author username if the activity is a reply by the current user. the id of the comment that the current user replied to, previousVersions}]]}
                             // sort out the previousVersions as follows:
                             // [{the date of the publication of the version, old comment or reply, new comment or reply  }]
 
                             // brain dump:
                             // get all of the posts that the comments and the replies resides in
                             // get the reply activities first
-                            // check if the of the reply posted exists in datesOfActivities
+                            // check if the of the reply posted exists in repliesAndCommentsByUser
                             // if it does, then find the date, and push the following data structure: {replyId, text (the text of the reply), repliedToCommentId, commentAuthorUsername (if the comment author is not the current user)}
-                            // push the following data structure into the datesOfActivities for the replies = {publishedAt, postId, author username, commentsAndReplies: [{replyId, text (the text of the reply), repliedToCommentId, commentAuthorUsername (if the comment author is not the current user)}]}
+                            // push the following data structure into the repliesAndCommentsByUser for the replies = {publishedAt, postId, author username, commentsAndReplies: [{replyId, text (the text of the reply), repliedToCommentId, commentAuthorUsername (if the comment author is not the current user)}]}
 
-                            let datesOfActivities;
+                            let repliesAndCommentsByUser;
                             repliesByUser && repliesByUser.forEach(({ postId, commentsRepliedTo, deletedRepliesActivity }) => {
                                 const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
                                 if (targetPost) {
@@ -4049,7 +4049,7 @@ router.route("/users/:package").get((request, response) => {
                                                 if (_repliesByUser?.length) {
                                                     _repliesByUser.forEach((reply => {
                                                         const { replyId, _reply, createdAt, previousReplies: _previousReplies } = reply;
-                                                        const { date: replyPostedOn, time, miliSeconds } = createdAt;
+                                                        const { date: replyPostedOn, time } = createdAt;
                                                         if (!deletedRepliesActivity?.includes(replyId)) {
                                                             const postAuthor = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
                                                             const isCommentByUser = commentAuthorId === userId;
@@ -4066,16 +4066,15 @@ router.route("/users/:package").get((request, response) => {
                                                             }
                                                             const authorUsername = postAuthor?.username;
                                                             let previousReplies;
-                                                            // sort the previous replies
                                                             if (_previousReplies?.length) {
                                                                 _previousReplies.forEach(reply => {
                                                                     const { id, createdAt, text } = reply;
                                                                     const { date: editsPublishedOn, time } = createdAt;
-                                                                    const doesDateExist = previousReplies && previousReplies.map(({ publicationDate }) => publicationDate).includes(editsPublishedOn);
+                                                                    const doesDateExist = previousReplies && previousReplies.map(({ publishedOn }) => publishedOn).includes(editsPublishedOn);
                                                                     const version = { publishedAt: time, replyText: text, id }
                                                                     if (doesDateExist) {
                                                                         previousReplies = previousReplies.map(reply => {
-                                                                            const { publicationDate: _editsPublishedOn, versions } = reply;
+                                                                            const { publishedOn: _editsPublishedOn, versions } = reply;
                                                                             if (_editsPublishedOn === editsPublishedOn) {
                                                                                 return {
                                                                                     ...reply,
@@ -4086,7 +4085,7 @@ router.route("/users/:package").get((request, response) => {
                                                                             return reply;
                                                                         })
                                                                     } else {
-                                                                        const replyPublishedDay = { publicationDate: editsPublishedOn, versions: [version] };
+                                                                        const replyPublishedDay = { publishedOn: editsPublishedOn, versions: [version] };
                                                                         previousReplies = previousReplies ? [...previousReplies, replyPublishedDay] : [replyPublishedDay]
                                                                     }
                                                                 })
@@ -4100,13 +4099,13 @@ router.route("/users/:package").get((request, response) => {
                                                                 })
                                                             }
                                                             previousReplies = previousReplies ? previousReplies.reverse() : previousReplies;
-                                                            const reply = { postId, title, authorUsername, repliedToCommentId: commentId, replyId, UItext, _reply, publishedAt: { time, miliSeconds }, previousReplies };
-                                                            const doesDateExist = datesOfActivities && datesOfActivities.map(replyOrComment => replyOrComment?.publicationDate?.date).includes(replyPostedOn);
+                                                            const reply = { postId, title, authorUsername, repliedToCommentId: commentId, replyId, UItext, _reply, postedAtTime: time, previousReplies };
+                                                            const doesDateExist = repliesAndCommentsByUser && repliesAndCommentsByUser.map(replyOrComment => replyOrComment?.publishedAt).includes(replyPostedOn);
                                                             if (doesDateExist) {
-                                                                console.log('datesOfActivities: ', datesOfActivities)
-                                                                datesOfActivities = datesOfActivities.map(replyOrComment => {
-                                                                    const { publicationDate: _replyPostedOn, activities } = replyOrComment;
-                                                                    if (_replyPostedOn.date === replyPostedOn) {
+                                                                console.log('repliesAndCommentsByUser: ', repliesAndCommentsByUser)
+                                                                repliesAndCommentsByUser = repliesAndCommentsByUser.map(replyOrComment => {
+                                                                    const { publishedAt: _replyPostedAt, activities } = replyOrComment;
+                                                                    if (_replyPostedAt === replyPostedOn) {
                                                                         return {
                                                                             ...replyOrComment,
                                                                             activities: [...activities, reply]
@@ -4116,8 +4115,11 @@ router.route("/users/:package").get((request, response) => {
                                                                     return replyOrComment
                                                                 })
                                                             } else {
-                                                                const replyActivity = { publicationDate: { date: replyPostedOn, miliSeconds }, activities: [reply], isCommentOrReply: true };
-                                                                datesOfActivities = datesOfActivities ? [...datesOfActivities, replyActivity] : [replyActivity];
+                                                                const replyActivity = postAuthor ? { publishedAt: replyPostedOn, activities: [reply], isCommentOrReply: true } : { publishedAt: replyPostedOn, activities: [reply], isCommentOrReply: true };
+                                                                console.log('replyActivity: ', replyActivity);
+                                                                console.log('repliesAndCommentsByUser: ', repliesAndCommentsByUser)
+                                                                repliesAndCommentsByUser = repliesAndCommentsByUser ? [...repliesAndCommentsByUser, replyActivity] : [replyActivity]
+                                                                console.log('repliesAndCommentsByUser: ', repliesAndCommentsByUser)
                                                             }
                                                         };
                                                     }))
@@ -4128,99 +4130,27 @@ router.route("/users/:package").get((request, response) => {
                                 };
                             });
 
-                            const sortPreviousComments = previousComments => {
-                                let _previousComments;
-                                previousComments.forEach(comment => {
-                                    const { id, createdAt, text } = comment;
-                                    const { date: editsPublishedOn, time } = createdAt;
-                                    const doesDateExist = _previousComments && _previousComments.map(({ publicationDate }) => publicationDate).includes(editsPublishedOn);
-                                    const version = { publishedAt: time, replyText: text, id }
-                                    if (doesDateExist) {
-                                        _previousComments = _previousComments.map(comment => {
-                                            const { publicationDate: _editsPublishedOn, versions } = comment;
-                                            if (_editsPublishedOn === editsPublishedOn) {
-                                                return {
-                                                    ...comment,
-                                                    versions: [...versions, version]
-                                                }
-                                            };
-
-                                            return comment;
-                                        })
-                                    } else {
-                                        const commentPublishedDay = { publicationDate: editsPublishedOn, versions: [version] };
-                                        _previousComments = _previousComments ? [..._previousComments, commentPublishedDay] : [commentPublishedDay]
-                                    }
-                                });
-                                _previousComments = _previousComments.map(comment => { return { ...comment, versions: comment.versions.reverse() } }).reverse();
-
-                                return _previousComments;
-                            }
-
-                            commentsByUser && commentsByUser.forEach(({ postIdOfComment }) => {
+                            commentsByUser.forEach(({ postIdOfComment }) => {
                                 const targetPost = postIdsOfComments.find(({ _id }) => _id === postIdOfComment);
                                 if (targetPost) {
                                     // GOAL: get the following comment info {postId, username of the author of the post, comment text , comment id} and push it into the object that holds the date that it was published
-                                    const { comments, authorId, _id: postId, title } = targetPost;
-                                    const author = (authorId !== userId) && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                    const authorUsername = author?.username
-                                    const commentsByUser = comments.filter(({ userId: _userId }) => _userId === userId);
-                                    if (commentsByUser.length) {
-                                        commentsByUser.forEach(comment => {
-                                            const { comment: _comment, createdAt, updatedAt, previousComments: _previousComments } = comment;
-                                            const { date: commentPostedOn, time: creationTime, miliSeconds } = createdAt;
-                                            const uIText = authorUsername ? `You commented on ${authorUsername}'s post titled ` : 'You commented on your post titled ';
-                                            const previousComments = _previousComments && sortPreviousComments(_previousComments);
-                                            console.log('previousComments: ', previousComments, previousComments && createdAt.date);
-                                            const commentActivity = { postId, title, authorUsername, _comment, publishedAt: { time: creationTime, miliSeconds }, updatedAt, previousComments, uIText };;
-                                            const doesDateExist = datesOfActivities && datesOfActivities.map(comment => comment?.publicationDate?.date).includes(commentPostedOn);
-                                            if (doesDateExist) {
-                                                datesOfActivities = datesOfActivities.map(comment => {
-                                                    const { publicationDate: _commentPostedOn, activities } = comment;
-                                                    if (_commentPostedOn.date === commentPostedOn) {
-                                                        return {
-                                                            ...comment,
-                                                            activities: [...activities, commentActivity]
-                                                        }
-                                                    };
-
-                                                    return comment;
-                                                })
-                                            } else {
-                                                const commentPublishedDay = { publicationDate: { date: commentPostedOn, miliSeconds }, activities: [commentActivity], isCommentOrReply: true };
-                                                datesOfActivities = datesOfActivities ? [...datesOfActivities, commentPublishedDay] : [commentPublishedDay];
-                                            }
-                                        })
-                                    }
                                 }
                             })
 
                             // GOAL: push the following data s
-                            // CASE 1: the date already exist in the datesOfActivities
-                            // CASE 2: the date doesn't exist in the datesOfActivities
+                            // CASE 1: the date already exist in the repliesAndCommentsByUser
+                            // CASE 2: the date doesn't exist in the repliesAndCommentsByUser
 
 
-                            // sort the dates (starting with the latest)
-                            datesOfActivities = datesOfActivities.sort(({ publicationDate: dateA }, { publicationDate: dateB }) => -(dateA.miliSeconds - dateB.miliSeconds));
-                            // sort the activities by time (starting with the latest)
-                            datesOfActivities = datesOfActivities.map(comment => {
-                                if (comment.activities.length > 1) {
-                                    return {
-                                        ...comment,
-                                        activities: comment.activities.sort(({ publishedAt: publishedAtA }, { publishedAt: publishedAtB }) => -(publishedAtA.miliSeconds - publishedAtB.miliSeconds))
-                                    }
-                                };
 
-                                return comment
-                            })
 
 
                             console.log('wazzzz up')
-                            datesOfActivities ? response.json(datesOfActivities) : response.json({ isEmpty: true })
+                            repliesAndCommentsByUser ? response.json({ repliesAndComments: repliesAndCommentsByUser }) : response.json({ isEmpty: true })
                         })
                     };
                 })
-            } else if (willGetRepliesAndComments) {
+            } else if (willGetReplies) {
                 response.json({ isEmpty: true })
                 // get the comments that were liked by the current user
             } else if (willGetCommentLikes && result?.activities?.likes?.replies) {
@@ -4760,10 +4690,10 @@ router.route("/users/:package").get((request, response) => {
                 // BlogPost.find(
                 //     { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }
                 // ).then(posts => {
-                //     // CASE 1: IF THE DATE EXISTs in datesOfActivities
+                //     // CASE 1: IF THE DATE EXISTs in repliesAndCommentsByUser
                 //     // push the following into the repliesAndComments: {comm}
                 //     // the date exists
-                //     // CASE 2: IF THE DATE doesn't exist in datesOfActivities
+                //     // CASE 2: IF THE DATE doesn't exist in repliesAndCommentsByUser
 
                 //     if (posts.length) {
                 //         const authorIdsOfPosts = posts.map(({ authorId }) => authorId).filter(_userId => _userId !== userId);
