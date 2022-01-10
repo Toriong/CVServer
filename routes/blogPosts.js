@@ -429,13 +429,6 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 }
             )
         };
-
-
-        // once there is a match, access the replies field and the delete all replies that were written by the blocked user 
-        // go through each comment, and find the matching comment that is in the commentIds array
-        // update the blogPosts by using the array of the post ids as your search query 
-        // get all of the post Ids and put them into an array
-        // get all of the commentIds an put them into an array
         res.json('Post requested received, will update user posts');
 
     } else if (name === 'editPost') {

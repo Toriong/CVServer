@@ -10,6 +10,15 @@ const getPostTags = (selectedTags, tags) => selectedTags.map(tag => {
     return tag;
 });
 
+const getTextPreview = text => {
+    let textPreview = text.split(' ').slice(0, 45);
+    textPreview.splice(44, 1, `${textPreview[44]}...`);
+    textPreview = textPreview.join(' ');
+
+    return textPreview
+};
+
 module.exports = {
-    getPostTags
+    getPostTags,
+    getTextPreview
 };
