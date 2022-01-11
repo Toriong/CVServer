@@ -762,8 +762,9 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             },
             (error, numsAffected) => {
-                if (error) throw error;
-                else {
+                if (error) {
+                    throw error;
+                } else {
                     console.log(`User unliked a post, deleted activity. NumsAffectd: `, numsAffected);
                     response.status(200).json({ isLiked: false })
                 }
@@ -2439,6 +2440,48 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             }
         );
+    } else if (name === 'checkDeletedLikedActivities') {
+        // likedItemId will hold the id of the comment, post, or reply 
+        const { likedItemId } = data;
+        User.find(
+            { _id: userId, "activitiesDeleted.likes": { $in: [likedItemId] } }
+        ).countDocuments().then(isPresent => {
+            console.log("isPresent: ", isPresent);
+            if (isPresent) {
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $pull: { "activitiesDeleted.likes": likedItemId }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error("An error has occurred in deleting the liked item id from the field of 'activitiesDeleted. Error message: ", error);
+                        } else {
+                            console.log("likedItemId was deleted from activitiesDeleted, numsAffected: ", numsAffected);
+                            response.sendStatus(200);
+                        }
+                    }
+                )
+            } else {
+                console.log('user did not deleted this liked activity.')
+                response.sendStatus(200);
+            }
+            // if (isPresent) {
+            //     User.updateOne(
+            //         { _id: userId },
+            //         {
+            //             $pull: { 'activitiesDeleted.likes': postId }
+            //         },
+            //         (error, numsAffected) => {
+            //             if (error) {
+            //                 console.error("An error has occurred in deleting id of the post from the field of 'activitiesDeleted'.")
+            //             } else {
+            //                 console.log('The post is now able to be tracked, numsAffected: ', numsAffected);
+            //             }
+            //         }
+            //     )
+            // }
+        })
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -3895,7 +3938,7 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getUserActivities') {
-        const { willGetLikes, willGetRepliesAndComments, willGetCommentLikes, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetPostLikes, willGetFollowing } = package;
+        const { willGetLikes, willGetRepliesAndComments, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetPostLikes, willGetFollowing } = package;
         // GOAL: get the deleted post activities 
         User.findOne(
             { _id: userId },
@@ -3907,16 +3950,17 @@ router.route("/users/:package").get((request, response) => {
                 }
             }
         ).then(result => {
-            console.log('result?.activities?.likes?.likedPostIds: ', result?.activities?.likes?.likedPostIds);
-            // console.log('result: ', activities);
+
             const blockedUserIds = result?.blockedUsers ? result.blockedUsers.map(({ userId }) => userId) : [];
+            const activitiesDeleted = result?.activitiesDeleted?.likes
             if (willGetLikes && (result?.activities?.likes?.replies || result?.activities?.likes?.comments || result?.activities?.likes?.posts)) {
                 console.log('sup there')
                 const { replies: likedReplies, comments: likedComments, likedPostIds } = result.activities.likes;
                 let likes;
+                // GOAL: go through each of the likedReplies, likedComments, and likedPostIds, and check if the user deleted the specific like from being tracked  
                 let postIds = likedReplies.map(({ postIdOfReply }) => postIdOfReply);
                 likedComments?.length && likedComments.map(({ postIdOfComment }) => postIdOfComment).forEach(postId => { !postIds.includes(postId) && postIds.push(postId) });
-                likedPostIds?.length && likedPostIds.forEach(postId => { postIds.includes(postId) && postIds.push(postId) });
+                likedPostIds?.length && likedPostIds.forEach(postId => { !postIds.includes(postId) && postIds.push(postId) });
                 BlogPost.find(
                     { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] },
                     { comments: 1, _id: 1, title: 1, authorId: 1, userIdsOfLikes: 1 },
@@ -3927,10 +3971,7 @@ router.route("/users/:package").get((request, response) => {
                     }
                 ).then(posts => {
                     if (posts?.length) {
-                        // GOAL: put the reply likes into the var of 'likes'
-                        // check what day that the like was liked on and group all likes into the same object if the likes happened on the same day
                         let userIds = posts.map(({ authorId }) => authorId);
-                        // Get the user Ids of the creators of the comments and replies. 
                         posts.forEach(({ comments }) => {
                             comments.forEach(({ userId: commentUserId, replies }) => {
                                 !userIds.includes(commentUserId) && userIds.push(commentUserId);
@@ -3965,31 +4006,34 @@ router.route("/users/:package").get((request, response) => {
                                             if (commentRepliedTo && !isCommentAuthorBlocked) {
                                                 // destructure only when the commentRepliedTo is not undefined
                                                 const { commentId, replies } = commentRepliedTo;
-                                                // GOAL: get the liked the reply
                                                 likedReplyIds.forEach(_replyId => {
-                                                    const reply = replies.find(({ replyId }) => replyId === _replyId);
-                                                    const isReplyAuthorBlocked = (reply && blockedUserIds?.length) && blockedUserIds.includes(reply.userId);
-                                                    if (reply && !isReplyAuthorBlocked) {
-                                                        const { replyId, userIdsOfLikes, userId: replyAuthorId, _reply } = reply;
+                                                    // DO A CHECK HERE IF THE user deleted the _replyId from being tracked
+                                                    const isReplyNotTracked = activitiesDeleted?.includes(_replyId)
+                                                    const reply = !isReplyNotTracked && replies.find(({ replyId }) => replyId === _replyId);
+                                                    const isReplyByUser = !isReplyNotTracked && reply?.userId === userId
+                                                    const isReplyAuthorBlocked = (!isReplyNotTracked && blockedUserIds?.length && reply) && blockedUserIds.includes(reply.userId);
+                                                    if (reply && !isReplyAuthorBlocked && !isReplyNotTracked) {
+                                                        const { replyId, userIdsOfLikes, userId: replyAuthorId, _reply: replyText } = reply;
                                                         const userOfLike = userIdsOfLikes?.length && userIdsOfLikes.find(({ userId: _userId }) => _userId === userId);
                                                         if (userOfLike) {
                                                             replyId === "4bfb4203-a805-4460-b560-d8875da719d5" && console.log('BURRITO, usernames: ', usernames);
-                                                            const replyAuthor = (replyAuthorId !== userId) && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(replyAuthorId));
+                                                            const replyAuthor = !isReplyByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(replyAuthorId));
                                                             replyId === "4bfb4203-a805-4460-b560-d8875da719d5" && console.log('BURRITO, replyAuthor: ', replyAuthor);
                                                             replyId === "4bfb4203-a805-4460-b560-d8875da719d5" && console.log('BURRITO: ', replyAuthor)
                                                             let uIText;
                                                             if (replyAuthor && isPostByUser) {
-                                                                uIText = `You liked ${replyAuthor.username}'s reply on your post titled, `
+                                                                uIText = ` liked ${replyAuthor.username}'s reply on your post titled `
                                                             } else if (!replyAuthor && isPostByUser) {
-                                                                uIText = 'You liked your reply on your post titled, ';
+                                                                uIText = ' liked your reply on your post titled ';
                                                             } else if (replyAuthor && !isPostByUser) {
-                                                                uIText = `You liked ${replyAuthor.username}'s reply on post titled, `
+                                                                uIText = ` liked ${replyAuthor.username}'s reply on post titled `
                                                             } else {
-                                                                uIText = `You liked your reply on post titled, `
+                                                                uIText = ` liked your reply on post titled `
                                                             }
-                                                            const { date: _likedOn, time, miliSeconds } = userOfLike.likedAt
-                                                            const likedReply = author ? { postId, authorUsername: author.username, title, commentId, replyId, likedAt: { time, miliSeconds }, uIText, isReplyLike: true } : { postId, title, commentId, replyId, likedAt: { time, miliSeconds }, uIText, isReplyLike: true };
-                                                            likes = insertNewLike(_likedOn, likes, likedReply)
+                                                            const { date, time, miliSeconds } = userOfLike.likedAt
+                                                            const _reply = replyText.split(" ").length > 50 ? getTextPreview(replyText) : replyText;
+                                                            const likedReply = author ? { postId, authorUsername: author.username, title: `'${title}':`, _id: replyId, likedAt: { time, miliSeconds }, uIText, isReplyLike: true, _reply, titlePath: title, repliedToCommentId: commentId } : { postId, title: `${title}`, titlePath: title, _id: replyId, likedAt: { time, miliSeconds }, uIText, isReplyLike: true, _reply, repliedToCommentId: commentId };
+                                                            likes = insertNewLike(date, likes, likedReply)
                                                         }
                                                     }
                                                 })
@@ -4007,50 +4051,56 @@ router.route("/users/:package").get((request, response) => {
                                         const isPostByUser = postAuthorId === userId;
                                         const postAuthor = !isPostByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
                                         likedCommentIds.forEach(_commentId => {
-                                            // GOAL: get the following info: if the comment was written by the current user, the title of the post, post id, username of the author of the post   
-                                            const targetComment = comments.find(({ commentId }) => commentId === _commentId);
+                                            // GOAL: do a check here if the user deleted the comment from being tracked
+                                            const isCommentNotTracked = activitiesDeleted?.includes(_commentId);
+                                            const targetComment = !isCommentNotTracked && comments.find(({ commentId }) => commentId === _commentId);
+                                            const isCommentByUser = !isCommentNotTracked && (targetComment?.userId === userId)
+                                            const isCommentAuthorBlocked = (blockedUserIds?.length && !isCommentNotTracked && targetComment) && blockedUserIds.includes(targetComment.userId);
                                             console.log('rib eye')
-                                            if (targetComment) {
-                                                const { userIdsOfLikes, userId: commentAuthorId, commentId } = targetComment;
-                                                const isCommentByUser = commentAuthorId === userId
-                                                const isCommentAuthorBlocked = (blockedUserIds?.length && !isCommentByUser) && blockedUserIds.includes(commentAuthorId);
+                                            if (targetComment && !isCommentNotTracked && !isCommentAuthorBlocked) {
+                                                console.log({ targetComment });
+                                                const { userIdsOfLikes, userId: commentAuthorId, commentId, comment: commentText } = targetComment;
                                                 const userOfLikedComment = userIdsOfLikes.find(({ userId: _userId }) => userId === _userId);
-                                                if (userOfLikedComment && !isCommentAuthorBlocked) {
+                                                if (userOfLikedComment) {
                                                     const commentAuthor = !isCommentByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId));
-                                                    const { miliSeconds, time, date: likedOn } = userOfLikedComment.likedAt;
+                                                    const { miliSeconds, time, date } = userOfLikedComment.likedAt;
                                                     let uIText;
                                                     if (isCommentByUser && isPostByUser) {
-                                                        uIText = `You liked your own comment on your post titled, `
+                                                        uIText = ` liked your own comment on your post titled `
                                                     } else if (isCommentByUser && !isPostByUser) {
-                                                        uIText = `You liked your own comment on post titled, `
+                                                        uIText = ` liked your own comment on post titled `
                                                     } else if (!isCommentByUser && isPostByUser) {
-                                                        uIText = `You liked ${commentAuthor.username}'s comment on your post titled, `
+                                                        uIText = ` liked ${commentAuthor.username}'s comment on your post titled `
                                                     } else {
-                                                        uIText = `You liked ${commentAuthor.username}'s comment on post titled, `
+                                                        uIText = ` liked ${commentAuthor.username}'s comment on post titled `
                                                     };
-
-                                                    const likedComment = !(postAuthorId === userId) ? { postId, username: postAuthor.username, commentId, uIText, title, isCommentLike: true, likedAt: { time, miliSeconds } } : { postId, commentId, uIText, title, isCommentLike: true, likedAt: { time, miliSeconds } };
-                                                    likes = insertNewLike(likedOn, likes, likedComment);
+                                                    const _comment = commentText.split(" ").length > 50 ? getTextPreview(commentText) : commentText;
+                                                    const likedComment = !(postAuthorId === userId) ? { postId, username: postAuthor.username, _id: commentId, uIText, title: `'${title}':`, isCommentLike: true, titlePath: title, likedAt: { time, miliSeconds }, _comment } : { postId, _id: commentId, uIText, title: `'${title}':`, titlePath: title, isCommentLike: true, likedAt: { time, miliSeconds }, _comment };
+                                                    likes = insertNewLike(date, likes, likedComment);
                                                 };
                                             };
                                         });
                                     };
                                 });
                                 likedPostIds && likedPostIds.forEach(postId => {
-                                    const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
-                                    if (targetPost) {
+                                    // GOAL: do a check here if the user deleted the post from being tracked
+                                    const isPostNotTracked = activitiesDeleted?.includes(postId);
+                                    const targetPost = !isPostNotTracked && posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
+                                    const isPostByUser = !isPostNotTracked && (targetPost?.authorId === userId);
+                                    const isPostAuthorBlocked = (blockedUserIds?.length && !isPostNotTracked && targetPost) && blockedUserIds.includes(targetPost.authorId);
+                                    console.log('targetPost: ', targetPost);
+                                    if (!isPostNotTracked && targetPost && !isPostAuthorBlocked) {
+                                        console.log('wtf')
                                         const { title, authorId, userIdsOfLikes } = targetPost;
                                         const userOfLike = userIdsOfLikes.length && userIdsOfLikes.find(({ userId: _userId }) => _userId === userId);
                                         if (userOfLike) {
-                                            const isPostByUser = authorId === userId;
                                             // WHY DO I HAVE TO JSON STRINGIFY THE FIND
                                             const author = !isPostByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId))
                                             const { time, date, miliSeconds } = userOfLike.likedAt;
-                                            const uIText = isPostByUser ? 'You liked your own post titled: ' : `You liked ${author.username}'s post titled: `
-                                            const likedPost = { postId, title, authorUsername: author.username, likedAt: { miliSeconds, time }, isLikes: true, uIText, isPostLike: true };
+                                            const uIText = isPostByUser ? ' liked your own post titled ' : ` liked ${author.username}'s post titled `
+                                            const likedPost = { _id: postId, title: `'${title}'.`, authorUsername: author.username, titlePath: title, likedAt: { miliSeconds, time }, isLikes: true, uIText, isPostLike: true };
                                             likes = insertNewLike(date, likes, likedPost);
                                         }
-
                                     };
                                 });
                                 // GOAL: sort the likes according to time (from the latest to the oldest)
@@ -4058,19 +4108,20 @@ router.route("/users/:package").get((request, response) => {
                                 // use the likedOn field as the determinate of the sort
                                 // also sort out the activities for each activity of the day
                                 // STEPS: 
-                                likes = likes && likes.sort(({ likedOn: likedOnA, likedOn: likedOnB }) => {
+                                console.log('likes, before: ', likes)
+                                likes = likes && likes.sort(({ likedOn: likedOnA }, { likedOn: likedOnB }) => {
                                     if (likedOnA > likedOnB) return -1;
                                     if (likedOnA < likedOnB) return 1;
                                     return 0;
                                 });
-
+                                console.log('yo there: ', likes);
                                 const sortDayActivities = likes => likes.map(like => {
                                     console.log('likes: ', likes);
                                     if (like.activities.length > 1) {
                                         // how is this descending order? 
                                         return {
                                             ...like,
-                                            activities: like.activities.sort(({ likedAt: likedAtA }, { likedAt: likedAtB }) => (likedAtB - likedAtA))
+                                            activities: like.activities.sort(({ likedAt: likedAtA }, { likedAt: likedAtB }) => likedAtB.miliSeconds - likedAtA.miliSeconds)
                                         }
                                     };
 
