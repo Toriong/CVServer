@@ -771,10 +771,11 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     } else if (name === "userLikedComment") {
+        // CASE: user unlikes a comment, deletes the comment from 
         const { postId, commentId } = data;
-        User.findOne({ _id: userId }, { "activities.likes.comments": 1, _id: 0 }).then(result => {
+        User.findOne({ _id: userId }, { "activities.likes.comments": 1, _id: 0, "activitiesDeleted.likes": 1 }).then(result => {
             console.log("result: ", result);
-            const likedCommentsActivity = (result.activities && result.activities.likes && result.activities.likes.comments && result.activities.likes.comments.length) && result.activities.likes.comments
+            const likedCommentsActivity = result?.activities?.likes?.comments?.length && result.activities.likes.comments
             const { isPostPresent, isCommentLiked } = checkWasCommentLiked(likedCommentsActivity, data);
             if (isPostPresent && isCommentLiked) {
                 console.log('The user has liked the comment before.');
@@ -2416,38 +2417,58 @@ router.route("/users/updateInfo").post((request, response) => {
             );
         }
     } else if (name === 'deleteActivity') {
-        // WHAT I WANT: delete the activity from the database by not showing the post id when gathering the posts that were by the current user when displaying user activities on the DOM
-        // GOAL: when the user deletes a post activity, get the post id and insert it into the activitiesDeleted.posts
-        // push the id of the post into activities.posts
-        // the user is found by using the user id
-        // the following package is received from the client side: {the user id, the name of the package, the id of the post, type === 'deletedPostByUser'}
-        // have two fields for the likes activity (likes.comments, likes.replies, likes.posts)
-        const { activityId, field } = data;
-        User.updateOne(
-            { _id: userId },
-            {
-                $push:
+        const addDeletedActivity = (field, userId, activityId) => {
+            User.updateOne(
+                { _id: userId },
                 {
-                    [`activitiesDeleted.${field}`]: activityId
+                    $push:
+                    {
+                        [`activitiesDeleted.${field}`]: activityId
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in deleting post activity from user. ', error)
+                    } else {
+                        console.log(`An activity was deleted from ${field}`, numsAffected);
+                    }
                 }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.error('An error has occurred in deleting post activity from user. ', error)
-                } else {
-                    console.log(`An activity was deleted from ${field}`, numsAffected);
-                    response.sendStatus(200);
+            );
+        }
+        // GOAL: before deleting the activity, check if the activity still exist
+        // for likes: check if the user actually still likes the comment, post, or reply
+        console.log('package.body: ', request.body)
+        const { postId, repliedToCommentId, likedItemId, isReplyLike, isCommentLike, isPostLike } = request.body;
+        const { activityId, field } = data;
+        const checkIfLiked = (likes, userId) => likes.map(({ userId: _userId }) => _userId).includes(userId)
+        if (field === 'likes') {
+            BlogPost.findOne({ _id: postId ?? likedItemId }, { comments: 1, userIdsOfLikes: 1 }).then(result => {
+                const { comments, userIdsOfLikes } = result;
+                if (isReplyLike || isCommentLike) {
+                    const comment = comments.find(({ commentId }) => commentId === (repliedToCommentId ?? likedItemId));
+                    if (comment && isReplyLike) {
+                        const targetReply = comment.replies.find(({ replyId }) => replyId === likedItemId);
+                        const isLiked = targetReply.userIdsOfLikes.map(({ userId }) => userId).includes(userId);
+                        isLiked ? addDeletedActivity(field, userId, activityId) : console.log('This reply is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
+                    } else {
+                        const isLiked = comment.userIdsOfLikes.map(({ userId }) => userId).includes(userId);
+                        isLiked ? addDeletedActivity(field, userId, activityId) : console.log('This comment is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
+                    }
+                } else if (isPostLike) {
+                    checkIfLiked(userIdsOfLikes, userId) ? addDeletedActivity(field, userId, activityId) : console.log('This post is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
                 }
-            }
-        );
+            })
+        }
+        // GOAL: do a check here if the user still liked item
+        response.sendStatus(200);
     } else if (name === 'checkDeletedLikedActivities') {
-        // likedItemId will hold the id of the comment, post, or reply 
+        // WILL CHECK IF THE LIKED ITEM WAS IN THE PAST DELETED FROM THE ACTIVITY TRACKING. IF IT WAS meaning that the liked item's id is present in activitiesDeleted.likes, THEN FIND THE LIKED ITEM ID AND PULL It FROM activitiesDeleted.likes
         const { likedItemId } = data;
         User.find(
             { _id: userId, "activitiesDeleted.likes": { $in: [likedItemId] } }
-        ).countDocuments().then(isPresent => {
-            console.log("isPresent: ", isPresent);
-            if (isPresent) {
+        ).countDocuments().then(wasDeletedBefore => {
+            console.log("isPresent: ", wasDeletedBefore);
+            if (wasDeletedBefore) {
                 User.updateOne(
                     { _id: userId },
                     {
@@ -2463,24 +2484,9 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 )
             } else {
-                console.log('user did not deleted this liked activity.')
+                console.log('user did not deleted this liked activity before.')
                 response.sendStatus(200);
-            }
-            // if (isPresent) {
-            //     User.updateOne(
-            //         { _id: userId },
-            //         {
-            //             $pull: { 'activitiesDeleted.likes': postId }
-            //         },
-            //         (error, numsAffected) => {
-            //             if (error) {
-            //                 console.error("An error has occurred in deleting id of the post from the field of 'activitiesDeleted'.")
-            //             } else {
-            //                 console.log('The post is now able to be tracked, numsAffected: ', numsAffected);
-            //             }
-            //         }
-            //     )
-            // }
+            };
         })
     }
 }, (error, req, res, next) => {
