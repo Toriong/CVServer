@@ -2458,6 +2458,20 @@ router.route("/users/updateInfo").post((request, response) => {
                     checkIfLiked(userIdsOfLikes, userId) ? addDeletedActivity(field, userId, activityId) : console.log('This post is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
                 }
             })
+        } else if (field === 'following') {
+            // GOAL: check if the following user is still being followed by the current user 
+            // CASE 1: the following user is being followed
+            // the id of the following user is pushed into the following field: 'deletedActivities.following;
+            // the id of the following user is present in user.following
+            // if the id of the following user is present in user.following, then id of the following user is pushed into the following field: 'deletedActivities.following;
+            // find the current user profile and return the activities.following
+            // use the id of the current user to find the profile of the current user
+            User.findOne({ _id: userId }, { "activities.following": 1, _id: 0 }).then(user => {
+                console.log('user: ', user)
+                const { following } = user.activities;
+                const isFollowingUser = following.map(({ userId }) => userId).includes(activityId)
+                isFollowingUser ? addDeletedActivity(field, userId, activityId) : console.log("The user is no longer being followed by the current user. Will not add the id of the user to deletedActivities.following");
+            })
         }
         // GOAL: do a check here if the user still liked item
         response.sendStatus(200);
@@ -2631,7 +2645,7 @@ router.route('/users/updateDraft').post(postIntroPicUpload.single('file'), (req,
 
 router.route("/users/:package").get((request, response) => {
     const package = JSON.parse(request.params.package);
-    const { password: passwordAttempt, name, userId, userƒame } = package;
+    const { password: passwordAttempt, name, userId, username } = package;
     if (name === "signInAttempt") {
         console.log("user wants to sign in")
         User.findOne({ username: username }).then(user => {
@@ -4276,10 +4290,7 @@ router.route("/users/:package").get((request, response) => {
                                                                 })
                                                             } else {
                                                                 const replyActivity = postAuthor ? { publicationDate: replyPostedOn, activities: [reply], isCommentOrReply: true } : { publicationDate: replyPostedOn, activities: [reply], isCommentOrReply: true };
-                                                                console.log('replyActivity: ', replyActivity);
-                                                                console.log('datesOfActivities: ', datesOfActivities)
                                                                 datesOfActivities = datesOfActivities ? [...datesOfActivities, replyActivity] : [replyActivity]
-                                                                console.log('datesOfActivities: ', datesOfActivities)
                                                             }
                                                         };
                                                     }))
@@ -4292,9 +4303,7 @@ router.route("/users/:package").get((request, response) => {
 
                             const sortPreviousComments = previousComments => {
                                 let _previousComments;
-                                console.log('previousComments: ', previousComments)
                                 previousComments.forEach(comment => {
-                                    console.log('comment: ', comment)
                                     const { id, createdAt, text } = comment;
                                     const { date: editsPublishedOn, time } = createdAt;
                                     const doesDateExist = _previousComments && _previousComments.map(({ publicationDate }) => publicationDate).includes(editsPublishedOn);
@@ -4331,13 +4340,10 @@ router.route("/users/:package").get((request, response) => {
                                     const commentsByUser = comments.filter(({ userId: commentAuthorId, commentId }) => (!activitiesDeleted?.includes(commentId) && (userId === commentAuthorId)));;
                                     if (commentsByUser.length) {
                                         commentsByUser.forEach(comment => {
-                                            console.log('title: ', title);
                                             const { comment: commentText, createdAt, updatedAt, previousComments: _previousComments, commentId } = comment;
-                                            console.log('commentId: ', commentId);
                                             const { date: commentPostedOn, time: creationTime, miliSeconds } = createdAt;
                                             const uIText = authorUsername ? ` commented on ${authorUsername}'s post titled ` : ' commented on your post titled ';
                                             const previousComments = _previousComments && sortPreviousComments(_previousComments);
-                                            console.log('previousComments: ', previousComments, previousComments && createdAt.date);
                                             // const editsPublishedAt = updatedAt;
                                             const _comment = commentText.split(' ').length > 50 ? getTextPreview(commentText) : commentText;
                                             const commentActivity = { postId, title, authorUsername, _comment, publication: { time: creationTime, miliSeconds }, previousVersions: previousComments, uIText, editsPublishedAt: updatedAt, _id: commentId };
@@ -4388,7 +4394,6 @@ router.route("/users/:package").get((request, response) => {
                             })
 
 
-                            console.log('wazzzz up')
                             datesOfActivities ? response.json(datesOfActivities) : response.json({ isEmpty: true })
                         })
                     };
@@ -4430,7 +4435,6 @@ router.route("/users/:package").get((request, response) => {
                                         const { _id: tagId, isNew } = tag;
                                         if (!isNew) {
                                             const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
-                                            console.log('_tag: ', _tag);
                                             const { ...allTagInfo } = _tag;
                                             return {
                                                 ...tag,
@@ -4500,7 +4504,6 @@ router.route("/users/:package").get((request, response) => {
                                         const bodyWordCountChange = didBodyCountChange && (bodyWordCountA - bodyWordCountB);
                                         const titleWordCountChange = didTitleWordCountChange && (titleWordCountA - titleWordCountB);
                                         const subtitleWordCountChange = subtitle && (subtitleWordCountA - (subtitleWordCountB ?? 0));
-                                        console.log('bodyWordCountChange: ', bodyWordCountChange);
                                         // const { body, ...__versionA } = versionA;
                                         // console.log('__versionA', __versionA);
                                         let _versionA = subtitle ?
@@ -4651,7 +4654,6 @@ router.route("/users/:package").get((request, response) => {
                         let postsSorted = [];
                         _posts.forEach(post => {
                             const { editsPublishedAt, publicationDate, ...postInfo } = post;
-                            console.log("post: ", post);
                             const { miliSeconds, time, date } = publicationDate;
                             const doesDateExist = postsSorted.map(({ publicationDate }) => publicationDate).includes(date);
                             if (doesDateExist) {
@@ -4853,60 +4855,84 @@ router.route("/users/:package").get((request, response) => {
                 })
             } else if (willGetBlockedUsers) {
                 response.json({ isEmpty: true })
-            } else if (willGetPostLikes && result?.activities?.likes?.likedPostIds?.length) {
-                const { likedPostIds } = result.activities.likes;
-                console.log({ likedPostIds });
-                BlogPost.find(
-                    { $and: [{ _id: { $in: likedPostIds }, authorId: { $nin: blockedUserIds } }] },
-                    { authorId: 1, title: 1, _id: 1 }
-                ).then(blogPosts => {
-                    if (blogPosts.length) {
-                        const userIds = blogPosts.map(({ authorId }) => authorId);
-                        User.find(
-                            { _id: { $in: userIds } },
-                            { username: 1 }
-                        ).then(usernames => {
-                            let _likedPosts = [];
-                            if (usernames.length) {
-                                likedPostIds.forEach(postId => {
-                                    const targetPost = blogPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
-                                    if (targetPost) {
-                                        const { title, authorId } = targetPost;
-                                        const { username } = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                        const likedPost = { postId, title, username, isLikes: true };
-                                        _likedPosts.push(likedPost);
-                                    };
-                                });
-
-                            }
-                            _likedPosts.length ? response.json({ likedPosts: _likedPosts }) : response.json({ isEmpty: true });
-                        })
-                    } else {
-                        response.json({ isEmpty: true });
-                    }
-                })
-            } else if (willGetPostLikes) {
-                response.json({ isEmpty: true });
             } else if (willGetFollowing && result?.activities?.following?.length) {
-                const { following } = result.activities;
-                const userIds = following.map(({ userId }) => userId);
+                const { activities, activitiesDeleted } = result;
+                const followingActivitiesDel = activitiesDeleted?.following
+                const userIds = activities.following.map(({ userId }) => userId);
                 User.find(
                     { _id: { $in: userIds } },
                     { username: 1 }
                 ).then(users => {
-                    // check if the user still exist
-                    let followingUsers = [];
-                    if (users.length) {
-                        console.log('following: ', following);
-                        following.forEach(user => {
-                            const { userId: _userId, followedUserAt } = user;
-                            const targetUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(_userId));
-                            if (targetUser) {
-                                followingUsers.push({ userId: _userId, followedUserAt, username: targetUser.username, isFollowing: true });
-                            }
-                        });
+                    // the variable values: the date, time and miliSeconds, and the new activity
+                    // GOAL: this function will insert a new activity into the followingUsers array
+                    // CASE 1: the function finds the existing date within the array, and adds the new activity within the activities field
+                    // the date of the activity exists
+                    // if the date of the activity exists in the activities array, then the function finds the existing date within the array, and adds the new activity within the activities field
+                    // get the activities array 
+                    // get the time of the activity 
+                    // get the newActivity 
+
+                    const insertNewActivity = values => {
+                        const { dateOfActivity, newActivity, activities, dateField, activityType } = values;
+                        let _activities;
+                        const doesDateExist = activities?.map(activity => activity[dateField])?.includes(dateOfActivity);
+                        if (doesDateExist) {
+                            _activities = activities.map(activity => {
+                                if (activity[dateField] === dateOfActivity) {
+                                    return {
+                                        ...activity,
+                                        activities: [...activity.activities, newActivity]
+                                    }
+                                };
+
+                                return activity;
+                            })
+                        } else {
+                            const dayOfActivity = { [dateField]: dateOfActivity, activities: [newActivity], [activityType]: true };
+                            _activities = _activities ? [..._activities, dayOfActivity] : [dayOfActivity];
+                        }
+
+                        return _activities;
                     }
-                    followingUsers.length ? response.json({ followingUsers: followingUsers }) : response.json({ isEmpty: true });
+                    let followingUsers;
+                    if (users.length) {
+                        console.log('followingActivitiesDel: ', followingActivitiesDel);
+                        activities.following.forEach(user => {
+                            const isActivityDeleted = followingActivitiesDel?.includes(user.userId);
+                            if (!isActivityDeleted) {
+                                const { userId: _userId, followedUserAt } = user;
+                                const targetUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(_userId));
+                                if (targetUser) {
+                                    const { date, time, miliSeconds } = followedUserAt;
+                                    const following = { _id: _userId, followedAt: { miliSeconds, time }, username: targetUser.username, uIText: ` followed ${targetUser.username}.` }
+                                    // GOAL: IMPLEMENT THE FUNCTION THAT WILL ADD A NEW ACTIVITY INTO THE ACTIVITIES ARRAY (IN THIS CASE THE ARRAY THAT WILL CONTAIN ALL OF THE USER'S FOLLOWING)
+                                    const _values = { dateOfActivity: date, newActivity: following, activities: followingUsers, dateField: 'followedOn', activityType: 'isFollowing' }
+                                    followingUsers = insertNewActivity(_values);
+                                }
+                            };
+                        });
+                    };
+                    if (followingUsers?.length > 1) {
+                        followingUsers = followingUsers.sort(({ followedOn: followedOnA }, { followedOn: followedOnB }) => {
+                            if (followedOnA > followedOnB) return -1;
+                            if (followedOnA < followedOnB) return 1;
+                            return 0
+                        })
+                    };
+                    const moreThan1Activity = followingUsers?.some(({ activities }) => activities.length > 1);
+                    if (followingUsers && moreThan1Activity) {
+                        followingUsers = followingUsers.map(user => {
+                            if (user.activities.length > 1) {
+                                return {
+                                    ...user,
+                                    activities: user.activities.reverse()
+                                };
+                            };
+
+                            return user;
+                        })
+                    }
+                    followingUsers ? response.json(followingUsers) : response.json({ isEmpty: true });
                 })
             }
         })
