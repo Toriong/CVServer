@@ -413,8 +413,38 @@ router.route("/users").post((request, response) => {
 
 
 router.route("/users/updateInfo").post((request, response) => {
-    const { name, data, userId, username, listName, isPostPresent, isCommentAuthorPresent, notifyUserId } = request.body
-    if (name === "addBioTagsAndSocialMedia") {
+    const { name, data, userId, username, listName, isPostPresent, isCommentAuthorPresent, notifyUserId } = request.body;
+    console.log('request.body: ', request.body)
+    // console.log('name status: ', name === 'checkDeletedLikedActivities')
+    if (name === 'checkDeletedActivities') {
+        // WILL CHECK IF THE LIKED ITEM OR FOLLOWING WAS IN THE PAST DELETED FROM THE ACTIVITY TRACKING. meaning that the liked item's id is present in activitiesDeleted.likes or the user id, THEN FIND THE LIKED ITEM ID AND PULL It FROM activitiesDeleted.likes
+        const { activityField } = package.body;
+        const { activityId } = data;
+        User.find(
+            { _id: userId, [`deletedActivities.${activityField}`]: { $in: [activityId] } }
+        ).countDocuments().then(wasDeletedBefore => {
+            console.log("isPresent: ", wasDeletedBefore);
+            if (wasDeletedBefore) {
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $pull: { [`deletedActivities.${activityField}`]: activityId }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error("An error has occurred in deleting the liked item id from the field of 'activitiesDeleted. Error message: ", error);
+                        } else {
+                            console.log("likedItemId was deleted from activitiesDeleted, numsAffected: ", numsAffected);
+                            response.sendStatus(200);
+                        }
+                    }
+                )
+            } else {
+                console.log('user did not delete this liked activity before.')
+                response.sendStatus(200);
+            };
+        })
+    } else if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
         const { topics, socialMedia } = data
         if (socialMedia) {
@@ -2475,33 +2505,6 @@ router.route("/users/updateInfo").post((request, response) => {
         }
         // GOAL: do a check here if the user still liked item
         response.sendStatus(200);
-    } else if (name === 'checkDeletedLikedActivities') {
-        // WILL CHECK IF THE LIKED ITEM WAS IN THE PAST DELETED FROM THE ACTIVITY TRACKING. IF IT WAS meaning that the liked item's id is present in activitiesDeleted.likes, THEN FIND THE LIKED ITEM ID AND PULL It FROM activitiesDeleted.likes
-        const { likedItemId } = data;
-        User.find(
-            { _id: userId, "activitiesDeleted.likes": { $in: [likedItemId] } }
-        ).countDocuments().then(wasDeletedBefore => {
-            console.log("isPresent: ", wasDeletedBefore);
-            if (wasDeletedBefore) {
-                User.updateOne(
-                    { _id: userId },
-                    {
-                        $pull: { "activitiesDeleted.likes": likedItemId }
-                    },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error("An error has occurred in deleting the liked item id from the field of 'activitiesDeleted. Error message: ", error);
-                        } else {
-                            console.log("likedItemId was deleted from activitiesDeleted, numsAffected: ", numsAffected);
-                            response.sendStatus(200);
-                        }
-                    }
-                )
-            } else {
-                console.log('user did not deleted this liked activity before.')
-                response.sendStatus(200);
-            };
-        })
     }
 }, (error, req, res, next) => {
     if (error) {
