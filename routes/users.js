@@ -414,37 +414,8 @@ router.route("/users").post((request, response) => {
 
 router.route("/users/updateInfo").post((request, response) => {
     const { name, data, userId, username, listName, isPostPresent, isCommentAuthorPresent, notifyUserId } = request.body;
-    console.log('request.body: ', request.body)
     // console.log('name status: ', name === 'checkDeletedLikedActivities')
-    if (name === 'checkDeletedActivities') {
-        // WILL CHECK IF THE LIKED ITEM OR FOLLOWING WAS IN THE PAST DELETED FROM THE ACTIVITY TRACKING. meaning that the liked item's id is present in activitiesDeleted.likes or the user id, THEN FIND THE LIKED ITEM ID AND PULL It FROM activitiesDeleted.likes
-        const { activityField } = package.body;
-        const { activityId } = data;
-        User.find(
-            { _id: userId, [`deletedActivities.${activityField}`]: { $in: [activityId] } }
-        ).countDocuments().then(wasDeletedBefore => {
-            console.log("isPresent: ", wasDeletedBefore);
-            if (wasDeletedBefore) {
-                User.updateOne(
-                    { _id: userId },
-                    {
-                        $pull: { [`deletedActivities.${activityField}`]: activityId }
-                    },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error("An error has occurred in deleting the liked item id from the field of 'activitiesDeleted. Error message: ", error);
-                        } else {
-                            console.log("likedItemId was deleted from activitiesDeleted, numsAffected: ", numsAffected);
-                            response.sendStatus(200);
-                        }
-                    }
-                )
-            } else {
-                console.log('user did not delete this liked activity before.')
-                response.sendStatus(200);
-            };
-        })
-    } else if (name === "addBioTagsAndSocialMedia") {
+    if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
         const { topics, socialMedia } = data
         if (socialMedia) {
@@ -491,7 +462,7 @@ router.route("/users/updateInfo").post((request, response) => {
         //     // updates only the title, subtitle, introPic, and the body of the user's draft
     } else if (name === "updateDraft") {
         const { draftId, field, userId, wasPicDeleted, imgUrl } = request.body;
-        const { timeOfLastEdit, data: draftUpdate } = data;
+        const { timeOfLastEdit, draftUpdated } = data;
         // console.log("request.body: ", request.body);
         if (wasPicDeleted) {
             fs.unlink(`./postIntroPics/${imgUrl}`, err => {
@@ -532,7 +503,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 {
                     $set:
                     {
-                        [`roughDrafts.$.${field}`]: draftUpdate,
+                        [`roughDrafts.$.${field}`]: draftUpdated[field],
                         "roughDrafts.$.timeOfLastEdit": timeOfLastEdit
                     }
                 },
@@ -565,6 +536,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 if (error) {
                     console.error("error message: ", error);
                 } else {
+                    console.log('draft was updated with tags, numsAffected: ', data);
                     response.json(
                         "post request successful, tags updated"
                     );
@@ -2473,19 +2445,26 @@ router.route("/users/updateInfo").post((request, response) => {
         const checkIfLiked = (likes, userId) => likes.map(({ userId: _userId }) => _userId).includes(userId)
         if (field === 'likes') {
             BlogPost.findOne({ _id: postId ?? likedItemId }, { comments: 1, userIdsOfLikes: 1 }).then(result => {
-                const { comments, userIdsOfLikes } = result;
-                if (isReplyLike || isCommentLike) {
-                    const comment = comments.find(({ commentId }) => commentId === (repliedToCommentId ?? likedItemId));
+                if (result && (isReplyLike || isCommentLike)) {
+                    const comment = result.comments.find(({ commentId }) => commentId === (repliedToCommentId ?? likedItemId));
                     if (comment && isReplyLike) {
                         const targetReply = comment.replies.find(({ replyId }) => replyId === likedItemId);
-                        const isLiked = targetReply.userIdsOfLikes.map(({ userId }) => userId).includes(userId);
-                        isLiked ? addDeletedActivity(field, userId, activityId) : console.log('This reply is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
-                    } else {
+                        if (targetReply) {
+                            const isLiked = targetReply.userIdsOfLikes.map(({ userId }) => userId).includes(userId);
+                            isLiked ? addDeletedActivity(field, userId, activityId) : console.log('This reply is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
+                        } else {
+                            console.log('Reply no longer exist. User info has not been modified.')
+                        }
+                    } else if (comment) {
                         const isLiked = comment.userIdsOfLikes.map(({ userId }) => userId).includes(userId);
                         isLiked ? addDeletedActivity(field, userId, activityId) : console.log('This comment is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
+                    } else {
+                        console.log('Comment no longer exist. User info has not been modified.')
                     }
-                } else if (isPostLike) {
-                    checkIfLiked(userIdsOfLikes, userId) ? addDeletedActivity(field, userId, activityId) : console.log('This post is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
+                } else if (result && isPostLike) {
+                    checkIfLiked(result.userIdsOfLikes, userId) ? addDeletedActivity(field, userId, activityId) : console.log('This post is no longer liked by the user. Will not add the deleted activity to the activitiesDeleted field.')
+                } else {
+                    console.log('Post no longer exist.')
                 }
             })
         } else if (field === 'following') {
@@ -2498,13 +2477,100 @@ router.route("/users/updateInfo").post((request, response) => {
             // use the id of the current user to find the profile of the current user
             User.findOne({ _id: userId }, { "activities.following": 1, _id: 0 }).then(user => {
                 console.log('user: ', user)
-                const { following } = user.activities;
-                const isFollowingUser = following.map(({ userId }) => userId).includes(activityId)
+                const { following } = user.activities
+                const isFollowingUser = following?.length && following.map(({ userId }) => userId).includes(activityId)
                 isFollowingUser ? addDeletedActivity(field, userId, activityId) : console.log("The user is no longer being followed by the current user. Will not add the id of the user to deletedActivities.following");
+            })
+        } else if (field === 'posts') {
+            // GOAL: check if the posts still exist
+            // CASE 1: the post exist
+            // GOAL: if the post exist, then deleted the post from tracking 
+            BlogPost.findOne({ _id: postId }).countDocuments().then(isPresent => {
+                console.log('isPresent: ', isPresent);
+                isPresent ? addDeletedActivity(field, userId, activityId) : console.log('The post no longer exist. Will not add the id of the post to the deletedActivities.posts field.')
+            })
+        } else if (field === 'commentsAndReplies') {
+            // GOAL: check if the reply still exist 
+            // CASE 1: the reply does exist
+            // the following is passed through the addDeleteActivity fn: field(in this case it will be commentsAndReplies, the current user id, and the activity id which will be the '_id' on the client side)
+            // the reply is present
+            // if the reply is present, then the following is passed through the addDeleteActivity fn: field(in this case it will be commentsAndReplies, the current user id, and the activity id which will be the '_id' on the client side)
+            // the comment is present
+            // check if the comment is present, if it is, then if the reply is present, then the following is passed through the addDeleteActivity fn: field(in this case it will be commentsAndReplies, the current user id, and the activity id which will be the '_id' on the client side)
+            // the post is present
+            // check if the post is present, if it is, then check if the comment is present, if it is, then if the reply is present, then the following is passed through the addDeleteActivity fn: field(in this case it will be commentsAndReplies, the current user id, and the activity id which will be the '_id' on the client side)
+            // the following is received from the client-side: {the id of the reply (_id), the  id of the comment (repliedToCommentId), the id of the post, the userId};
+            BlogPost.findOne({ _id: postId, 'comments.commentId': repliedToCommentId ?? activityId }, { comments: 1, _id: 0 }).then(result => {
+                if (result && repliedToCommentId) {
+                    console.log('hello world')
+                    const targetComment = result.comments.find(({ commentId }) => commentId === repliedToCommentId);
+                    if (targetComment) {
+                        const targetReply = targetComment.replies.find(({ replyId: _replyId }) => activityId === _replyId);
+                        targetReply ? addDeletedActivity(field, userId, activityId) : console.log("The reply doesn't exist, will not add id of reply to deletedActivities.commentsAndReplies.");
+                    } else {
+                        console.log("Comment doesn't exist, current user profile has not been modified.")
+                    }
+                } else if (result) {
+                    addDeletedActivity(field, userId, activityId);
+                } else {
+                    console.log("Comment or post doesn't exist.");
+                }
             })
         }
         // GOAL: do a check here if the user still liked item
         response.sendStatus(200);
+    } else if (name === 'checkActivityDeletionStatus') {
+        console.log('checkActivityDeletionStatus', request.body);
+        const { field } = request.body;
+        const { activityId } = data;
+        User.findOne({ _id: userId, [`activitiesDeleted.${field}`]: { $in: [activityId] } }).countDocuments().then(isPresent => {
+            if (isPresent) {
+                // GOAL: delete the activity id from its field
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $pull:
+                        {
+                            [`activitiesDeleted.${field}`]: activityId
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) console.error("An error has occurred in deleting the activity id from the 'activitiesDeleted' field: ", error);
+                        else {
+                            console.log('Type: ', field);
+                            console.log('Activity id was deleted from the array stored in the activitiesDeleted field. Now tracking activity, numsAffected: ', numsAffected);
+                            response.sendStatus(200)
+                        }
+                    }
+                )
+            } else {
+                console.log('User has not deleted the activity in the past. User info has not been modified.');
+                response.sendStatus(200);
+            }
+        })
+    } else if (name === 'reTrackActivity') {
+        const { field } = request.body;
+        const { activityId } = data;
+        const pullIdFromActivitiesDel = (activityId, field, userId) => {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull:
+                    {
+                        [`activitiesDeleted.${field}`]: activityId
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) console.error("An error has occurred in deleting the activity id from the 'activitiesDeleted' field: ", error);
+                    else {
+                        console.log('Type: ', field);
+                        console.log('Activity id was deleted from the array stored in the activitiesDeleted field. Now tracking activity, numsAffected: ', numsAffected);
+                        response.sendStatus(200)
+                    }
+                }
+            )
+        };
+        pullIdFromActivitiesDel(activityId, field, userId);
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -3184,6 +3250,8 @@ router.route("/users/:package").get((request, response) => {
                                     })
                                 });
                                 _replyNotifications.length ? response.json({ replies: _replyNotifications }) : response.json({ isEmpty: true });
+                            } else {
+                                response.json({ isEmpty: true });
                             }
                         })
                     });
@@ -4212,7 +4280,7 @@ router.route("/users/:package").get((request, response) => {
                             repliesByUser && repliesByUser.forEach(({ postId, commentsRepliedTo, deletedRepliesActivity }) => {
                                 const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
                                 if (targetPost) {
-                                    const { comments, _id: postId, title, author: postAuthorId } = targetPost;
+                                    const { comments, _id: postId, title, authorId: postAuthorId } = targetPost;
                                     if (comments.length) {
                                         commentsRepliedTo.forEach(_commentId => {
                                             const targetComment = comments.find(({ commentId }) => commentId === _commentId);
@@ -4226,7 +4294,7 @@ router.route("/users/:package").get((request, response) => {
                                                         const { replyId, _reply: replyText, createdAt, previousReplies: _previousReplies, updatedAt } = reply;
                                                         const { date: replyPostedOn, time, miliSeconds } = createdAt;
                                                         if (!deletedRepliesActivity?.includes(replyId)) {
-                                                            const postAuthor = usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
+                                                            const postAuthor = (postAuthorId !== userId) && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
                                                             const isCommentByUser = commentAuthorId === userId;
                                                             const commentAuthor = !isCommentByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(commentAuthorId))
                                                             let uIText;
@@ -4345,6 +4413,7 @@ router.route("/users/:package").get((request, response) => {
                                         commentsByUser.forEach(comment => {
                                             const { comment: commentText, createdAt, updatedAt, previousComments: _previousComments, commentId } = comment;
                                             const { date: commentPostedOn, time: creationTime, miliSeconds } = createdAt;
+                                            console.log({ authorUsername })
                                             const uIText = authorUsername ? ` commented on ${authorUsername}'s post titled ` : ' commented on your post titled ';
                                             const previousComments = _previousComments && sortPreviousComments(_previousComments);
                                             // const editsPublishedAt = updatedAt;
