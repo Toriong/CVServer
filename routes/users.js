@@ -2734,25 +2734,29 @@ router.route("/users/:package").get((request, response) => {
         console.log("user wants to sign in")
         User.findOne({ username: username }).then(user => {
             if (user?.password === passwordAttempt) {
-                const { username, firstName, lastName, iconPath, _id, readingLists, topics, isUserNew, bio, socialMedia, blockedUsers, publishedDrafts } = user;
+                const { username, firstName, lastName, iconPath, _id, readingLists, topics, isUserNew, bio, socialMedia, blockedUsers, publishedDrafts, activities } = user;
                 console.log('password matches user signed backed in.')
                 console.log("user signed back in")
+                const following = activities?.following;
                 const defaultUserInfo = { username, firstName, lastName, iconPath, _id, isUserNew, bio };
                 let user_;
                 if (readingLists && Object.keys(readingLists).length) {
                     user_ = (user_ && Object.keys(user_).length) ? { ...user_, readingLists } : { readingLists }
                 }
-                if (topics && topics.length) {
+                if (topics?.length) {
                     user_ = (user_ && Object.keys(user_).length) ? { ...user_, topics } : { topics }
                 };
-                if (socialMedia && socialMedia.length) {
+                if (socialMedia?.length) {
                     user_ = (user_ && Object.keys(user_).length) ? { ...user_, socialMedia } : { socialMedia }
                 }
-                if (blockedUsers && blockedUsers.length) {
+                if (blockedUsers?.length) {
                     user_ = (user_ && Object.keys(user_).length) ? { ...user_, blockedUsers } : { blockedUsers }
                 }
-                if (publishedDrafts && publishedDrafts.length) {
+                if (publishedDrafts?.length) {
                     user_ = (user_ && Object.keys(user_).length) ? { ...user_, publishedDrafts } : { publishedDrafts }
+                };
+                if (following?.length) {
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, following } : { following }
                 }
                 response.json({
                     message: `Welcome back ${username}!`,
@@ -4025,7 +4029,9 @@ router.route("/users/:package").get((request, response) => {
 
                                         return follower
                                     });
-                                    response.json({ newFollowers: _newFollowers });
+                                    console.log({ _newFollowers });
+                                    _newFollowers = _newFollowers.filter(({ isNewFollower }) => isNewFollower);
+                                    _newFollowers.length ? response.json({ newFollowers: _newFollowers }) : response.json({ isEmpty: true })
                                 } else {
                                     response.json({ isEmpty: true });
                                 }
@@ -4940,20 +4946,19 @@ router.route("/users/:package").get((request, response) => {
                     ).then(users => {
                         console.log('users: ', users);
                         if (users.length) {
-                            let _blockedUsers = [];
+                            let _blockedUsers;
                             blockedUsers.forEach(user => {
                                 const { blockedAt, userId } = user;
                                 const { date, time, miliSeconds } = blockedAt;
                                 const blockedUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
                                 if (blockedUser) {
                                     const { username, _id } = blockedUser;
-                                    const _blockedUser = { _id, username, blockedAt };
-                                    // const _values = {dateOfActivity: }
-                                    _blockedUsers = insertNewActivity()
-                                    _blockedUsers.push(_blockedUser)
+                                    const _blockedUser = { _id, username, blockedAt: { time, miliSeconds } };
+                                    const _values = { dateOfActivity: date, newActivity: _blockedUser, activities: _blockedUsers, dateField: 'blockedOn', activityType: 'isBlockedUser' };
+                                    _blockedUsers = insertNewActivity(_values)
                                 }
                             });
-                            response.json({ blockedUsers: _blockedUsers });
+                            _blockedUsers ? response.json(_blockedUsers) : response.json({ isEmpty: true })
                         } else {
                             response.json({ isEmpty: true })
                         }
