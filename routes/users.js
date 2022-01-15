@@ -4044,7 +4044,7 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getUserActivities') {
-        const { willGetLikes, willGetRepliesAndComments, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetPostLikes, willGetFollowing } = package;
+        const { willGetLikes, willGetRepliesAndComments, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetFollowing } = package;
         // GOAL: get the deleted post activities 
         User.findOne(
             { _id: userId },
@@ -4762,12 +4762,19 @@ router.route("/users/:package").get((request, response) => {
                                 postsSorted.push(postActivity);
                             }
                         })
-                        const _postSorted = postsSorted.sort((postA, postB) => {
+                        postsSorted = postsSorted.sort((postA, postB) => {
                             if (postA.publicationDate > postB.publicationDate) return -1;
                             if (postA.publicationDate < postB.publicationDate) return 1;
                             return 0;
+                        });
+                        postsSorted = postsSorted.map(post => {
+                            const _activities = post.activities.sort(({ publication: publicationA }, { publication: publicationB }) => publicationB.miliSeconds - publicationA.miliSeconds);
+                            return {
+                                ...post,
+                                activities: _activities
+                            }
                         })
-                        response.json({ postsByUser: _postSorted })
+                        response.json({ postsByUser: postsSorted })
                     });
                 })
             } else if (willGetPosts) {
@@ -4889,11 +4896,7 @@ router.route("/users/:package").get((request, response) => {
                                     };
                                 });
                                 if (_readingLists.length) {
-                                    _readingLists = _readingLists.sort(({ publicationDate: publicationDateA }, { publicationDate: publicationDateB }) => {
-                                        if (publicationDateA > publicationDateB) return -1;
-                                        if (publicationDateA < publicationDateB) return 1;
-                                        return 0;
-                                    })
+                                    _readingLists = _readingLists.reverse();
                                     response.json({ readingLists: _readingLists })
                                 } else {
                                     response.json({ isEmpty: true });
@@ -4907,30 +4910,57 @@ router.route("/users/:package").get((request, response) => {
             } else if (willGetReadingLists) {
                 response.json({ isEmpty: true });
             } else if (willGetBlockedUsers && result?.blockedUsers?.length) {
-                const { blockedUsers } = result;
-                User.find(
-                    { _id: { $in: blockedUserIds } },
-                    { username: 1 }
-                ).then(users => {
-                    console.log('users: ', users);
-                    if (users.length) {
-                        let _blockedUsers = [];
-                        blockedUsers.forEach(user => {
-                            const blockedUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(user.userId));
-                            if (blockedUser) {
-                                const _blockedUser = {
-                                    ...user,
-                                    username: blockedUser.username,
-                                    isBlockedUser: true
-                                };
-                                _blockedUsers.push(_blockedUser)
-                            }
-                        });
-                        response.json({ blockedUsers: _blockedUsers });
+                const insertNewActivity = values => {
+                    const { dateOfActivity, newActivity, activities, dateField, activityType } = values;
+                    let _activities;
+                    const doesDateExist = activities?.map(activity => activity[dateField])?.includes(dateOfActivity);
+                    if (doesDateExist) {
+                        _activities = activities.map(activity => {
+                            if (activity[dateField] === dateOfActivity) {
+                                return {
+                                    ...activity,
+                                    activities: [...activity.activities, newActivity]
+                                }
+                            };
+
+                            return activity;
+                        })
                     } else {
-                        response.json({ isEmpty: true })
+                        const dayOfActivity = { [dateField]: dateOfActivity, activities: [newActivity], [activityType]: true };
+                        _activities = _activities ? [..._activities, dayOfActivity] : [dayOfActivity];
                     }
-                })
+
+                    return _activities;
+                }
+                const { blockedUsers } = result;
+                if (blockedUsers?.length && blockedUserIds?.length) {
+                    User.find(
+                        { _id: { $in: blockedUserIds } },
+                        { username: 1 }
+                    ).then(users => {
+                        console.log('users: ', users);
+                        if (users.length) {
+                            let _blockedUsers = [];
+                            blockedUsers.forEach(user => {
+                                const { blockedAt, userId } = user;
+                                const { date, time, miliSeconds } = blockedAt;
+                                const blockedUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                                if (blockedUser) {
+                                    const { username, _id } = blockedUser;
+                                    const _blockedUser = { _id, username, blockedAt };
+                                    // const _values = {dateOfActivity: }
+                                    _blockedUsers = insertNewActivity()
+                                    _blockedUsers.push(_blockedUser)
+                                }
+                            });
+                            response.json({ blockedUsers: _blockedUsers });
+                        } else {
+                            response.json({ isEmpty: true })
+                        }
+                    })
+                } else {
+                    response.json({ isEmpty: true })
+                }
             } else if (willGetBlockedUsers) {
                 response.json({ isEmpty: true })
             } else if (willGetFollowing && result?.activities?.following?.length) {
