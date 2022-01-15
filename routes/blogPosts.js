@@ -664,6 +664,19 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                 }
             );
         });
+    } else if (name === 'deletePost') {
+        console.log('req.body: ', req.body);
+        BlogPost.deleteOne(
+            { _id: postId },
+            (error, numsAffected) => {
+                if (error) {
+                    console.log('An error has occurred in deleting published post by user: ', error);
+                } else {
+                    console.log('Post was deleted, numsAffected: ', numsAffected);
+                    res.sendStatus(200);
+                }
+            }
+        )
     }
 });
 
@@ -762,9 +775,10 @@ router.route('/blogPosts/editPostAddPic').post(postIntroPicUpload.single('file')
 
 
 router.route("/blogPosts/:package").get((req, res) => {
-    console.log("get user's published posts")
+    console.log("get user's published posts");
     const package = JSON.parse(req.params.package);
-    const { name, signedInUserId: userId, draftId, savedPosts } = package;
+    console.log('package: ', package);
+    const { name, signedInUserId: userId, draftId, savedPosts, postId } = package;
     // change this to 'getPublishedDraftsByAuthor'
     if (name === "getPublishedDrafts") {
         BlogPost.find({ authorId: userId }).then(posts => {
@@ -861,6 +875,7 @@ router.route("/blogPosts/:package").get((req, res) => {
             { _id: { $in: savedPosts } },
             { _id: 1, imgUrl: 1 }
         ).then(posts => {
+            console.log('beef and ribeye')
             res.json(posts);
         })
     } else if (name === 'getSavedPosts') {
@@ -901,24 +916,26 @@ router.route("/blogPosts/:package").get((req, res) => {
                             const { savedAt, postId } = post;
                             const { date: dateOfSave, time } = savedAt
                             const _post = _posts.find(post => post?._id === postId);
-                            const savedPost = { ..._post, savedAt: time };
-                            const doesDateExist = postsBySavedDates && postsBySavedDates.map(({ date }) => date).includes(dateOfSave);
-                            if (doesDateExist) {
-                                postsBySavedDates = postsBySavedDates.map(postByDate => {
-                                    const { date, posts } = postByDate;
-                                    if (date === dateOfSave) {
-                                        return {
-                                            ...postByDate,
-                                            posts: [...posts, savedPost]
-                                        }
-                                    };
+                            if (_post) {
+                                const savedPost = { ..._post, savedAt: time };
+                                const doesDateExist = postsBySavedDates && postsBySavedDates.map(({ date }) => date).includes(dateOfSave);
+                                if (doesDateExist) {
+                                    postsBySavedDates = postsBySavedDates.map(postByDate => {
+                                        const { date, posts } = postByDate;
+                                        if (date === dateOfSave) {
+                                            return {
+                                                ...postByDate,
+                                                posts: [...posts, savedPost]
+                                            }
+                                        };
 
-                                    return postByDate
-                                })
-                            } else {
-                                const newSavedPosts = { date: dateOfSave, posts: [savedPost] };
-                                postsBySavedDates = postsBySavedDates ? [...postsBySavedDates, newSavedPosts] : [newSavedPosts]
-                            }
+                                        return postByDate
+                                    })
+                                } else {
+                                    const newSavedPosts = { date: dateOfSave, posts: [savedPost] };
+                                    postsBySavedDates = postsBySavedDates ? [...postsBySavedDates, newSavedPosts] : [newSavedPosts]
+                                }
+                            };
                         })
                         postsBySavedDates = postsBySavedDates.map(post => {
                             if (post.posts.length > 1) {
@@ -947,13 +964,57 @@ router.route("/blogPosts/:package").get((req, res) => {
                 }
             }
         ).then(posts => {
-            Tag.find({})
-                .then(tags => {
-                    if (posts.length) {
-                        const _posts = posts.map(post => {
-                            const { editedPost, tags: postTags } = post;
-                            if (editedPost) {
-                                const editedPostTags = editedPost.tags.map(tag => {
+            console.log({ publishedPostsIds });
+            console.log('posts by user: ', posts);
+            console.log('userId, activitiesDeleted: ', userId);
+            User.findOne({ _id: userId }, { 'activitiesDeleted.posts': 1, _id: 0 }).then(result => {
+                console.log('result, activitiesDeletedPost: ', result)
+                const activitiesDeletedPosts = result?.activitiesDeleted?.posts
+                console.log('activitiesDeletedPosts: ', activitiesDeletedPosts)
+                Tag.find({})
+                    .then(tags => {
+                        const getPublishedTags = (postTags, tags) => postTags.map(tag => {
+                            const { isNew, _id: tagId } = tag;
+                            if (!isNew) {
+                                const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
+
+                                return allTagInfo;
+                            };
+
+                            return tag;
+                        });
+                        if (posts.length) {
+                            const _posts = posts.map(post => {
+                                const { editedPost, tags: postTags, _id } = post;
+                                const isActivityDeleted = activitiesDeletedPosts?.includes(_id);
+                                _id === "a3bb030a-5c05-49e3-9c14-490d90c62223" && console.log('isActivityDeleted: ', isActivityDeleted);
+                                if (editedPost) {
+                                    const _tags = getPublishedTags(postTags, tags);
+                                    const editedPostTags = editedPost.tags.map(tag => {
+                                        const { isNew, _id: tagId } = tag;
+                                        if (!isNew) {
+                                            const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
+
+                                            return allTagInfo;
+                                        };
+
+                                        return tag;
+                                    });
+                                    console.log('editedPost: ', editedPost);
+                                    return {
+                                        ...post._doc,
+                                        isActivityDeleted,
+                                        editedPost: {
+                                            ...editedPost,
+                                            tags: editedPostTags
+                                        },
+                                        tags: _tags
+                                    }
+                                }
+                                // if the post has editedPost field, then get all of the tag info for that field 
+                                // if the post doesn't have an editedPost field, then get all of the tag info for that field 
+
+                                const _tags = postTags.map(tag => {
                                     const { isNew, _id: tagId } = tag;
                                     if (!isNew) {
                                         const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
@@ -963,40 +1024,20 @@ router.route("/blogPosts/:package").get((req, res) => {
 
                                     return tag;
                                 });
-                                console.log('editedPost: ', editedPost);
+
                                 return {
                                     ...post._doc,
-                                    editedPost: {
-                                        ...editedPost,
-                                        tags: editedPostTags
-                                    }
+                                    isActivityDeleted,
+                                    tags: _tags
                                 }
-                            }
-                            // if the post has editedPost field, then get all of the tag info for that field 
-                            // if the post doesn't have an editedPost field, then get all of the tag info for that field 
-
-                            const _tags = postTags.map(tag => {
-                                const { isNew, _id: tagId } = tag;
-                                if (!isNew) {
-                                    const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
-
-                                    return allTagInfo;
-                                };
-
-                                return tag;
                             });
 
-                            return {
-                                ...post._doc,
-                                tags: _tags
-                            }
-                        });
-
-                        res.json({ publishedPosts: _posts });
-                    } else {
-                        res.json({ isEmpty: true });
-                    }
-                });
+                            res.json({ publishedPosts: _posts });
+                        } else {
+                            res.json({ isEmpty: true });
+                        }
+                    });
+            });
         })
     } else if (name === 'getPostToEdit') {
         console.log('will get published post to edit it.');
@@ -1046,7 +1087,7 @@ router.route("/blogPosts/:package").get((req, res) => {
                 }
             }
         ).then(post => {
-            if (post.editedPost) {
+            if (post?.editedPost) {
                 const { ...postedDraft } = post;
                 let { _doc: _postedDraft } = postedDraft;
                 let { subtitle, imgUrl, publicationDate, editedPost, _id, userIdsOfLikes, authorId, __v, comments, previousVersions, editsPublishedAt, ...__postedDraft } = _postedDraft;
@@ -1075,6 +1116,38 @@ router.route("/blogPosts/:package").get((req, res) => {
                 res.json(false);
             }
         });
+    } else if (name === 'checkIfPostsExist') {
+        console.log('bitchhhhh')
+        const { userId, postIds } = package
+        console.log('userId: ', userId)
+        User.findOne({ _id: userId }, { readingLists: 1, _id: 0, blockedUsers: 1 }).then(result => {
+            console.log('result: ', result);
+            const { readingLists, blockedUsers } = result;
+            const blockedUserIds = blockedUsers ? blockedUsers.map(({ userId }) => userId) : [];
+            BlogPost.find(
+                { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] },
+            ).then(posts => {
+                const savedPostIds = posts.map(({ _id }) => _id);
+                let _readingLists = readingLists;
+                Object.keys(readingLists).forEach(listName => {
+                    const readingList = readingLists[listName];
+                    if (readingList.list.length) {
+                        const _list = readingList.list.filter(({ postId }) => savedPostIds.includes(postId));
+                        _readingLists = {
+                            ..._readingLists,
+                            [listName]: {
+                                ..._readingLists[listName],
+                                list: _list
+                            }
+                        }
+                    }
+
+                })
+                res.json(_readingLists)
+            })
+
+        })
+
     }
 });
 

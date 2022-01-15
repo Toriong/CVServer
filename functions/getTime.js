@@ -99,7 +99,7 @@ const convertToStandardTime = time => {
         timeValue = `0${hours}`;
     } else if (hours > 12) {
         const _hours = (hours - 12);
-        timeValue = ((_hours > 0) && (_hours <= 9)) ? `0${_hours}` : `${_hours}`;
+        timeValue = ((_hours > 0) && (_hours <= 9)) ? `${_hours}` : `${_hours}`;
     } else if (hours == 0) {
         timeValue = "12";
     }

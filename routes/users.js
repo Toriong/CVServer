@@ -584,27 +584,28 @@ router.route("/users/updateInfo").post((request, response) => {
         User.find({
             _id: userId
         }).then(user => {
-            const { _id: draftId, subtitle: subtitleFromClient, imgUrl: imgUrlFromClient, ...draftFromFrontEnd } = data;
+            const { _id: draftId, subtitle: subtitleFromClient, imgUrl: imgUrlFromClient, title: titleFromClient, body: bodyFromClient, tags: tagsFromClient } = data;
             const drafts = user[0].roughDrafts;
             const draftInDB = drafts.find(({ _id: _draftId }) => _draftId === draftId);
-            const { _id, defaultTitle, timeOfLastEdit, subtitle: subtitleInDb, imgUrl: imgUrlInDb, creation, ...draftInDB_ } = draftInDB;
-            const isDraftSame = JSON.stringify(draftInDB_) === JSON.stringify(draftFromFrontEnd);
-            console.log({
-                draftInDB_,
-                draftFromFrontEnd
-            })
+            const { _id, subtitle: subtitleInDb, imgUrl: imgUrlInDb, title: draftInDbTitle, body: draftInDbBody, tags: draftInDbTags } = draftInDB;
+            const isTitleSame = draftInDbTitle === titleFromClient;
+            const isBodySame = bodyFromClient === draftInDbBody;
+            console.log({ tagsFromClient })
+            const areTagsSame = JSON.stringify(draftInDbTags) === JSON.stringify(tagsFromClient);
             const wasNoSubtitleChosen = (subtitleFromClient === undefined) && (subtitleInDb === '' || subtitleInDb === undefined)
             const isSubtitleSame = wasNoSubtitleChosen ? undefined : subtitleFromClient === subtitleInDb;
             const wasNoImageChosen = (imgUrlInDb === undefined) && (imgUrlFromClient === undefined);
             const isImgUrlSame = wasNoImageChosen ? undefined : imgUrlInDb === imgUrlFromClient;
             console.log({
-                isDraftSame,
+                isTitleSame,
+                isBodySame,
+                areTagsSame,
                 wasNoImageChosen,
                 isImgUrlSame,
                 wasNoSubtitleChosen,
                 isSubtitleSame,
             })
-            if (isDraftSame && (((!wasNoImageChosen && isImgUrlSame) && (!wasNoSubtitleChosen && isSubtitleSame)) || (wasNoImageChosen && (!wasNoSubtitleChosen && isSubtitleSame)) || (wasNoImageChosen && wasNoSubtitleChosen) || ((!wasNoImageChosen && isImgUrlSame) && wasNoSubtitleChosen))) {
+            if ((isTitleSame && isBodySame && areTagsSame) && (((!wasNoImageChosen && isImgUrlSame) && (!wasNoSubtitleChosen && isSubtitleSame)) || (wasNoImageChosen && (!wasNoSubtitleChosen && isSubtitleSame)) || (wasNoImageChosen && wasNoSubtitleChosen) || ((!wasNoImageChosen && isImgUrlSame) && wasNoSubtitleChosen))) {
                 console.log('pass')
                 User.updateOne(
                     { _id: userId },
@@ -617,9 +618,18 @@ router.route("/users/updateInfo").post((request, response) => {
                             console.error("Error in updating user.roughDrafts: ", error);
                             response.sendStatus(404)
                         } else {
+                            const editSelectedTags = selectedTags => selectedTags.map(tag => {
+                                const { isNew, _id } = tag;
+                                if (!isNew) {
+                                    return { _id };
+                                };
+
+                                return tag;
+                            });
                             console.log("User has been updated. numsAffected: ", numsAffected);
                             let newPost;
-                            const { title, tags, body } = draftInDB;
+                            const { title, tags: _tags, body } = draftInDB;
+                            const tags = editSelectedTags(_tags);
                             if (subtitleInDb && imgUrlInDb) {
                                 console.log("I was executed")
                                 newPost = new BlogPost({
@@ -1004,7 +1014,7 @@ router.route("/users/updateInfo").post((request, response) => {
                     {
                         [`readingLists.${title}.isPrivate`]: isPrivate,
                         [`readingLists.${title}.createdAt`]: listCreatedAt,
-                        [`readingLists.${title}.id`]: uuidv4()
+                        [`readingLists.${title}._id`]: uuidv4()
                     }
                 },
                 (error, numsAffected) => {
@@ -2468,13 +2478,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             })
         } else if (field === 'following') {
-            // GOAL: check if the following user is still being followed by the current user 
-            // CASE 1: the following user is being followed
-            // the id of the following user is pushed into the following field: 'deletedActivities.following;
-            // the id of the following user is present in user.following
-            // if the id of the following user is present in user.following, then id of the following user is pushed into the following field: 'deletedActivities.following;
-            // find the current user profile and return the activities.following
-            // use the id of the current user to find the profile of the current user
             User.findOne({ _id: userId }, { "activities.following": 1, _id: 0 }).then(user => {
                 console.log('user: ', user)
                 const { following } = user.activities
@@ -2490,16 +2493,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 isPresent ? addDeletedActivity(field, userId, activityId) : console.log('The post no longer exist. Will not add the id of the post to the deletedActivities.posts field.')
             })
         } else if (field === 'commentsAndReplies') {
-            // GOAL: check if the reply still exist 
-            // CASE 1: the reply does exist
-            // the following is passed through the addDeleteActivity fn: field(in this case it will be commentsAndReplies, the current user id, and the activity id which will be the '_id' on the client side)
-            // the reply is present
-            // if the reply is present, then the following is passed through the addDeleteActivity fn: field(in this case it will be commentsAndReplies, the current user id, and the activity id which will be the '_id' on the client side)
-            // the comment is present
-            // check if the comment is present, if it is, then if the reply is present, then the following is passed through the addDeleteActivity fn: field(in this case it will be commentsAndReplies, the current user id, and the activity id which will be the '_id' on the client side)
-            // the post is present
-            // check if the post is present, if it is, then check if the comment is present, if it is, then if the reply is present, then the following is passed through the addDeleteActivity fn: field(in this case it will be commentsAndReplies, the current user id, and the activity id which will be the '_id' on the client side)
-            // the following is received from the client-side: {the id of the reply (_id), the  id of the comment (repliedToCommentId), the id of the post, the userId};
             BlogPost.findOne({ _id: postId, 'comments.commentId': repliedToCommentId ?? activityId }, { comments: 1, _id: 0 }).then(result => {
                 if (result && repliedToCommentId) {
                     console.log('hello world')
@@ -2516,8 +2509,30 @@ router.route("/users/updateInfo").post((request, response) => {
                     console.log("Comment or post doesn't exist.");
                 }
             })
+        } else if (field === 'readingLists') {
+            // GOAL: check if the reading list still exist
+            // CASE 1: the reading list does exist
+            // the id of the reading list is pushed into activitiesDeleted.readingLists
+            // the target reading list is found in the loop of all of the reading lists by access the _id field of each reading list that were created by the current user
+            // if the target reading list is found in the loop of all of the reading lists by access the _id field of each reading list that were created by the current user , the id of the reading list is pushed into activitiesDeleted.readingLists
+            // by using the id of the reading list that was deleted by the current user, use it to find the deleted reading list amongst all of the reading lists by the current user by loop through all of the user's reading lists  
+            // loop through all of the readingLists by current user 
+            // access the readingLists field of the current user
+            // the current user is found by using the id of the current user 
+            console.log('request.body: ', request.body);
+            User.findOne({ _id: userId }, { readingLists: 1, _id: 0 }).then(result => {
+                const { readingLists } = result;
+                const readingListNames = Object.keys(readingLists)
+                let isListPresent;
+                for (let listName of readingListNames) {
+                    if (readingLists[listName]._id === activityId) {
+                        isListPresent = true;
+                        break;
+                    }
+                };
+                isListPresent ? addDeletedActivity(field, userId, activityId) : console.log('The list has been deleted. No modification to the account of the user has occurred.')
+            })
         }
-        // GOAL: do a check here if the user still liked item
         response.sendStatus(200);
     } else if (name === 'checkActivityDeletionStatus') {
         console.log('checkActivityDeletionStatus', request.body);
@@ -4764,11 +4779,7 @@ router.route("/users/:package").get((request, response) => {
                 const dontShowReadingLists = activitiesDeleted?.readingLists;
                 Object.keys(readingLists).forEach(listName => {
                     const { list, _id: readingListId } = readingLists[listName];
-                    list.length && list.forEach(({ postId }) => {
-                        if (!dontShowReadingLists?.includes(readingListId)) {
-                            !postIds.includes(postId) && postIds.push(postId)
-                        }
-                    });
+                    list.length && list.forEach(({ postId }) => { !dontShowReadingLists?.includes(readingListId) && (!postIds.includes(postId) && postIds.push(postId)) });
                 });
                 if (postIds.length) {
                     BlogPost.find(
@@ -4781,12 +4792,6 @@ router.route("/users/:package").get((request, response) => {
                                 { _id: { $in: userIds } },
                                 { username: 1 }
                             ).then(usernames => {
-                                // GOAL: put each reading list into its own value in an array
-                                // notes brainstorm:
-                                // get all name of the list
-                                // use the name of the list to get the values of the reading list
-                                // create the following object: {listName, all of the values of the list}
-                                // push the values into an array
                                 let _readingLists = [];
                                 Object.keys(readingLists).forEach(listName => {
                                     const { list: savedPosts, createdAt, editedAt, _id: readingListId } = readingLists[listName];
@@ -4862,7 +4867,8 @@ router.route("/users/:package").get((request, response) => {
                                                 ..._readingList,
                                                 previousNames: _previousNames
                                             }
-                                        }
+                                        };
+                                        console.log('readingList fuck you: ', _readingList)
                                         const isDatePresent = _readingLists.map(({ publicationDate }) => publicationDate).includes(date);
                                         if (isDatePresent) {
                                             _readingLists = _readingLists.map(readingList => {
