@@ -739,7 +739,7 @@ router.route("/users/updateInfo").post((request, response) => {
         const { userId } = request.body;
         const { postId } = data;
         User.findOne({ _id: userId }, { 'activities.likes.likedPostIds': 1, _id: 0 }).then(result => {
-            const likedPostsActivities = (result.activities && result.activities.likes && result.activities.likes.likedPostIds && result.activities.likes.likedPostIds.length) && result.activities.likes.likedPostIds;
+            const likedPostsActivities = result?.activities?.likes?.likedPostIds?.length && result.activities.likes.likedPostIds;
             const wasPostLiked = likedPostsActivities && likedPostsActivities.includes(postId);
             if (likedPostsActivities && wasPostLiked) {
                 console.log('User liked post already.');
@@ -1810,6 +1810,7 @@ router.route("/users/updateInfo").post((request, response) => {
             postId,
             userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }]
         }
+        console.log('request.body: ', request.body);
         User.findOne({ _id: notifyUserId }, { 'notifications.likes.posts': 1, _id: 0 }).then(result => {
             const postLikesNotifications = (result.notifications && result.notifications.likes && result.notifications.likes.posts && result.notifications.likes.posts.length) && result.notifications.likes.posts;
             if (postLikesNotifications) {
@@ -2510,15 +2511,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             })
         } else if (field === 'readingLists') {
-            // GOAL: check if the reading list still exist
-            // CASE 1: the reading list does exist
-            // the id of the reading list is pushed into activitiesDeleted.readingLists
-            // the target reading list is found in the loop of all of the reading lists by access the _id field of each reading list that were created by the current user
-            // if the target reading list is found in the loop of all of the reading lists by access the _id field of each reading list that were created by the current user , the id of the reading list is pushed into activitiesDeleted.readingLists
-            // by using the id of the reading list that was deleted by the current user, use it to find the deleted reading list amongst all of the reading lists by the current user by loop through all of the user's reading lists  
-            // loop through all of the readingLists by current user 
-            // access the readingLists field of the current user
-            // the current user is found by using the id of the current user 
             console.log('request.body: ', request.body);
             User.findOne({ _id: userId }, { readingLists: 1, _id: 0 }).then(result => {
                 const { readingLists } = result;
@@ -2531,6 +2523,10 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 };
                 isListPresent ? addDeletedActivity(field, userId, activityId) : console.log('The list has been deleted. No modification to the account of the user has occurred.')
+            })
+        } else if (field === 'blockedUsers') {
+            User.findOne({ _id: userId, 'blockedUsers.userId': activityId }).countDocuments().then(isPresent => {
+                isPresent ? addDeletedActivity(field, userId, activityId) : console.log('The blocked user has been unblocked. The profile of the current user has not been modified.')
             })
         }
         response.sendStatus(200);
@@ -3898,7 +3894,7 @@ router.route("/users/:package").get((request, response) => {
                     if (authorIdsOfPosts.length) {
                         User.find(
                             { _id: { $in: authorIdsOfPosts } },
-                            { username: 1, iconPath: 1 },
+                            { username: 1, iconPath: 1, blockedUsers: 1 },
                             error => {
                                 if (error) {
                                     console.error('An error has occurred in getting authors of posts')
@@ -3919,11 +3915,14 @@ router.route("/users/:package").get((request, response) => {
                                 }
                             ).then(newPosts => {
                                 if (newPosts.length && authorsOfPosts.length) {
+                                    console.log('authorOfPosts: ', authorsOfPosts);
                                     const _newPosts = _newPostsFromFollowing.map(post => {
                                         const { authorId, newPostIds } = post;
                                         const author = authorsOfPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                        const authorBlockedUserIds = author?.blockedUsers?.length && author.blockedUsers.map(({ userId }) => userId);
+                                        const isCurrentUserBlocked = authorBlockedUserIds?.length && authorBlockedUserIds.includes(userId);
                                         // check if the author still exist 
-                                        if (author) {
+                                        if (author && !isCurrentUserBlocked) {
                                             const { username, iconPath } = author;
                                             const _newPostIds = newPostIds.map(newPost => {
                                                 const targetPost = newPosts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(newPost.postId));
@@ -3983,7 +3982,6 @@ router.route("/users/:package").get((request, response) => {
                                             })
                                         }
                                     });
-
                                     _followingNewPosts.length ? response.json({ newPosts: _followingNewPosts }) : response.json({ isEmpty: true })
                                 };
                             })
@@ -4068,9 +4066,9 @@ router.route("/users/:package").get((request, response) => {
             if (willGetLikes && (result?.activities?.likes?.replies || result?.activities?.likes?.comments || result?.activities?.likes?.posts)) {
                 console.log('sup there')
                 const { replies: likedReplies, comments: likedComments, likedPostIds } = result.activities.likes;
-                let likes;
+                let likes = [];
                 // GOAL: go through each of the likedReplies, likedComments, and likedPostIds, and check if the user deleted the specific like from being tracked  
-                let postIds = likedReplies.map(({ postIdOfReply }) => postIdOfReply);
+                let postIds = likedReplies?.length ? likedReplies.map(({ postIdOfReply }) => postIdOfReply) : [];
                 likedComments?.length && likedComments.map(({ postIdOfComment }) => postIdOfComment).forEach(postId => { !postIds.includes(postId) && postIds.push(postId) });
                 likedPostIds?.length && likedPostIds.forEach(postId => { !postIds.includes(postId) && postIds.push(postId) });
                 BlogPost.find(
@@ -4221,7 +4219,7 @@ router.route("/users/:package").get((request, response) => {
                                 // also sort out the activities for each activity of the day
                                 // STEPS: 
                                 console.log('likes, before: ', likes)
-                                likes = likes && likes.sort(({ likedOn: likedOnA }, { likedOn: likedOnB }) => {
+                                likes = likes.length && likes.sort(({ likedOn: likedOnA }, { likedOn: likedOnB }) => {
                                     if (likedOnA > likedOnB) return -1;
                                     if (likedOnA < likedOnB) return 1;
                                     return 0;
@@ -4239,12 +4237,12 @@ router.route("/users/:package").get((request, response) => {
 
                                     return like;
                                 });
-                                likes = likes && sortDayActivities(likes);
+                                likes = likes.length && sortDayActivities(likes);
 
                                 // GOAL: sort the activities of each day from latest to oldest:
                                 // BRAIN DUMP:
                                 // go through each day activity, for each day activity, access the activities field, sort through that array according to the miliSeconds that is stored in the likedAt. Commence the sort only if the activities of that day exceeds one
-                                likes ? response.json(likes) : response.json({ isEmpty: true });
+                                likes?.length ? response.json(likes) : response.json({ isEmpty: true });
 
                             })
                         } else {
@@ -4940,6 +4938,7 @@ router.route("/users/:package").get((request, response) => {
                 }
                 const { blockedUsers } = result;
                 if (blockedUsers?.length && blockedUserIds?.length) {
+                    const delBlockedUserActivityIds = result?.activitiesDeleted?.blockedUsers?.length && result.activitiesDeleted.blockedUsers
                     User.find(
                         { _id: { $in: blockedUserIds } },
                         { username: 1 }
@@ -4949,15 +4948,19 @@ router.route("/users/:package").get((request, response) => {
                             let _blockedUsers;
                             blockedUsers.forEach(user => {
                                 const { blockedAt, userId } = user;
-                                const { date, time, miliSeconds } = blockedAt;
-                                const blockedUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-                                if (blockedUser) {
-                                    const { username, _id } = blockedUser;
-                                    const _blockedUser = { _id, username, blockedAt: { time, miliSeconds } };
-                                    const _values = { dateOfActivity: date, newActivity: _blockedUser, activities: _blockedUsers, dateField: 'blockedOn', activityType: 'isBlockedUser' };
-                                    _blockedUsers = insertNewActivity(_values)
-                                }
+                                const isActivityDeleted = delBlockedUserActivityIds && delBlockedUserActivityIds.includes(userId);
+                                if (!isActivityDeleted) {
+                                    const { date, time, miliSeconds } = blockedAt;
+                                    const blockedUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                                    if (blockedUser) {
+                                        const { username, _id } = blockedUser;
+                                        const _blockedUser = { _id, username, blockedAt: { time, miliSeconds }, uIText: ` blocked ${username}.` };
+                                        const _values = { dateOfActivity: date, newActivity: _blockedUser, activities: _blockedUsers, dateField: 'blockedOn', activityType: 'areBlockedUsers' };
+                                        _blockedUsers = insertNewActivity(_values)
+                                    }
+                                };
                             });
+                            _blockedUsers = _blockedUsers.map(user => { return { ...user, activities: user.activities.reverse() } });
                             _blockedUsers ? response.json(_blockedUsers) : response.json({ isEmpty: true })
                         } else {
                             response.json({ isEmpty: true })
