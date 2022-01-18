@@ -564,16 +564,14 @@ router.route("/users/updateInfo").post((request, response) => {
         User.updateOne(
             { _id: userId },
             {
-                $pull: { roughDrafts: { id: draftId } }
+                $pull: { roughDrafts: { _id: draftId } }
             },
-            (error, data) => {
+            (error, numsAffected) => {
                 if (error) {
                     console.error("error message: ", error);
                 } else {
-                    response.json({
-                        message: "Successfully deleted draft.",
-                        updatedDrafts: data
-                    });
+                    console.log('Draft has been deleted, numsAffected: ', numsAffected);
+                    response.sendStatus(200);
                 }
             }
         );
@@ -2871,13 +2869,22 @@ router.route("/users/:package").get((request, response) => {
             console.log(`Error in getting all users, line 960: ${err}`)
         })
     } else if (name === 'getFollowers') {
-        User.find(
-            { _id: userId },
-            { followers: 1, _id: 0 }
-        )
+        const searchQuery = username ? { username: username } : { _id: userId };
+        User.findOne(searchQuery, { followers: 1, _id: 0, following: 1, 'activities.following': 1 })
             .then(result => {
-                if (result.length && result[0].followers && result[0].followers.length) {
-                    response.json({ followers: result[0].followers })
+                if (result?.followers?.length || result?.activities?.following?.length) {
+                    const { followers, activities } = result;
+                    const { following } = activities;
+                    let user;
+                    if (followers?.length) {
+                        user = { followers };
+                    }
+                    if (following?.length) {
+                        user = user ? { ...user, following } : { following };
+                    };
+                    response.json({ user });
+                } else {
+                    response.json({ isEmpty: true })
                 }
             })
             .catch(error => {
@@ -5061,6 +5068,148 @@ router.route("/users/:package").get((request, response) => {
             const targetList = list.readingLists[listName];
             const namesSortedByCreation = sortListNamesByCreation(targetList.previousNames.reverse())
             response.json({ previousNames: namesSortedByCreation })
+        })
+    } else if (name === 'getReadingLists') {
+        User.find({ $or: [{ _id: userId }, { username: username }] }, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(results => {
+            const userBeingViewed = results.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
+            const currentUser = results.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+            const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
+            if (userBeingViewed) {
+                let { _id, readingLists, iconPath, activities, followers } = userBeingViewed;
+                let listsToDel;
+                let postIds = [];
+                let listNames = Object.keys(readingLists);
+                listNames.forEach(listName => {
+                    if (readingLists[listName].isPrivate) {
+                        delete readingLists[listName];
+                        listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
+                    }
+                });
+                listNames = listsToDel ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
+                if (listNames.length) {
+                    listNames.forEach(listName => {
+                        const { list } = readingLists[listName];
+                        list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
+                    });
+                    BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1 }).then(posts => {
+                        let postsWithIntroPics = [];
+                        const _postIds = postIds.map(({ _id }) => _id);
+                        // deleting all posts that no longer exist
+                        listNames.forEach(listName => {
+                            const { list } = readingLists[listName];
+                            const _list = list.filter(({ postId }) => !_postIds.includes(postId));
+                            if (list.length !== _list.length) {
+                                readingLists = {
+                                    ...readingLists,
+                                    [listName]: {
+                                        ...readingLists[listName],
+                                        list: _list
+                                    }
+                                };
+                            };
+                            _list.forEach(({ postId, isIntroPicPresent }) => {
+                                if (isIntroPicPresent) {
+                                    const _post = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId))
+                                    if (_post) {
+                                        const { _id: postId, imgUrl } = _post;
+                                        const isPostPresent = !!postsWithIntroPics.find(post => post?._id === postId);
+                                        !isPostPresent && postsWithIntroPics.push({ _id: postId, imgUrl })
+                                    }
+                                }
+                            })
+                        });
+                        let userDefaultVals = { _id, readingLists, userIconPath: iconPath }
+                        if (followers?.length) {
+                            userDefaultVals = {
+                                ...userDefaultVals,
+                                followers
+                            }
+                        };
+                        if (activities?.following?.length) {
+                            userDefaultVals = {
+                                ...userDefaultVals,
+                                following: activities.following
+                            }
+                        }
+                        postsWithIntroPics.length ? response.json({ postsWithIntroPics, ...userDefaultVals }) : response.json({ ...userDefaultVals });
+                    })
+                } else {
+                    response.json({ isEmpty: true });
+                }
+            }
+        })
+    } else if (name === 'getReadingListNamesAndUsers') {
+        // GOAL: get the first five reading list by the current user and get their length minus the posts that were made by the user that were blocked by the current user
+        // the readingList field and the all of the users is sent back to the client
+        // get all of the users
+        // the array that is stored in list is stored back into the list field after the filter
+        // the posts that were written by the users that were blocked by the current user are filtered out of the list
+        // filter the list field, if a post is written by a blocked user, filter that post out
+        // when the reading list field is accessed, access the list field
+        // using each listName, use it to gain access to each field that is stored in the reading list object
+        // array the readingLists object based on its names
+        // get all of the ids of the blocked users if any
+        User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 }).then(users => {
+            const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+            let { readingLists, blockedUsers } = currentUser;
+            const blockedUserIds = blockedUsers?.length && blockedUsers.map(({ userId }) => userId);
+            const _users = users.map(user => {
+                if (user.readingList) {
+                    delete user.readingList;
+                    return user;
+                };
+
+                return user;
+            })
+            if (readingLists) {
+                const readingListsNames = Object.keys(readingLists);
+                let postIds = [];
+                readingListsNames.forEach(listName => {
+                    if (readingLists?.[listName]?.list?.length) {
+                        readingLists[listName].list.forEach(({ postId }) => {
+                            !postIds.includes(postId) && postIds.push(postId);
+                        })
+                    }
+                });
+                if (postIds.length) {
+                    BlogPost.find(
+                        { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }
+                    ).then(posts => {
+                        readingListsNames.forEach(listName => {
+                            const listByUser = readingLists[listName];
+                            if (listByUser?.list?.length) {
+                                const _list = listByUser.list.filter(({ postId }) => {
+                                    // check if the post exist and if the author of the post blocked the current user
+                                    const targetPost = posts.find(({ _id }) => _id === postId);
+                                    // check if the post exist
+                                    if (targetPost) {
+                                        const author = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId));
+                                        const didAuthorBlockedUser = author.blockedUsers?.length && author.blockedUsers.map(({ userId }) => userId).includes(userId);
+                                        // check if the post author blocked the current user
+                                        return !didAuthorBlockedUser;
+                                    }
+                                    return false;
+                                });
+                                // if the list lengths are not the same, that means one or more posts has been deleted, insert the new list into the field of list of the reading list object 
+                                if (_list.length !== listByUser.list.length) {
+                                    readingLists = {
+                                        ...readingLists,
+                                        [listName]: {
+                                            ...readingLists[listName],
+                                            list: _list
+                                        }
+                                    }
+                                };
+                            }
+                        });
+                        response.json({ readingLists, users: _users });
+                    });
+                } else {
+                    response.json({ readingLists, users: _users });
+                }
+            } else {
+                response.json({ users: _users });
+            }
         })
     }
 })

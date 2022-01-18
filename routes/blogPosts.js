@@ -13,6 +13,73 @@ const { v4: uuidv4 } = require('uuid');
 
 // GOAL: display all notifications pertaining to the following: replies on user's post, replies to user comments, comments on user's posts, likes for the following: (comments, replies, posts)
 
+const getPostsOfReadingLists = (res, savedPosts, readingList, blockedUserIds = []) => {
+    const savedPostIds = savedPosts.map(({ postId }) => postId);
+    User.find({}, { username: 1 }).then(users => {
+        BlogPost.find({ $and: [{ _id: { $in: savedPostIds }, authorId: { $nin: blockedUserIds } }] })
+            .then(posts => {
+                if (posts.length) {
+                    // an array with the following data structure is sent to the server: {date of the saved post, the post id}
+                    let postsBySavedDates;
+                    const _posts = posts.map(post => {
+                        const { title, subtitle, imgUrl, userIdsOfLikes, comments, authorId, publicationDate, _id } = post;
+                        const postAuthor = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                        const defaultPostVals = { title, userIdsOfLikes, comments, authorId, authorUsername: postAuthor.username, publicationDate, _id };
+                        let _post = { ...defaultPostVals };
+                        if (imgUrl) {
+                            _post = { ..._post, imgUrl };
+                        };
+                        if (subtitle) {
+                            _post = { ..._post, subtitle };
+                        };
+
+                        return _post;
+                    });
+                    // group posts based on the date that they were saved 
+                    savedPosts.forEach(post => {
+                        const { savedAt, postId } = post;
+                        const { date: dateOfSave, time } = savedAt
+                        const _post = _posts.find(post => post?._id === postId);
+                        if (_post) {
+                            const savedPost = { ..._post, savedAt: time };
+                            const doesDateExist = postsBySavedDates && postsBySavedDates.map(({ date }) => date).includes(dateOfSave);
+                            if (doesDateExist) {
+                                postsBySavedDates = postsBySavedDates.map(postByDate => {
+                                    const { date, posts } = postByDate;
+                                    if (date === dateOfSave) {
+                                        return {
+                                            ...postByDate,
+                                            posts: [...posts, savedPost]
+                                        }
+                                    };
+
+                                    return postByDate
+                                })
+                            } else {
+                                const newSavedPosts = { date: dateOfSave, posts: [savedPost] };
+                                postsBySavedDates = postsBySavedDates ? [...postsBySavedDates, newSavedPosts] : [newSavedPosts]
+                            }
+                        };
+                    });
+                    postsBySavedDates = postsBySavedDates.map(post => {
+                        if (post.posts.length > 1) {
+                            return {
+                                ...post,
+                                posts: post.posts.reverse()
+                            }
+                        };
+
+                        return post;
+                    });
+                    console.log('postsBySavedDates: ', postsBySavedDates);
+                    console.table(postsBySavedDates);
+                    res.json({ posts: postsBySavedDates.reverse(), readingList: readingList });
+                } else {
+                    res.json({ isEmpty: true })
+                }
+            });
+    });
+}
 
 const getPostTags = (selectedTags, tags) => selectedTags.map(tag => {
     const { isNew, _id: postTagId } = tag;
@@ -93,7 +160,7 @@ router.route("/blogPosts").post((req, res) => {
 });
 
 router.route("/blogPosts/updatePost").post((req, res) => {
-    const { name, postId, data } = req.body;
+    const { name, postId, data, userId } = req.body;
 
     // GOAL: update the target blog post by getting the blog post and pushing the new comment into the field of comments
     if (name === "newComment") {
@@ -673,7 +740,22 @@ router.route("/blogPosts/updatePost").post((req, res) => {
                     console.log('An error has occurred in deleting published post by user: ', error);
                 } else {
                     console.log('Post was deleted, numsAffected: ', numsAffected);
-                    res.sendStatus(200);
+                    User.updateOne(
+                        { _id: userId },
+                        {
+                            $pull:
+                            {
+                                publishedDrafts: postId
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error('An error has occurred in deleting the id of the post from published draft field of user: ', error)
+                            }
+                            console.log("Published  draft id has been deleted from user's account, numsAffected: ", numsAffected);
+                            res.sendStatus(200);
+                        }
+                    )
                 }
             }
         )
@@ -772,31 +854,41 @@ router.route('/blogPosts/editPostAddPic').post(postIntroPicUpload.single('file')
     console.log('Request completed')
 });
 
+const getPosts = (userId, res, userInfo) => {
+    BlogPost.find({ authorId: userId ?? userInfo._id }).then(posts => {
+        if (posts.length) {
+            res.json({ arePostsPresent: true, _posts: posts, userInfo: userInfo });
+        } else {
+            res.json({ arePostsPresent: false });
+        }
+    })
+}
 
 
 router.route("/blogPosts/:package").get((req, res) => {
     console.log("get user's published posts");
     const package = JSON.parse(req.params.package);
     console.log('package: ', package);
-    const { name, signedInUserId: userId, draftId, savedPosts, postId } = package;
+    const { name, signedInUserId: userId, draftId, savedPosts, postId, username } = package;
     // change this to 'getPublishedDraftsByAuthor'
     if (name === "getPublishedDrafts") {
-        BlogPost.find({ authorId: userId }).then(posts => {
-            if (posts.length) {
-                res.json(
-                    {
-                        arePostsPresent: true,
-                        _posts: posts
-                    }
-                )
-            } else {
-                res.json(
-                    {
-                        arePostsPresent: false,
-                    }
-                )
-            }
-        })
+        if (username) {
+            User.findOne({ username: username }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1 }).then(user => {
+                if (user) {
+                    const { _id, followers, activities, iconPath, firstName, lastName, readingLists } = user;
+                    const { following } = activities;
+                    let userInfo = { _id, iconPath, firstName, lastName };
+                    userInfo = following?.length ? { ...userInfo, following } : userInfo;
+                    userInfo = followers?.length ? { ...userInfo, followers } : userInfo;
+                    userInfo = readingLists ? { ...userInfo, readingLists } : userInfo;
+                    getPosts(_id, res, userInfo);
+                } else {
+                    res.json({ doesUserExist: false })
+                }
+            })
+        } else {
+            getPosts(userId, res);
+        }
         // change to 'getOtherPostsFromAuthorOfPost'
     } else if (name === "getPost") {
         BlogPost.find(
@@ -879,78 +971,97 @@ router.route("/blogPosts/:package").get((req, res) => {
             res.json(posts);
         })
     } else if (name === 'getSavedPosts') {
-        const _savedPostIds = savedPosts.map(({ postId }) => postId);
-        User.find({}, { username: 1 }).then(users => {
-            BlogPost.find({ _id: { $in: _savedPostIds } })
-                .then(posts => {
-                    if (posts.length) {
-                        // an array with the following data structure is sent to the server: {date of the saved post, the post id}
-                        let postsBySavedDates;
-                        const _posts = posts.map(post => {
-                            const { title, subtitle, imgUrl, userIdsOfLikes, comments, authorId, publicationDate, _id } = post;
-                            const postAuthor = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                            if (postAuthor) {
-                                const defaultPostVals = { title, userIdsOfLikes, comments, authorId, authorUsername: postAuthor.username, publicationDate, _id };
-                                let _post;
-                                if (imgUrl) {
-                                    _post = { imgUrl };
+        console.log({ package })
+        const _savedPostIds = savedPosts?.length && savedPosts.map(({ postId }) => postId);
+        const { listName } = package;
+        if (!savedPosts) {
+            console.log('userId, get saved posts of reading list: ', userId);
+            User.find({ $or: [{ _id: userId }, { username: username }] }, { readingLists: 1, blockedUsers: 1, username: 1 }).then(results => {
+                console.log('results: ', results);
+                console.table('result, getting reading list by user: ', results);
+                const userBeingViewed = results.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username))
+                console.log('userBeingViewed: ', userBeingViewed)
+                const currentUser = results.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
+                if (userBeingViewed?.readingLists?.[listName]?.list?.length) {
+                    console.log('sup there meng')
+                    const listBeingViewed = userBeingViewed.readingLists[listName];
+                    const { list } = listBeingViewed;
+                    blockedUserIds ? getPostsOfReadingLists(res, list, listBeingViewed, blockedUserIds) : getPostsOfReadingLists(res, list, listBeingViewed)
+                } else {
+                    console.log('burritossss ')
+                    res.json({ isEmpty: true });
+                }
+            })
+        } else {
+            //GOAL: get the list that the current user is viewing and get all of its post 
+            User.find({}, { username: 1 }).then(users => {
+                BlogPost.find({ _id: { $in: _savedPostIds } })
+                    .then(posts => {
+                        if (posts.length) {
+                            // an array with the following data structure is sent to the server: {date of the saved post, the post id}
+                            let postsBySavedDates;
+                            const _posts = posts.map(post => {
+                                const { title, subtitle, imgUrl, userIdsOfLikes, comments, authorId, publicationDate, _id } = post;
+                                const postAuthor = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                if (postAuthor) {
+                                    const defaultPostVals = { title, userIdsOfLikes, comments, authorId, authorUsername: postAuthor.username, publicationDate, _id };
+                                    let _post;
+                                    if (imgUrl) {
+                                        _post = { imgUrl };
+                                    };
+                                    if (subtitle) {
+                                        _post = _post ? { ..._post, subtitle } : { subtitle };
+                                    };
+
+                                    return _post ? { ..._post, ...defaultPostVals } : defaultPostVals;
                                 };
-                                if (subtitle) {
-                                    _post = _post ? { ..._post, subtitle } : { subtitle };
+
+                                return null;
+                            });
+                            // group posts based on the date that they were saved 
+                            savedPosts.forEach(post => {
+                                const { savedAt, postId } = post;
+                                const { date: dateOfSave, time } = savedAt
+                                const _post = _posts.find(post => post?._id === postId);
+                                if (_post) {
+                                    const savedPost = { ..._post, savedAt: time };
+                                    const doesDateExist = postsBySavedDates && postsBySavedDates.map(({ date }) => date).includes(dateOfSave);
+                                    if (doesDateExist) {
+                                        postsBySavedDates = postsBySavedDates.map(postByDate => {
+                                            const { date, posts } = postByDate;
+                                            if (date === dateOfSave) {
+                                                return {
+                                                    ...postByDate,
+                                                    posts: [...posts, savedPost]
+                                                }
+                                            };
+
+                                            return postByDate
+                                        })
+                                    } else {
+                                        const newSavedPosts = { date: dateOfSave, posts: [savedPost] };
+                                        postsBySavedDates = postsBySavedDates ? [...postsBySavedDates, newSavedPosts] : [newSavedPosts]
+                                    }
+                                };
+                            })
+                            postsBySavedDates = postsBySavedDates.map(post => {
+                                if (post.posts.length > 1) {
+                                    return {
+                                        ...post,
+                                        posts: post.posts.reverse()
+                                    }
                                 };
 
-                                return _post ? { ..._post, ...defaultPostVals } : defaultPostVals;
-                            };
-
-                            return null;
-                        });
-                        savedPosts.forEach(post => {
-                            // GOAL: put the following data structure into the 'postsSortedByTime': {date, posts saved by the user}
-                            // brain storm notes:
-                            // find the post within the _posts by using the postId in 'post'
-                            // the post is found
-                            // check if the date is in postsSorted
-                            // if the date is in postsSorted then map through postsSortedByTime and find the date and push the current post into posts for that object
-                            // if the date is not in postsSorted then push the post info into postSortedByTime are created an array with the target data structure above as the first value
-
-                            const { savedAt, postId } = post;
-                            const { date: dateOfSave, time } = savedAt
-                            const _post = _posts.find(post => post?._id === postId);
-                            if (_post) {
-                                const savedPost = { ..._post, savedAt: time };
-                                const doesDateExist = postsBySavedDates && postsBySavedDates.map(({ date }) => date).includes(dateOfSave);
-                                if (doesDateExist) {
-                                    postsBySavedDates = postsBySavedDates.map(postByDate => {
-                                        const { date, posts } = postByDate;
-                                        if (date === dateOfSave) {
-                                            return {
-                                                ...postByDate,
-                                                posts: [...posts, savedPost]
-                                            }
-                                        };
-
-                                        return postByDate
-                                    })
-                                } else {
-                                    const newSavedPosts = { date: dateOfSave, posts: [savedPost] };
-                                    postsBySavedDates = postsBySavedDates ? [...postsBySavedDates, newSavedPosts] : [newSavedPosts]
-                                }
-                            };
-                        })
-                        postsBySavedDates = postsBySavedDates.map(post => {
-                            if (post.posts.length > 1) {
-                                return {
-                                    ...post,
-                                    posts: post.posts.reverse()
-                                }
-                            };
-
-                            return post;
-                        });
-                        res.json(postsBySavedDates.reverse());
-                    }
-                });
-        });
+                                return post;
+                            });
+                            res.json(postsBySavedDates.reverse());
+                        } else {
+                            res.json({ isEmpty: true })
+                        }
+                    });
+            });
+        };
         // change to 'getPublishedPostsByUser'
     } else if (name === 'getPublishedPosts') {
         const { publishedPostsIds } = package;
