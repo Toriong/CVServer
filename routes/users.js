@@ -5070,6 +5070,39 @@ router.route("/users/:package").get((request, response) => {
             response.json({ previousNames: namesSortedByCreation })
         })
     } else if (name === 'getReadingLists') {
+        const updateReadingLists = (listNames, _readingLists, posts) => {
+            let readingLists = _readingLists;
+            let postsWithIntroPics = [];
+            const _postIds = postIds.map(({ _id }) => _id);
+            // deleting all posts that no longer exist
+            listNames.forEach(listName => {
+                const { list } = readingLists[listName];
+                const _list = list.filter(({ postId }) => !_postIds.includes(postId));
+                if (list.length !== _list.length) {
+                    readingLists = {
+                        ...readingLists,
+                        [listName]: {
+                            ...readingLists[listName],
+                            list: _list
+                        }
+                    };
+                };
+                // get all of the posts that has intro pics
+                _list.forEach(({ postId, isIntroPicPresent }) => {
+                    if (isIntroPicPresent) {
+                        const _post = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId))
+                        if (_post) {
+                            const { _id: postId, imgUrl } = _post;
+                            const isPostPresent = !!postsWithIntroPics.find(post => post?._id === postId);
+                            !isPostPresent && postsWithIntroPics.push({ _id: postId, imgUrl })
+                        }
+                    }
+                })
+            });
+
+            return { postsWithIntroPics, readingLists };
+        }
+        // GOAL: get the user's reading lists 
         User.find({ $or: [{ _id: userId }, { username: username }] }, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(results => {
             const userBeingViewed = results.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
             const currentUser = results.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
@@ -5107,6 +5140,7 @@ router.route("/users/:package").get((request, response) => {
                                     }
                                 };
                             };
+                            // get all of the posts that has intro pics
                             _list.forEach(({ postId, isIntroPicPresent }) => {
                                 if (isIntroPicPresent) {
                                     const _post = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId))
@@ -5118,6 +5152,7 @@ router.route("/users/:package").get((request, response) => {
                                 }
                             })
                         });
+                        // get all of the code all the way to the query 
                         let userDefaultVals = { _id, readingLists, userIconPath: iconPath }
                         if (followers?.length) {
                             userDefaultVals = {
@@ -5136,19 +5171,11 @@ router.route("/users/:package").get((request, response) => {
                 } else {
                     response.json({ isEmpty: true });
                 }
+            } else {
+                response.sendStatus(404);
             }
         })
     } else if (name === 'getReadingListNamesAndUsers') {
-        // GOAL: get the first five reading list by the current user and get their length minus the posts that were made by the user that were blocked by the current user
-        // the readingList field and the all of the users is sent back to the client
-        // get all of the users
-        // the array that is stored in list is stored back into the list field after the filter
-        // the posts that were written by the users that were blocked by the current user are filtered out of the list
-        // filter the list field, if a post is written by a blocked user, filter that post out
-        // when the reading list field is accessed, access the list field
-        // using each listName, use it to gain access to each field that is stored in the reading list object
-        // array the readingLists object based on its names
-        // get all of the ids of the blocked users if any
         User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 }).then(users => {
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
             let { readingLists, blockedUsers } = currentUser;

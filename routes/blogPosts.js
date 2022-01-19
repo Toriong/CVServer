@@ -873,6 +873,7 @@ router.route("/blogPosts/:package").get((req, res) => {
     // change this to 'getPublishedDraftsByAuthor'
     if (name === "getPublishedDrafts") {
         if (username) {
+            console.log('bruhhhh')
             User.findOne({ username: username }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1 }).then(user => {
                 if (user) {
                     const { _id, followers, activities, iconPath, firstName, lastName, readingLists } = user;
@@ -887,6 +888,7 @@ router.route("/blogPosts/:package").get((req, res) => {
                 }
             })
         } else {
+            console.log('yolo')
             getPosts(userId, res);
         }
         // change to 'getOtherPostsFromAuthorOfPost'
