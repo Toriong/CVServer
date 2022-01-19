@@ -5070,7 +5070,8 @@ router.route("/users/:package").get((request, response) => {
             response.json({ previousNames: namesSortedByCreation })
         })
     } else if (name === 'getReadingLists') {
-        const getReadingListsAndPostsPics = (listNames, _readingLists, posts, users) => {
+        const { isOnOwnProfile } = package;
+        const getReadingListsAndPostsPics = (listNames, _readingLists, posts, users, _userId) => {
             let readingLists = _readingLists;
             let postsWithIntroPics = [];
             const _postIds = posts.map(({ _id }) => _id);
@@ -5078,14 +5079,21 @@ router.route("/users/:package").get((request, response) => {
             listNames.forEach(listName => {
                 const { list } = readingLists[listName];
                 let _list = list.filter(({ postId }) => _postIds.includes(postId));
-                // delete the posts if the author of the post blocked the user that saved their post
+                // delete the post if the author of the post blocked the user that saved their post
                 _list = _list.filter(({ postId }) => {
                     const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId))
                     const author = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId));
                     const blockedUserIds = author?.blockedUsers?.length ? author.blockedUser.map(({ userId }) => userId) : [];
-                    return !blockedUserIds.includes(userId);
+                    return !blockedUserIds.includes(_userId);
                 })
                 if (list.length !== _list.length) {
+                    // GOAL: get the following info: subtitle, title, intro pic, likes, comments, and date of publication
+                    _list = _list.map(post => {
+                        const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.postId));
+                        const { username: authorUsername } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId))
+                        const { title, subtitle, imgUrl, comments, userIdsOfLikes, publicationDate } = targetPost;
+                        return { ...post, title, subtitle, imgUrl, comments, userIdsOfLikes, publicationDate, authorUsername };
+                    })
                     readingLists = {
                         ...readingLists,
                         [listName]: {
@@ -5094,6 +5102,7 @@ router.route("/users/:package").get((request, response) => {
                         }
                     };
                 };
+                // DO I NEED TO DO THIS?
                 // get all of the posts that has intro pics
                 _list.forEach(({ postId, isIntroPicPresent }) => {
                     if (isIntroPicPresent) {
@@ -5111,39 +5120,45 @@ router.route("/users/:package").get((request, response) => {
         }
         // GOAL: if the author of the post blocked the user that saved their post, then filter out that user 
         User.find({}, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(users => {
-            const userBeingViewed = users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
+            const userBeingViewed = !isOnOwnProfile && users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
             const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
             // GOAL: get the reading lists of the current user when the current user is viewing his profile 
-            if (userBeingViewed) {
-                let { _id, readingLists, iconPath, activities, followers } = userBeingViewed;
+            if (isOnOwnProfile || userBeingViewed) {
+                let { _id, readingLists, iconPath, activities, followers } = isOnOwnProfile ? currentUser : userBeingViewed;
                 let listsToDel;
                 let postIds = [];
+
                 if (readingLists) {
                     let listNames = Object.keys(readingLists);
-                    listNames.forEach(listName => {
+                    // when viewing a diff user, delete all of the lists that are private
+                    !isOnOwnProfile && listNames.forEach(listName => {
                         if (readingLists[listName].isPrivate) {
                             delete readingLists[listName];
                             listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
                         }
                     });
-                    listNames = listsToDel ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
+                    // when viewing a diff user, delete all of the list names that are private
+                    listNames = (listsToDel && !isOnOwnProfile) ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
                     if (listNames.length) {
+                        // get all of the postIds for the search query on the BlogPost collection
                         listNames.forEach(listName => {
                             const { list } = readingLists[listName];
                             list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
                         });
-                        BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
-                            const { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(listNames, readingLists, posts, users);
+                        // GOAL: get the foll
+                        BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { publicationDate: 1, title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
+                            const _userId = isOnOwnProfile ? userId : userBeingViewed._id;
+                            const { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(listNames, readingLists, posts, users, _userId);
                             // get all of the code all the way to the query 
-                            let userDefaultVals = { _id, readingLists: _readingLists, userIconPath: iconPath }
-                            if (followers?.length) {
+                            let userDefaultVals = !isOnOwnProfile ? { _id, readingLists: _readingLists, userIconPath: iconPath } : { readingLists: _readingLists };
+                            if (followers?.length && !isOnOwnProfile) {
                                 userDefaultVals = {
                                     ...userDefaultVals,
                                     followers
                                 }
                             };
-                            if (activities?.following?.length) {
+                            if (activities?.following?.length && !isOnOwnProfile) {
                                 userDefaultVals = {
                                     ...userDefaultVals,
                                     following: activities.following
@@ -5162,7 +5177,7 @@ router.route("/users/:package").get((request, response) => {
                         console.log('user: ', user);
                         response.json(user);
                     }
-                } else {
+                } else if (!isOnOwnProfile) {
                     let user = { userIconPath: iconPath };
                     if (followers) {
                         user = { ...user, followers };
@@ -5172,6 +5187,8 @@ router.route("/users/:package").get((request, response) => {
                     };
                     console.log('user: ', user);
                     response.json(user);
+                } else {
+                    response.json({ isEmpty: true })
                 }
             } else {
                 response.sendStatus(404);

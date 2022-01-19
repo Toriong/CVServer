@@ -975,14 +975,11 @@ router.route("/blogPosts/:package").get((req, res) => {
     } else if (name === 'getSavedPosts') {
         console.log({ package })
         const _savedPostIds = savedPosts?.length && savedPosts.map(({ postId }) => postId);
-        const { listName } = package;
+        const { listName, isOnOwnProfile } = package;
         if (!savedPosts) {
             console.log('userId, get saved posts of reading list: ', userId);
             User.find({ $or: [{ _id: userId }, { username: username }] }, { readingLists: 1, blockedUsers: 1, username: 1 }).then(results => {
-                console.log('results: ', results);
-                console.table('result, getting reading list by user: ', results);
                 const userBeingViewed = results.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username))
-                console.log('userBeingViewed: ', userBeingViewed)
                 const currentUser = results.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
                 const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
                 if (userBeingViewed?.readingLists?.[listName]?.list?.length) {
