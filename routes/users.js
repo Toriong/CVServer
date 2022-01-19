@@ -5070,7 +5070,7 @@ router.route("/users/:package").get((request, response) => {
             response.json({ previousNames: namesSortedByCreation })
         })
     } else if (name === 'getReadingLists') {
-        const getReadingListsAndPostsPics = (listNames, _readingLists, posts) => {
+        const getReadingListsAndPostsPics = (listNames, _readingLists, posts, users) => {
             let readingLists = _readingLists;
             let postsWithIntroPics = [];
             const _postIds = posts.map(({ _id }) => _id);
@@ -5078,7 +5078,13 @@ router.route("/users/:package").get((request, response) => {
             listNames.forEach(listName => {
                 const { list } = readingLists[listName];
                 let _list = list.filter(({ postId }) => _postIds.includes(postId));
-
+                // delete the posts if the author of the post blocked the user that saved their post
+                _list = _list.filter(({ postId }) => {
+                    const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId))
+                    const author = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId));
+                    const blockedUserIds = author?.blockedUsers?.length ? author.blockedUser.map(({ userId }) => userId) : [];
+                    return !blockedUserIds.includes(userId);
+                })
                 if (list.length !== _list.length) {
                     readingLists = {
                         ...readingLists,
@@ -5104,10 +5110,11 @@ router.route("/users/:package").get((request, response) => {
             return { postsWithIntroPics, readingLists };
         }
         // GOAL: if the author of the post blocked the user that saved their post, then filter out that user 
-        User.find({ $or: [{ _id: userId }, { username: username }] }, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(results => {
-            const userBeingViewed = results.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
-            const currentUser = results.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+        User.find({}, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(users => {
+            const userBeingViewed = users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
+            const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
             const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
+            // GOAL: get the reading lists of the current user when the current user is viewing his profile 
             if (userBeingViewed) {
                 let { _id, readingLists, iconPath, activities, followers } = userBeingViewed;
                 let listsToDel;
@@ -5127,7 +5134,7 @@ router.route("/users/:package").get((request, response) => {
                             list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
                         });
                         BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
-                            const { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(listNames, readingLists, posts);
+                            const { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(listNames, readingLists, posts, users);
                             // get all of the code all the way to the query 
                             let userDefaultVals = { _id, readingLists: _readingLists, userIconPath: iconPath }
                             if (followers?.length) {
