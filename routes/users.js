@@ -5070,14 +5070,15 @@ router.route("/users/:package").get((request, response) => {
             response.json({ previousNames: namesSortedByCreation })
         })
     } else if (name === 'getReadingLists') {
-        const updateReadingLists = (listNames, _readingLists, posts) => {
+        const getReadingListsAndPostsPics = (listNames, _readingLists, posts) => {
             let readingLists = _readingLists;
             let postsWithIntroPics = [];
-            const _postIds = postIds.map(({ _id }) => _id);
+            const _postIds = posts.map(({ _id }) => _id);
             // deleting all posts that no longer exist
             listNames.forEach(listName => {
                 const { list } = readingLists[listName];
-                const _list = list.filter(({ postId }) => !_postIds.includes(postId));
+                let _list = list.filter(({ postId }) => _postIds.includes(postId));
+
                 if (list.length !== _list.length) {
                     readingLists = {
                         ...readingLists,
@@ -5102,7 +5103,7 @@ router.route("/users/:package").get((request, response) => {
 
             return { postsWithIntroPics, readingLists };
         }
-        // GOAL: get the user's reading lists 
+        // GOAL: if the author of the post blocked the user that saved their post, then filter out that user 
         User.find({ $or: [{ _id: userId }, { username: username }] }, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(results => {
             const userBeingViewed = results.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
             const currentUser = results.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
@@ -5111,65 +5112,59 @@ router.route("/users/:package").get((request, response) => {
                 let { _id, readingLists, iconPath, activities, followers } = userBeingViewed;
                 let listsToDel;
                 let postIds = [];
-                let listNames = Object.keys(readingLists);
-                listNames.forEach(listName => {
-                    if (readingLists[listName].isPrivate) {
-                        delete readingLists[listName];
-                        listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
-                    }
-                });
-                listNames = listsToDel ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
-                if (listNames.length) {
+                if (readingLists) {
+                    let listNames = Object.keys(readingLists);
                     listNames.forEach(listName => {
-                        const { list } = readingLists[listName];
-                        list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
+                        if (readingLists[listName].isPrivate) {
+                            delete readingLists[listName];
+                            listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
+                        }
                     });
-                    BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1 }).then(posts => {
-                        let postsWithIntroPics = [];
-                        const _postIds = postIds.map(({ _id }) => _id);
-                        // deleting all posts that no longer exist
+                    listNames = listsToDel ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
+                    if (listNames.length) {
                         listNames.forEach(listName => {
                             const { list } = readingLists[listName];
-                            const _list = list.filter(({ postId }) => !_postIds.includes(postId));
-                            if (list.length !== _list.length) {
-                                readingLists = {
-                                    ...readingLists,
-                                    [listName]: {
-                                        ...readingLists[listName],
-                                        list: _list
-                                    }
-                                };
-                            };
-                            // get all of the posts that has intro pics
-                            _list.forEach(({ postId, isIntroPicPresent }) => {
-                                if (isIntroPicPresent) {
-                                    const _post = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId))
-                                    if (_post) {
-                                        const { _id: postId, imgUrl } = _post;
-                                        const isPostPresent = !!postsWithIntroPics.find(post => post?._id === postId);
-                                        !isPostPresent && postsWithIntroPics.push({ _id: postId, imgUrl })
-                                    }
-                                }
-                            })
+                            list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
                         });
-                        // get all of the code all the way to the query 
-                        let userDefaultVals = { _id, readingLists, userIconPath: iconPath }
-                        if (followers?.length) {
-                            userDefaultVals = {
-                                ...userDefaultVals,
-                                followers
+                        BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
+                            const { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(listNames, readingLists, posts);
+                            // get all of the code all the way to the query 
+                            let userDefaultVals = { _id, readingLists: _readingLists, userIconPath: iconPath }
+                            if (followers?.length) {
+                                userDefaultVals = {
+                                    ...userDefaultVals,
+                                    followers
+                                }
+                            };
+                            if (activities?.following?.length) {
+                                userDefaultVals = {
+                                    ...userDefaultVals,
+                                    following: activities.following
+                                }
                             }
+                            postsWithIntroPics.length ? response.json({ postsWithIntroPics, ...userDefaultVals }) : response.json({ ...userDefaultVals });
+                        })
+                    } else {
+                        let user = { userIconPath: iconPath };
+                        if (followers) {
+                            user = { ...user, followers };
                         };
                         if (activities?.following?.length) {
-                            userDefaultVals = {
-                                ...userDefaultVals,
-                                following: activities.following
-                            }
-                        }
-                        postsWithIntroPics.length ? response.json({ postsWithIntroPics, ...userDefaultVals }) : response.json({ ...userDefaultVals });
-                    })
+                            user = { ...user, following };
+                        };
+                        console.log('user: ', user);
+                        response.json(user);
+                    }
                 } else {
-                    response.json({ isEmpty: true });
+                    let user = { userIconPath: iconPath };
+                    if (followers) {
+                        user = { ...user, followers };
+                    };
+                    if (activities?.following?.length) {
+                        user = { ...user, following };
+                    };
+                    console.log('user: ', user);
+                    response.json(user);
                 }
             } else {
                 response.sendStatus(404);
