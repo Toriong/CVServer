@@ -976,24 +976,107 @@ router.route("/blogPosts/:package").get((req, res) => {
         console.log({ package })
         const _savedPostIds = savedPosts?.length && savedPosts.map(({ postId }) => postId);
         const { listName, isOnOwnProfile } = package;
-        if (!savedPosts) {
-            console.log('userId, get saved posts of reading list: ', userId);
-            User.find({ $or: [{ _id: userId }, { username: username }] }, { readingLists: 1, blockedUsers: 1, username: 1 }).then(results => {
-                const userBeingViewed = results.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username))
-                const currentUser = results.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-                const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
-                if (userBeingViewed?.readingLists?.[listName]?.list?.length) {
-                    console.log('sup there meng')
-                    const listBeingViewed = userBeingViewed.readingLists[listName];
-                    const { list } = listBeingViewed;
-                    blockedUserIds ? getPostsOfReadingLists(res, list, listBeingViewed, blockedUserIds) : getPostsOfReadingLists(res, list, listBeingViewed)
-                } else {
-                    console.log('burritossss ')
-                    res.json({ isEmpty: true });
+        if (isOnOwnProfile) {
+            console.log('will get saved Posts from user being viewed')
+            // console.log('userId, get saved posts of reading list: ', userId);
+            // User.find({ $or: [{ _id: userId }, { username: username }] }, { readingLists: 1, blockedUsers: 1, username: 1 }).then(results => {
+            //     const userBeingViewed = results.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username))
+            //     const currentUser = results.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+            //     const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
+            //     if (userBeingViewed?.readingLists?.[listName]?.list?.length) {
+            //         const listBeingViewed = userBeingViewed.readingLists[listName];
+            //         const { list } = listBeingViewed;
+            //         blockedUserIds ? getPostsOfReadingLists(res, list, listBeingViewed, blockedUserIds) : getPostsOfReadingLists(res, list, listBeingViewed)
+            //     } else {
+            //         console.log('burritossss ')
+            //         res.json({ isEmpty: true });
+            //     }
+            // })
+
+            // brain storm notes:
+            // get the reading list that is by the current user and that the current user is viewing
+            // sent up the listName to the backend
+            // get the reading list that is being viewed first and access the list field
+            // use the post ids to make a query to the blog post collection to get all of the posts that are stored in the reading list
+            // based on the reading list by the current user, filter out the posts based on the following:
+            // IF THE POST DOESN'T EXIST
+            // if the post author blocked the current user
+            // with the posts, insert the following: {title, subtitle, the intro pic, comments, userIdsOfLikes}
+            // sort out the posts according to the date that they were posted 
+            User.find({}, { readingLists: 1, blockedUsers: 1, username: 1 }).then(users => {
+                const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                const { readingLists, blockedUsers } = currentUser;
+                const blockedUserIds = blockedUsers?.length && blockedUsers.map(({ userId }) => userId);
+                if (readingLists?.[listName]?.list) {
+                    const { list } = readingLists[listName];
+                    const postIds = list.length && list.map(({ postId }) => postId);
+                    if (postIds?.length) {
+                        BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { _id: 1, imgUrl: 1, title: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, publicationDate: 1, authorId: 1 }).then(posts => {
+                            const postIdsResults = posts.map(({ _id }) => _id);
+                            const savedPosts = list.filter(({ postId }) => postIdsResults.includes(postId))
+                            console.log('savedPosts: ')
+                            console.table(savedPosts)
+                            let postsBySavedDates;
+                            if (savedPosts.length) {
+                                savedPosts.forEach(post => {
+                                    const { savedAt, postId } = post;
+                                    const { date: dateOfSave, time } = savedAt
+                                    const _post = posts.find(post => JSON.stringify(post?._id) === JSON.stringify(postId));
+                                    const { username: authorUsername } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(_post.authorId))
+                                    // const { title, subtitle, comments, userIdsOfLikes, imgUrl, publicationDate } = _post;
+                                    const savedPost = { ..._post._doc, authorUsername, savedAt: time };
+                                    const doesDateExist = postsBySavedDates && postsBySavedDates.map(({ date }) => date).includes(dateOfSave);
+                                    if (doesDateExist) {
+                                        postsBySavedDates = postsBySavedDates.map(postByDate => {
+                                            const { date, posts } = postByDate;
+                                            if (date === dateOfSave) {
+                                                return {
+                                                    ...postByDate,
+                                                    posts: [...posts, savedPost]
+                                                }
+                                            };
+
+                                            return postByDate
+                                        })
+                                    } else {
+                                        const newSavedPosts = { date: dateOfSave, posts: [savedPost] };
+                                        postsBySavedDates = postsBySavedDates ? [...postsBySavedDates, newSavedPosts] : [newSavedPosts]
+                                    }
+                                });
+                                postsBySavedDates = postsBySavedDates.reverse();
+                                postsBySavedDates = postsBySavedDates.map(post => {
+                                    if (post.posts.length > 1) {
+                                        return {
+                                            ...post,
+                                            posts: post.posts.reverse()
+                                        };
+                                    };
+
+                                    return post;
+                                });
+                                const _readingLists = { ...readingLists, [listName]: { ...readingLists[listName], list: savedPosts } }
+                                res.json({ posts: postsBySavedDates, allReadingLists: _readingLists })
+                            } else {
+                                const _readingLists = { ...readingLists, [listName]: { ...readingLists[listName], list: savedPosts } }
+                                res.json({ allReadingLists: _readingLists })
+                            };
+                        })
+                    } else {
+                        console.log('ribeye steak')
+                        res.json({ allReadingLists: readingLists })
+                    }
+                } else if (!readingLists[listName]) {
+                    // the list no longer exist
+                    res.sendStatus(404)
+
                 }
             })
+            // GOAL: get the current user reading list and all sort the post info in the backend 
+            // the saved posts are sorted by the date and they are sent to the client 
+            // 
         } else {
             //GOAL: get the list that the current user is viewing and get all of its post 
+            console.log('will group posts by date')
             User.find({}, { username: 1 }).then(users => {
                 BlogPost.find({ _id: { $in: _savedPostIds } })
                     .then(posts => {

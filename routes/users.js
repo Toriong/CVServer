@@ -5086,21 +5086,19 @@ router.route("/users/:package").get((request, response) => {
                     const blockedUserIds = author?.blockedUsers?.length ? author.blockedUser.map(({ userId }) => userId) : [];
                     return !blockedUserIds.includes(_userId);
                 })
-                if (list.length !== _list.length) {
-                    // GOAL: get the following info: subtitle, title, intro pic, likes, comments, and date of publication
-                    _list = _list.map(post => {
-                        const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.postId));
-                        const { username: authorUsername } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId))
-                        const { title, subtitle, imgUrl, comments, userIdsOfLikes, publicationDate } = targetPost;
-                        return { ...post, title, subtitle, imgUrl, comments, userIdsOfLikes, publicationDate, authorUsername };
-                    })
-                    readingLists = {
-                        ...readingLists,
-                        [listName]: {
-                            ...readingLists[listName],
-                            list: _list
-                        }
-                    };
+                // GOAL: get the following info: subtitle, title, intro pic, likes, comments, and date of publication
+                _list = _list.map(post => {
+                    const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.postId));
+                    const { username: authorUsername } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId))
+                    const { title, subtitle, imgUrl, comments, userIdsOfLikes, publicationDate, _id } = targetPost;
+                    return { ...post, title, subtitle, imgUrl, comments, userIdsOfLikes, publicationDate, authorUsername, _id };
+                })
+                readingLists = {
+                    ...readingLists,
+                    [listName]: {
+                        ...readingLists[listName],
+                        list: _list
+                    }
                 };
                 // DO I NEED TO DO THIS?
                 // get all of the posts that has intro pics
@@ -5146,11 +5144,10 @@ router.route("/users/:package").get((request, response) => {
                             const { list } = readingLists[listName];
                             list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
                         });
-                        // GOAL: get the foll
+                        // GOAL: will get the necessary post info to display onto the UI when the reading list is clicked 
                         BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { publicationDate: 1, title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
                             const _userId = isOnOwnProfile ? userId : userBeingViewed._id;
                             const { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(listNames, readingLists, posts, users, _userId);
-                            // get all of the code all the way to the query 
                             let userDefaultVals = !isOnOwnProfile ? { _id, readingLists: _readingLists, userIconPath: iconPath } : { readingLists: _readingLists };
                             if (followers?.length && !isOnOwnProfile) {
                                 userDefaultVals = {
@@ -5172,7 +5169,7 @@ router.route("/users/:package").get((request, response) => {
                             user = { ...user, followers };
                         };
                         if (activities?.following?.length) {
-                            user = { ...user, following };
+                            user = { ...user, following: activities.following };
                         };
                         console.log('user: ', user);
                         response.json(user);
@@ -5183,7 +5180,7 @@ router.route("/users/:package").get((request, response) => {
                         user = { ...user, followers };
                     };
                     if (activities?.following?.length) {
-                        user = { ...user, following };
+                        user = { ...user, following: activities.following };
                     };
                     console.log('user: ', user);
                     response.json(user);
