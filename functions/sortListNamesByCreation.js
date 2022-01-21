@@ -6,7 +6,7 @@ const sortListNamesByCreation = list => {
     list.forEach(name => {
         const { oldName, newName, timeOfChange } = name
         const { date: dateOfChange, time } = timeOfChange;
-        const previousName = { oldName, newName, time: convertToStandardTime(time) };
+        const previousName = { oldName, newName, time: time };
         const isDatePresent = _previousNames && _previousNames.map(({ date }) => date).includes(dateOfChange);
         if (isDatePresent) {
             _previousNames = _previousNames.map(name => {

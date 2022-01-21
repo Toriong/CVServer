@@ -1008,7 +1008,7 @@ router.route("/blogPosts/:package").get((req, res) => {
                 const { readingLists, blockedUsers } = currentUser;
                 const blockedUserIds = blockedUsers?.length && blockedUsers.map(({ userId }) => userId);
                 if (readingLists?.[listName]?.list) {
-                    const { list } = readingLists[listName];
+                    const { list, previousNames } = readingLists[listName];
                     const postIds = list.length && list.map(({ postId }) => postId);
                     if (postIds?.length) {
                         BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { _id: 1, imgUrl: 1, title: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, publicationDate: 1, authorId: 1 }).then(posts => {
@@ -1054,16 +1054,28 @@ router.route("/blogPosts/:package").get((req, res) => {
 
                                     return post;
                                 });
-                                const _readingLists = { ...readingLists, [listName]: { ...readingLists[listName], list: savedPosts } }
+                                previousNames && delete readingLists[listName].previousNames;
+                                console.log('readingList[listName]: ', readingLists[listName])
+                                const _readingLists = { ...readingLists, [listName]: { ...readingLists[listName], list: savedPosts, didNameChanged: !!previousNames } }
                                 res.json({ posts: postsBySavedDates, allReadingLists: _readingLists })
                             } else {
-                                const _readingLists = { ...readingLists, [listName]: { ...readingLists[listName], list: savedPosts } }
+                                previousNames && delete readingLists[listName].previousNames;
+                                console.log('readingList[listName]: ', readingLists[listName])
+                                const _readingLists = { ...readingLists, [listName]: { ...readingLists[listName], list: savedPosts, didNameChanged: !!previousNames } }
                                 res.json({ allReadingLists: _readingLists })
                             };
                         })
                     } else {
                         console.log('ribeye steak')
-                        res.json({ allReadingLists: readingLists })
+                        previousNames && delete readingLists[listName].previousNames;
+                        const _allReadingLists = {
+                            ...readingLists,
+                            [listName]: {
+                                ...readingLists[listName],
+                                didNameChanged: !!previousNames
+                            }
+                        }
+                        res.json({ allReadingLists: _allReadingLists })
                     }
                 } else if (!readingLists[listName]) {
                     // the list no longer exist

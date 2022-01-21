@@ -1296,7 +1296,8 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 }
             );
-        } else if (isPrivate || (isPrivate === false)) {
+        }
+        if (isPrivate || (isPrivate === false)) {
             User.updateOne(
                 { _id: userId },
                 {
@@ -1315,7 +1316,8 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 }
             );
-        } else if (editedListName) {
+        }
+        if (editedListName) {
             User.updateOne(
                 { _id: userId },
                 {
@@ -5077,7 +5079,7 @@ router.route("/users/:package").get((request, response) => {
             const _postIds = posts.map(({ _id }) => _id);
             // deleting all posts that no longer exist
             listNames.forEach(listName => {
-                const { list } = readingLists[listName];
+                const { list, previousNames } = readingLists[listName];
                 let _list = list.filter(({ postId }) => _postIds.includes(postId));
                 // delete the post if the author of the post blocked the user that saved their post
                 _list = _list.filter(({ postId }) => {
@@ -5095,10 +5097,7 @@ router.route("/users/:package").get((request, response) => {
                 })
                 readingLists = {
                     ...readingLists,
-                    [listName]: {
-                        ...readingLists[listName],
-                        list: _list
-                    }
+                    [listName]: previousNames ? { ...readingLists[listName], didNameChanged: true, list: _list } : { ...readingLists[listName], list: _list }
                 };
                 // DO I NEED TO DO THIS?
                 // get all of the posts that has intro pics
@@ -5253,6 +5252,13 @@ router.route("/users/:package").get((request, response) => {
             } else {
                 response.json({ users: _users });
             }
+        })
+    } else if (name === 'checkListNameExistence') {
+        const { listName } = package;
+        console.log('listName: ', listName)
+        User.findOne({ _id: userId, [`readingLists.${listName}`]: { $exists: true } }, { _id: 0 }).countDocuments().then(doesExist => {
+            console.log({ doesExist });
+            response.json(!!doesExist);
         })
     }
 })
