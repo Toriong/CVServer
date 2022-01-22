@@ -975,7 +975,7 @@ router.route("/blogPosts/:package").get((req, res) => {
     } else if (name === 'getSavedPosts') {
         console.log({ package })
         const _savedPostIds = savedPosts?.length && savedPosts.map(({ postId }) => postId);
-        const { listName, isOnOwnProfile } = package;
+        const { listName, isOnOwnProfile, username } = package;
         if (isOnOwnProfile) {
             console.log('will get saved Posts from user being viewed')
             // console.log('userId, get saved posts of reading list: ', userId);
@@ -1087,74 +1087,140 @@ router.route("/blogPosts/:package").get((req, res) => {
             // the saved posts are sorted by the date and they are sent to the client 
             // 
         } else {
-            //GOAL: get the list that the current user is viewing and get all of its post 
-            console.log('will group posts by date')
-            User.find({}, { username: 1 }).then(users => {
-                BlogPost.find({ _id: { $in: _savedPostIds } })
-                    .then(posts => {
-                        if (posts.length) {
-                            // an array with the following data structure is sent to the server: {date of the saved post, the post id}
-                            let postsBySavedDates;
-                            const _posts = posts.map(post => {
-                                const { title, subtitle, imgUrl, userIdsOfLikes, comments, authorId, publicationDate, _id } = post;
-                                const postAuthor = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                                if (postAuthor) {
-                                    const defaultPostVals = { title, userIdsOfLikes, comments, authorId, authorUsername: postAuthor.username, publicationDate, _id };
-                                    let _post;
-                                    if (imgUrl) {
-                                        _post = { imgUrl };
-                                    };
-                                    if (subtitle) {
-                                        _post = _post ? { ..._post, subtitle } : { subtitle };
-                                    };
+            const sortByPostsByDate = list => {
+                let _savedPosts;
+                list.forEach(post => {
+                    const { date: dateOfSave, time } = post.savedAt
+                    const savedPost = { ...post, savedAt: time };
+                    const doesDateExist = _savedPosts && _savedPosts.map(({ date }) => date).includes(dateOfSave);
+                    if (doesDateExist) {
+                        _savedPosts = _savedPosts.map(postByDate => {
+                            const { date, posts } = postByDate;
+                            if (date === dateOfSave) {
+                                return {
+                                    ...postByDate,
+                                    posts: [...posts, savedPost]
+                                }
+                            };
 
-                                    return _post ? { ..._post, ...defaultPostVals } : defaultPostVals;
-                                };
+                            return postByDate
+                        })
+                    } else {
+                        const newSavedPosts = { date: dateOfSave, posts: [savedPost] };
+                        _savedPosts = _savedPosts ? [..._savedPosts, newSavedPosts] : [newSavedPosts]
+                    };
+                });
 
-                                return null;
-                            });
-                            // group posts based on the date that they were saved 
-                            savedPosts.forEach(post => {
-                                const { savedAt, postId } = post;
-                                const { date: dateOfSave, time } = savedAt
-                                const _post = _posts.find(post => post?._id === postId);
-                                if (_post) {
-                                    const savedPost = { ..._post, savedAt: time };
-                                    const doesDateExist = postsBySavedDates && postsBySavedDates.map(({ date }) => date).includes(dateOfSave);
-                                    if (doesDateExist) {
-                                        postsBySavedDates = postsBySavedDates.map(postByDate => {
-                                            const { date, posts } = postByDate;
-                                            if (date === dateOfSave) {
-                                                return {
-                                                    ...postByDate,
-                                                    posts: [...posts, savedPost]
-                                                }
-                                            };
-
-                                            return postByDate
-                                        })
-                                    } else {
-                                        const newSavedPosts = { date: dateOfSave, posts: [savedPost] };
-                                        postsBySavedDates = postsBySavedDates ? [...postsBySavedDates, newSavedPosts] : [newSavedPosts]
-                                    }
-                                };
-                            })
-                            postsBySavedDates = postsBySavedDates.map(post => {
-                                if (post.posts.length > 1) {
-                                    return {
-                                        ...post,
-                                        posts: post.posts.reverse()
-                                    }
-                                };
-
-                                return post;
-                            });
-                            res.json(postsBySavedDates.reverse());
-                        } else {
-                            res.json({ isEmpty: true })
+                _savedPosts = _savedPosts.map(post => {
+                    if (post.posts.length > 1) {
+                        return {
+                            ...post,
+                            posts: post.posts.reverse()
                         }
-                    });
-            });
+                    };
+
+                    return post;
+                })
+
+                return _savedPosts.reverse();
+            }
+            // BRAIN DUMP NOTES:
+            // CHECK FOR THE FOLLOWING:
+            // check if the author of the post blocked the current user or the user that saved post
+            // check if the user that the current user is viewing has blocked the author of the post
+
+
+            //GOAL: get the list that the current user is viewing that is by the diff user, get all of its posts
+            // along with the reading list of the user, the savedPost of the list that is being viewed is sent to the client: {posts, readingLists}
+            // the saved posts of the list that is being viewed is sorted according to the date that it was saved
+            // if the post exist. Else, then delete the post
+            // if the author of the post was blocked by the current user or was blocked by the owner of the reading list, then delete the post
+            // if the author of the post blocked either the user that is being viewed or the current user, then delete the post 
+            // check for the following three above:
+            // the posts are received
+            // make a query to the blogposts collection to get all of the posts that were saved in the list that is being viewed
+            // get all of the post id of the posts that were saved in the list that is being viewed
+            // the users are received
+            // a query is sent to the users collection, project 'blockedUsers', 'readingLists', and 'username'
+            User.find({}, { blockedUsers: 1, readingLists: 1, username: 1 }).then(users => {
+                const userBeingViewed = users.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username));
+                const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                if (userBeingViewed) {
+                    const { readingLists, blockedUsers: userViewedBlockedUsers, _id: userBeingViewedId } = userBeingViewed;
+                    const { blockedUsers: blockedUsersOfCurrentUser } = currentUser;
+                    const targetList = readingLists?.[listName];
+                    if (targetList) {
+                        const savedPosts = targetList.list;
+                        if (savedPosts.length) {
+                            let blockedUserIds = userViewedBlockedUsers?.length ? userViewedBlockedUsers.map(({ userId }) => userId) : [];
+                            blockedUsersOfCurrentUser && blockedUsersOfCurrentUser.forEach(({ userId }) => { !blockedUserIds.includes(userId) && blockedUserIds.push(userId) })
+                            const savedPostIds = savedPosts.map(({ postId }) => postId);
+                            BlogPost.find({ $and: [{ _id: { $in: savedPostIds }, authorId: { $nin: blockedUserIds } }] }, { _id: 1, imgUrl: 1, title: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, publicationDate: 1, authorId: 1 }).then(posts => {
+                                if (posts.length) {
+                                    // GOAL: filter out the saved posts that meet the following criteria: 
+                                    // if the post doesn't exist
+                                    // if the author of the post blocked the current user
+                                    // if the author of the post blocked the user being viewed
+                                    const postIds = posts.map(({ _id }) => _id);
+                                    let _savedPosts = savedPosts.filter(({ postId, authorId }) => {
+                                        const author = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                        const authorBlockedUserIds = author?.blockedUsers?.length && author.blockedUsers.map(({ userId }) => userId);
+                                        const doesPostExist = postIds.includes(postId);
+                                        const didAuthorBlockedUser = authorBlockedUserIds && authorBlockedUserIds.includes(userBeingViewed || userId);
+                                        if (didAuthorBlockedUser) return false;
+                                        if (!doesPostExist) return false;
+                                        return true;
+                                    });
+                                    if (_savedPosts.length) {
+                                        _savedPosts = _savedPosts.map(post => {
+                                            const { savedAt, postId } = post;
+                                            const savedPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
+                                            const { _id, imgUrl, title, subtitle, userIdsOfLikes, comments, publicationDate, authorId } = savedPost;
+                                            const { username } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                                            return { title, subtitle, imgUrl, comments, userIdsOfLikes, publicationDate, _id, savedAt, authorUsername: username }
+                                        })
+                                        const savedPostsSortedByDate = sortByPostsByDate(_savedPosts);
+                                        targetList.previousNames && delete targetList.previousNames
+                                        const _readingLists = { ...readingLists, [listName]: { ...targetList, list: _savedPosts, didNameChanged: !!targetList.previousNames } }
+                                        const listBeingViewed = { allReadingLists: _readingLists, posts: savedPostsSortedByDate }
+                                        console.log('listBeingViewed: ', listBeingViewed);
+                                        res.json(listBeingViewed);
+                                    } else {
+                                        // the list is empty
+                                        targetList.previousNames && delete targetList.previousNames
+                                        const _readingLists = { ...readingLists, [listName]: { ...targetList, didNameChanged: !!targetList.previousNames } };
+                                        res.json({ allReadingLists: _readingLists })
+                                    }
+                                } else {
+                                    // the list is empty
+                                    targetList.previousNames && delete targetList.previousNames
+                                    const _readingLists = { ...readingLists, [listName]: { ...targetList, didNameChanged: !!targetList.previousNames } };
+                                    res.json({ allReadingLists: _readingLists })
+                                }
+                            })
+                        } else {
+                            // the list is empty
+                            const _readingLists = { ...readingLists, [listName]: { ...targetList, didNameChanged: !!targetList.previousNames } };
+                            res.json({ allReadingLists: _readingLists })
+                        }
+                    } else {
+                        // the list was deleted
+                        res.sendStatus(404)
+                    }
+                } else {
+                    // the user that is being viewed no longer exist
+                    res.sendStatus(404)
+                }
+            })
+
+
+
+            // GOAL #1: get the user reading lists
+            // the reading lists is sent to the client along with the saved posts of the list that is being viewed sorted according to the date
+            // if the reading list that is being viewed has the field 'previousNames', then add the 'didNameChanged' field with a boolean according to whether or not the it has the field
+            // the reading list field of the author that is being viewed is accessed 
+            // the user that is being viewed is accessed. 
+
         };
         // change to 'getPublishedPostsByUser'
     } else if (name === 'getPublishedPosts') {
