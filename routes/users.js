@@ -2870,21 +2870,20 @@ router.route("/users/:package").get((request, response) => {
         }).catch(err => {
             console.log(`Error in getting all users, line 960: ${err}`)
         })
-    } else if (name === 'getFollowers') {
+    } else if (name === 'getFollowersAndFollowing') {
         const searchQuery = username ? { username: username } : { _id: userId };
-        User.findOne(searchQuery, { followers: 1, _id: 0, following: 1, 'activities.following': 1 })
+        User.findOne(searchQuery, { followers: 1, _id: 0, 'activities.following': 1 })
             .then(result => {
                 if (result?.followers?.length || result?.activities?.following?.length) {
                     const { followers, activities } = result;
-                    const { following } = activities;
                     let user;
                     if (followers?.length) {
                         user = { followers };
                     }
-                    if (following?.length) {
-                        user = user ? { ...user, following } : { following };
+                    if (activities?.following?.length) {
+                        user = user ? { ...user, following: activities.following } : { following: activities.following };
                     };
-                    response.json({ user });
+                    response.json(user);
                 } else {
                     response.json({ isEmpty: true })
                 }
@@ -5073,8 +5072,9 @@ router.route("/users/:package").get((request, response) => {
         })
     } else if (name === 'getReadingLists') {
         const { isOnOwnProfile } = package;
-        const getReadingListsAndPostsPics = (listNames, _readingLists, posts, users, _userId) => {
+        const getReadingListsAndPostsPics = (_readingLists, posts, users, _userId) => {
             let readingLists = _readingLists;
+            const listNames = Object.keys(readingLists);
             let postsWithIntroPics = [];
             const _postIds = posts.map(({ _id }) => _id);
             // deleting all posts that no longer exist
@@ -5104,25 +5104,33 @@ router.route("/users/:package").get((request, response) => {
                 _list.forEach(({ postId, isIntroPicPresent }) => {
                     if (isIntroPicPresent) {
                         const _post = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId))
-                        if (_post) {
-                            const { _id: postId, imgUrl } = _post;
-                            const isPostPresent = !!postsWithIntroPics.find(post => post?._id === postId);
-                            !isPostPresent && postsWithIntroPics.push({ _id: postId, imgUrl })
-                        }
-                    }
+                        const { _id, imgUrl } = _post;
+                        const isPostPresent = !!postsWithIntroPics.find(post => post?._id === _id);
+                        !isPostPresent && postsWithIntroPics.push({ _id, imgUrl });
+                    };
                 })
             });
 
             return { postsWithIntroPics, readingLists };
+        };
+
+        const getPostIds = (readingLists, listNames, postIds) => {
+            listNames.forEach(listName => {
+                const { list } = readingLists[listName];
+                list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
+            });
         }
         // GOAL: if the author of the post blocked the user that saved their post, then filter out that user 
         User.find({}, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(users => {
             const userBeingViewed = !isOnOwnProfile && users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
             const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
-            // GOAL: get the reading lists of the current user when the current user is viewing his profile 
             if (isOnOwnProfile || userBeingViewed) {
+                // if the user is viewing a different user's reading list, then get the reading list info for that user
                 let { _id, readingLists, iconPath, activities, followers } = isOnOwnProfile ? currentUser : userBeingViewed;
+                const currentUserReadingLists = !isOnOwnProfile && currentUser.readingLists
+                console.log({ currentUserReadingLists });
+                const currentUserListNames = currentUserReadingLists && Object.keys(currentUserReadingLists);
                 let listsToDel;
                 let postIds = [];
 
@@ -5135,6 +5143,7 @@ router.route("/users/:package").get((request, response) => {
                             listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
                         }
                     });
+
                     // when viewing a diff user, delete all of the list names that are private
                     listNames = (listsToDel && !isOnOwnProfile) ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
                     if (listNames.length) {
@@ -5143,11 +5152,24 @@ router.route("/users/:package").get((request, response) => {
                             const { list } = readingLists[listName];
                             list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
                         });
+                        // get the post ids of the posts that were saved by the current user when viewing the reading lists of another user
+                        (!isOnOwnProfile && currentUserListNames) && getPostIds(currentUserReadingLists, currentUserListNames, postIds);
                         // GOAL: will get the necessary post info to display onto the UI when the reading list is clicked 
                         BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { publicationDate: 1, title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
                             const _userId = isOnOwnProfile ? userId : userBeingViewed._id;
-                            const { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(listNames, readingLists, posts, users, _userId);
-                            let userDefaultVals = !isOnOwnProfile ? { _id, readingLists: _readingLists, userIconPath: iconPath } : { readingLists: _readingLists };
+                            let { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(readingLists, posts, users, _userId);
+                            // if the user is viewing a different user's profile, then get the reading list of the current user as well 
+                            let _currentUserReadingLists;
+                            if (!isOnOwnProfile) {
+                                const { readingLists, postsWithIntroPics: _postsWithIntroPics } = getReadingListsAndPostsPics(currentUserReadingLists, posts, users, userId)
+                                _currentUserReadingLists = readingLists;
+                                _postsWithIntroPics?.length && _postsWithIntroPics.forEach(post => {
+                                    const postsWithIntroPicsIds = postsWithIntroPics.map(({ _id }) => _id);
+                                    !postsWithIntroPicsIds.includes(post._id) && postsWithIntroPics.push(post)
+                                })
+                            }
+
+                            let userDefaultVals = !isOnOwnProfile ? { _id, readingLists: _readingLists, userIconPath: iconPath, _currentUserReadingLists } : { readingLists: _readingLists };
                             if (followers?.length && !isOnOwnProfile) {
                                 userDefaultVals = {
                                     ...userDefaultVals,
@@ -5259,6 +5281,18 @@ router.route("/users/:package").get((request, response) => {
         User.findOne({ _id: userId, [`readingLists.${listName}`]: { $exists: true } }, { _id: 0 }).countDocuments().then(doesExist => {
             console.log({ doesExist });
             response.json(!!doesExist);
+        })
+    } else if (name === 'checkWasPostSaved') {
+        const { postId } = package;
+        User.findOne({ _id: userId }, { readingLists: 1 }).then(user => {
+            if (user.readingLists) {
+                const readingListVals = Object.values(user.readingLists).map(({ list }) => list).flat();
+                readingListVals.length ? response.json(readingListVals.includes(postId)) : response.json(false);
+            } else {
+                response.json(false);
+            }
+        }).catch(error => {
+            error && console.error('An error has occurred in checking if post was saved by user: ', error);
         })
     }
 })
