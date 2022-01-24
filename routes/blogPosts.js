@@ -861,7 +861,7 @@ const getPosts = (userId, res, userInfo) => {
         if (posts.length) {
             res.json({ arePostsPresent: true, _posts: posts, userInfo: userInfo });
         } else {
-            res.json({ arePostsPresent: false });
+            res.json({ arePostsPresent: false, userInfo: userInfo });
         }
     })
 }
@@ -876,24 +876,22 @@ router.route("/blogPosts/:package").get((req, res) => {
     if (name === "getPublishedDrafts") {
         // when viewing another user profile, get all of the posts that they've published
         if (username) {
-            Tag.find({}).then(tags => {
-                User.findOne({ username: username }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1, topics: 1, bio: 1, socialMedia: 1 }).then(user => {
-                    if (user) {
-                        const { _id, followers, activities, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = user;
-                        // const topics = _topics?.length && _topics.map(topicId => {
-                        //     const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(topicId));
-                        //     return _tag;
-                        // })
-                        let userInfo = { _id, iconPath, firstName, lastName, bio, topics };
-                        userInfo = activities?.following?.length ? { ...userInfo, following: activities.following } : userInfo;
-                        userInfo = followers?.length ? { ...userInfo, followers } : userInfo;
-                        userInfo = readingLists ? { ...userInfo, readingLists } : userInfo;
-                        userInfo = socialMedia?.length ? { ...userInfo, socialMedia } : userInfo;
-                        getPosts(_id, res, userInfo);
-                    } else {
-                        res.json({ doesUserExist: false })
-                    }
-                })
+            User.findOne({ username: username }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1, topics: 1, bio: 1, socialMedia: 1 }).then(user => {
+                if (user) {
+                    const { _id, followers, activities, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = user;
+                    // const topics = _topics?.length && _topics.map(topicId => {
+                    //     const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(topicId));
+                    //     return _tag;
+                    // })
+                    let userInfo = { _id, iconPath, firstName, lastName, bio, topics };
+                    userInfo = activities?.following?.length ? { ...userInfo, following: activities.following } : userInfo;
+                    userInfo = followers?.length ? { ...userInfo, followers } : userInfo;
+                    userInfo = readingLists ? { ...userInfo, readingLists } : userInfo;
+                    userInfo = socialMedia?.length ? { ...userInfo, socialMedia } : userInfo;
+                    getPosts(_id, res, userInfo);
+                } else {
+                    res.json({ doesUserExist: false })
+                }
             })
         } else {
             console.log('yolo')

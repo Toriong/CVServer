@@ -15,6 +15,7 @@ const path = require('path');
 const moment = require('moment');
 // what does he do?
 const he = require('he');
+const { getFollowersAndFollowing } = require("../functions/getFollowersAndFollowing");
 
 
 
@@ -1320,6 +1321,7 @@ router.route("/users/updateInfo").post((request, response) => {
             );
         }
         if (editedListName) {
+            console.log('editedAt: ', editedAt);
             User.updateOne(
                 { _id: userId },
                 {
@@ -2874,18 +2876,6 @@ router.route("/users/:package").get((request, response) => {
         })
     } else if (name === 'getFollowersAndFollowing') {
         const searchQuery = username ? { $or: [{ username: username }, { _id: userId }] } : { _id: userId };
-        const getFollowersAndFollowing = (_user, willGetFollowers = true) => {
-            const { followers, activities } = _user;
-            let user;
-            if (followers?.length && willGetFollowers) {
-                user = { followers };
-            }
-            if (activities?.following?.length) {
-                user = user ? { ...user, following: activities.following } : { following: activities.following };
-            }
-
-            return user;
-        }
         if (!username) {
             User.findOne(searchQuery, { followers: 1, _id: 0, 'activities.following': 1 })
                 .then(result => {
@@ -4867,7 +4857,7 @@ router.route("/users/:package").get((request, response) => {
                                             readingLists[listName].previousNames.reverse().forEach(name => {
                                                 const { oldName, newName, timeOfChange } = name
                                                 const { date: dateOfChange, time } = timeOfChange;
-                                                const previousName = { oldName, newName, time: convertToStandardTime(time) };
+                                                const previousName = { oldName, newName, time };
                                                 const isDatePresent = _previousNames && _previousNames.map(({ date }) => date).includes(dateOfChange);
                                                 if (isDatePresent) {
                                                     _previousNames = _previousNames.map(name => {
@@ -4899,7 +4889,7 @@ router.route("/users/:package").get((request, response) => {
                                                 ..._readingList,
                                                 editsPublishedAt: {
                                                     ...editedAt,
-                                                    time: convertToStandardTime(editedAt.time)
+                                                    time: editedAt.time
                                                 }
                                             }
                                             delete _readingList.editedAt;
@@ -5313,6 +5303,33 @@ router.route("/users/:package").get((request, response) => {
             console.log({ doesExist });
             response.json(!!doesExist);
         })
+    } else if (name === 'getAboutUserInfo') {
+        console.log('hello there ma');
+        console.log({
+            username,
+            userId
+        })
+        User.find({ $or: [{ username: username }, { _id: userId }] }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1, topics: 1, bio: 1, socialMedia: 1, username: 1 }).then(users => {
+            console.log('users: ', users);
+            const userBeingViewed = users.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username));
+            const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+            if (userBeingViewed) {
+                const { _id, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = userBeingViewed;
+                let _users = { _id, iconPath, firstName, lastName, bio, topics };
+                const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
+                console.log('followersAndFollowing: ', followersAndFollowing)
+                const currentUserFollowing = getFollowersAndFollowing(currentUser, false);
+                _users = followersAndFollowing ? { ...followersAndFollowing, ..._users } : _users;
+                _users = readingLists ? { ..._users, readingLists } : _users;
+                _users = socialMedia?.length ? { ..._users, socialMedia } : _users;
+                _users = currentUserFollowing ? { ..._users, currentUserFollowing: currentUserFollowing.following } : _users;
+                response.json(_users);
+            } else {
+                response.sendStatus(404)
+            }
+
+        })
+
     }
 })
 
