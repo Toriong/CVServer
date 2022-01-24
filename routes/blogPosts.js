@@ -10,6 +10,7 @@ const Tag = require("../models/tag");
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { getReadingListsAndPostsPics } = require('../functions/readingLIstFns');
+const { userInfo } = require('os');
 // make an activities for all of the edits that the user did to comments replies and posts 
 
 // GOAL: display all notifications pertaining to the following: replies on user's post, replies to user comments, comments on user's posts, likes for the following: (comments, replies, posts)
@@ -873,20 +874,26 @@ router.route("/blogPosts/:package").get((req, res) => {
     const { name, signedInUserId: userId, draftId, savedPosts, postId, username } = package;
     // change this to 'getPublishedDraftsByAuthor'
     if (name === "getPublishedDrafts") {
+        // when viewing another user profile, get all of the posts that they've published
         if (username) {
-            console.log('bruhhhh')
-            User.findOne({ username: username }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1 }).then(user => {
-                if (user) {
-                    const { _id, followers, activities, iconPath, firstName, lastName, readingLists } = user;
-                    const { following } = activities;
-                    let userInfo = { _id, iconPath, firstName, lastName };
-                    userInfo = following?.length ? { ...userInfo, following } : userInfo;
-                    userInfo = followers?.length ? { ...userInfo, followers } : userInfo;
-                    userInfo = readingLists ? { ...userInfo, readingLists } : userInfo;
-                    getPosts(_id, res, userInfo);
-                } else {
-                    res.json({ doesUserExist: false })
-                }
+            Tag.find({}).then(tags => {
+                User.findOne({ username: username }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1, topics: 1, bio: 1, socialMedia: 1 }).then(user => {
+                    if (user) {
+                        const { _id, followers, activities, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = user;
+                        // const topics = _topics?.length && _topics.map(topicId => {
+                        //     const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(topicId));
+                        //     return _tag;
+                        // })
+                        let userInfo = { _id, iconPath, firstName, lastName, bio, topics };
+                        userInfo = activities?.following?.length ? { ...userInfo, following: activities.following } : userInfo;
+                        userInfo = followers?.length ? { ...userInfo, followers } : userInfo;
+                        userInfo = readingLists ? { ...userInfo, readingLists } : userInfo;
+                        userInfo = socialMedia?.length ? { ...userInfo, socialMedia } : userInfo;
+                        getPosts(_id, res, userInfo);
+                    } else {
+                        res.json({ doesUserExist: false })
+                    }
+                })
             })
         } else {
             console.log('yolo')

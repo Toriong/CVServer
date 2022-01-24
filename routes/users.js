@@ -413,6 +413,7 @@ router.route("/users").post((request, response) => {
 
 
 router.route("/users/updateInfo").post((request, response) => {
+    console.log('hello there meng: ',)
     const { name, data, userId, username, listName, isPostPresent, isCommentAuthorPresent, notifyUserId } = request.body;
     // console.log('name status: ', name === 'checkDeletedLikedActivities')
     if (name === "addBioTagsAndSocialMedia") {
@@ -923,79 +924,80 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         });
         response.json('Will track user reply like');
-    } else if (name === "followUser") {
+    } else if (name === "followBtnPressed") {
         // NOTIFY THE USER BEING FOLLOWED HERE
-        const { newFollowingUserId, signedInUserId, followedUserAt } = data;
+        const { targetUserId, signedInUserId, followedUserAt } = data;
         console.log('dta ', data);
-        User.updateOne({ _id: signedInUserId },
-            {
-                $push:
+        if (followedUserAt) {
+            User.updateOne({ _id: signedInUserId },
                 {
-                    "activities.following": { userId: newFollowingUserId, followedUserAt }
+                    $push:
+                    {
+                        "activities.following": { userId: targetUserId, followedUserAt }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error(`Error message 667: ${error}`)
+                    } else {
+                        console.log(`New following added, numsAffected: `, numsAffected)
+                    }
                 }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.error(`Error message 667: ${error}`)
-                } else {
-                    console.log(`New following added, numsAffected: `, numsAffected)
-                }
-            }
-        );
-        // IN DISPLAYING THE notifications, show the follower and the time of the follow
-        User.updateOne({ _id: newFollowingUserId },
-            {
-                $addToSet:
+            );
+            // IN DISPLAYING THE notifications, show the follower and the time of the follow
+            User.updateOne({ _id: targetUserId },
                 {
-                    followers: { userId: signedInUserId, wasFollowedAt: followedUserAt },
-                    'notifications.newFollowers': { userId: signedInUserId, isMarkedRead: false }
+                    $addToSet:
+                    {
+                        followers: { userId: signedInUserId, wasFollowedAt: followedUserAt },
+                        'notifications.newFollowers': { userId: signedInUserId, isMarkedRead: false }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error(`Error message 687: ${error}`)
+                    } else {
+                        console.log(`User is being followed by ${signedInUserId}. `, numsAffected)
+                        response.json('user has a new follower and is notified');
+                    }
                 }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.error(`Error message 687: ${error}`)
-                } else {
-                    console.log(`User is being followed by ${signedInUserId}. `, numsAffected)
-                    response.json('user has a new follower and is notified');
-                }
-            }
-        );
-    } else if (name === "unFollowUser") {
-        console.log('request.body: ', request.body);
-        const { unFollowUser, signedInUserId: userId_ } = request.body;
-        User.updateOne({ _id: userId_ },
-            {
-                $pull:
+            );
+        } else {
+            console.log('request.body: ', request.body);
+            User.updateOne({ _id: signedInUserId },
                 {
-                    "activities.following": { userId: unFollowUser }
+                    $pull:
+                    {
+                        "activities.following": { userId: targetUserId }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error(`Error message 667: ${error}`)
+                    } else {
+                        console.log(`Following activity deleted, numsAffected: `, numsAffected)
+                    }
                 }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.error(`Error message 667: ${error}`)
-                } else {
-                    console.log(`Following activity deleted, numsAffected: `, numsAffected)
-                }
-            }
-        );
-        console.log('userId_: ', userId_);
-        User.updateOne({ _id: unFollowUser },
-            {
-                $pull:
+            );
+            User.updateOne({ _id: targetUserId },
                 {
-                    followers: { userId: userId_ },
-                    'notifications.newFollowers': { userId: userId_ }
+                    $pull:
+                    {
+                        followers: { userId: signedInUserId },
+                        'notifications.newFollowers': { userId: signedInUserId }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error(`An error has occurred in deleting user as a follower: `, error)
+                    } else {
+                        console.log(`User was unFollowed. numsAffected: `, numsAffected)
+                        response.json("User was unFollowed and new following notification was deleted.")
+                    }
                 }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.error(`Error message 687: ${error}`)
-                } else {
-                    console.log(`User was unFollowed. numsAffected: `, numsAffected)
-                    response.json("User was unFollowed and new following notification was deleted.")
-                }
-            }
-        );
+            );
+        }
+
     } else if (name === "saveIntoReadingList") {
         console.log('request.body: ', request.body);
         const { signedInUserId: userId, wasListCreated, listName: title, isPrivate, newPostSaved } = request.body;
@@ -3714,16 +3716,7 @@ router.route("/users/:package").get((request, response) => {
                                         _postLikes.forEach(post => {
                                             const { postId, title, userIdsOfLikes } = post;
                                             if (userIdsOfLikes.length) {
-                                                userIdsOfLikes.forEach(userOfLike => {
-                                                    _postLikeNotifications.push(
-                                                        {
-                                                            isPostLike: true,
-                                                            postId,
-                                                            title,
-                                                            notification: userOfLike
-                                                        }
-                                                    )
-                                                })
+                                                userIdsOfLikes.forEach(userOfLike => { userOfLike.username && _postLikeNotifications.push({ isPostLike: true, postId, title, notification: userOfLike }); });
                                             };
                                         });
                                         _postLikeNotifications.length ? response.json({ postLikes: _postLikeNotifications }) : response.json({ isEmpty: true });
@@ -5071,7 +5064,7 @@ router.route("/users/:package").get((request, response) => {
             response.json({ previousNames: namesSortedByCreation })
         })
     } else if (name === 'getReadingLists') {
-        const { isOnOwnProfile } = package;
+        const { isOnOwnProfile, isViewingPost } = package;
         const getReadingListsAndPostsPics = (_readingLists, posts, users, _userId) => {
             let readingLists = _readingLists;
             const listNames = Object.keys(readingLists);
@@ -5125,19 +5118,19 @@ router.route("/users/:package").get((request, response) => {
             const userBeingViewed = !isOnOwnProfile && users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
             const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
-            if (isOnOwnProfile || userBeingViewed) {
+            if (isOnOwnProfile || userBeingViewed || isViewingPost) {
+                console.log('yo meng, sup')
                 // if the user is viewing a different user's reading list, then get the reading list info for that user
-                let { _id, readingLists, iconPath, activities, followers } = isOnOwnProfile ? currentUser : userBeingViewed;
-                const currentUserReadingLists = !isOnOwnProfile && currentUser.readingLists
-                console.log({ currentUserReadingLists });
+                let { _id, readingLists, iconPath, activities, followers } = (isOnOwnProfile || isViewingPost) ? currentUser : userBeingViewed;
+                const currentUserReadingLists = (!isOnOwnProfile && !isViewingPost) && currentUser.readingLists
                 const currentUserListNames = currentUserReadingLists && Object.keys(currentUserReadingLists);
                 let listsToDel;
                 let postIds = [];
-
                 if (readingLists) {
+                    console.log('washington');
                     let listNames = Object.keys(readingLists);
                     // when viewing a diff user, delete all of the lists that are private
-                    !isOnOwnProfile && listNames.forEach(listName => {
+                    (!isOnOwnProfile && !isViewingPost) && listNames.forEach(listName => {
                         if (readingLists[listName].isPrivate) {
                             delete readingLists[listName];
                             listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
@@ -5154,9 +5147,8 @@ router.route("/users/:package").get((request, response) => {
                         });
                         // get the post ids of the posts that were saved by the current user when viewing the reading lists of another user
                         (!isOnOwnProfile && currentUserListNames) && getPostIds(currentUserReadingLists, currentUserListNames, postIds);
-                        // GOAL: will get the necessary post info to display onto the UI when the reading list is clicked 
                         BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { publicationDate: 1, title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
-                            const _userId = isOnOwnProfile ? userId : userBeingViewed._id;
+                            const _userId = (isOnOwnProfile || isViewingPost) ? userId : userBeingViewed._id;
                             let { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(readingLists, posts, users, _userId);
                             // if the user is viewing a different user's profile, then get the reading list of the current user as well 
                             let _currentUserReadingLists;
@@ -5215,7 +5207,7 @@ router.route("/users/:package").get((request, response) => {
     } else if (name === 'getReadingListNamesAndUsers') {
         User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 }).then(users => {
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-            let { readingLists, blockedUsers } = currentUser;
+            let { readingLists, blockedUsers, activities } = currentUser;
             const blockedUserIds = blockedUsers?.length && blockedUsers.map(({ userId }) => userId);
             const _users = users.map(user => {
                 if (user.readingList) {
@@ -5239,40 +5231,49 @@ router.route("/users/:package").get((request, response) => {
                     BlogPost.find(
                         { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }
                     ).then(posts => {
-                        readingListsNames.forEach(listName => {
-                            const listByUser = readingLists[listName];
-                            if (listByUser?.list?.length) {
-                                const _list = listByUser.list.filter(({ postId }) => {
-                                    // check if the post exist and if the author of the post blocked the current user
-                                    const targetPost = posts.find(({ _id }) => _id === postId);
-                                    // check if the post exist
-                                    if (targetPost) {
-                                        const author = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId));
-                                        const didAuthorBlockedUser = author.blockedUsers?.length && author.blockedUsers.map(({ userId }) => userId).includes(userId);
-                                        // check if the post author blocked the current user
-                                        return !didAuthorBlockedUser;
-                                    }
-                                    return false;
-                                });
-                                // if the list lengths are not the same, that means one or more posts has been deleted, insert the new list into the field of list of the reading list object 
-                                if (_list.length !== listByUser.list.length) {
-                                    readingLists = {
-                                        ...readingLists,
-                                        [listName]: {
-                                            ...readingLists[listName],
-                                            list: _list
+                        if (posts.length) {
+                            readingListsNames.forEach(listName => {
+                                const listByUser = readingLists[listName];
+                                if (listByUser?.list?.length) {
+                                    const _list = listByUser.list.filter(({ postId }) => {
+                                        // check if the post exist and if the author of the post blocked the current user
+                                        const targetPost = posts.find(({ _id }) => _id === postId);
+                                        // check if the post exist
+                                        if (targetPost) {
+                                            const author = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId));
+                                            const didAuthorBlockedUser = author.blockedUsers?.length && author.blockedUsers.map(({ userId }) => userId).includes(userId);
+                                            // check if the post author blocked the current user
+                                            return !didAuthorBlockedUser;
                                         }
-                                    }
-                                };
-                            }
-                        });
-                        response.json({ readingLists, users: _users });
+                                        return false;
+                                    });
+                                    // if the list lengths are not the same, that means one or more posts has been deleted, insert the new list into the field of list of the reading list object 
+                                    if (_list.length !== listByUser.list.length) {
+                                        readingLists = {
+                                            ...readingLists,
+                                            [listName]: {
+                                                ...readingLists[listName],
+                                                list: _list
+                                            }
+                                        }
+                                    };
+                                }
+                            });
+                            const data = activities?.following?.length ? { readingLists, users: _users, following: activities.following } : { readingLists, users: _users }
+                            response.json(data);
+                        } else {
+                            const data = activities?.following?.length ? { readingLists, users: _users, following: activities.following } : { readingLists, users: _users }
+                            response.json(data);
+                        }
+
                     });
                 } else {
-                    response.json({ readingLists, users: _users });
+                    const data = activities?.following?.length ? { readingLists, users: _users, following: activities.following } : { readingLists, users: _users }
+                    response.json(data);
                 }
             } else {
-                response.json({ users: _users });
+                const data = activities?.following?.length ? { following: activities.following, users: _users } : { users: _users };
+                response.json(data);
             }
         })
     } else if (name === 'checkListNameExistence') {
@@ -5281,18 +5282,6 @@ router.route("/users/:package").get((request, response) => {
         User.findOne({ _id: userId, [`readingLists.${listName}`]: { $exists: true } }, { _id: 0 }).countDocuments().then(doesExist => {
             console.log({ doesExist });
             response.json(!!doesExist);
-        })
-    } else if (name === 'checkWasPostSaved') {
-        const { postId } = package;
-        User.findOne({ _id: userId }, { readingLists: 1 }).then(user => {
-            if (user.readingLists) {
-                const readingListVals = Object.values(user.readingLists).map(({ list }) => list).flat();
-                readingListVals.length ? response.json(readingListVals.includes(postId)) : response.json(false);
-            } else {
-                response.json(false);
-            }
-        }).catch(error => {
-            error && console.error('An error has occurred in checking if post was saved by user: ', error);
         })
     }
 })
