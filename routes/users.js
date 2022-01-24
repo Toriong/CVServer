@@ -2873,28 +2873,58 @@ router.route("/users/:package").get((request, response) => {
             console.log(`Error in getting all users, line 960: ${err}`)
         })
     } else if (name === 'getFollowersAndFollowing') {
-        const searchQuery = username ? { username: username } : { _id: userId };
-        User.findOne(searchQuery, { followers: 1, _id: 0, 'activities.following': 1 })
-            .then(result => {
-                if (result?.followers?.length || result?.activities?.following?.length) {
-                    const { followers, activities } = result;
-                    let user;
-                    if (followers?.length) {
-                        user = { followers };
+        const searchQuery = username ? { $or: [{ username: username }, { _id: userId }] } : { _id: userId };
+        const getFollowersAndFollowing = (_user, willGetFollowers = true) => {
+            const { followers, activities } = _user;
+            let user;
+            if (followers?.length && willGetFollowers) {
+                user = { followers };
+            }
+            if (activities?.following?.length) {
+                user = user ? { ...user, following: activities.following } : { following: activities.following };
+            }
+
+            return user;
+        }
+        if (!username) {
+            User.findOne(searchQuery, { followers: 1, _id: 0, 'activities.following': 1 })
+                .then(result => {
+                    if (result?.followers?.length || result?.activities?.following?.length) {
+                        const { followers, activities } = result;
+                        let user;
+                        if (followers?.length) {
+                            user = { followers };
+                        }
+                        if (activities?.following?.length) {
+                            user = user ? { ...user, following: activities.following } : { following: activities.following };
+                        };
+                        user ? response.json(user) : response.json({ isEmpty: true })
+                    } else {
+                        response.json({ isEmpty: true })
                     }
-                    if (activities?.following?.length) {
-                        user = user ? { ...user, following: activities.following } : { following: activities.following };
-                    };
-                    response.json(user);
-                } else {
-                    response.json({ isEmpty: true })
+                })
+                .catch(error => {
+                    if (error) {
+                        console.error("ERROR in finding user's account and followers: ", error)
+                    }
+                })
+        } else {
+            User.find(searchQuery, { followers: 1, username: 1, 'activities.following': 1 }).then(_users => {
+                const userBeingViewed = _users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username))
+                const currentUser = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
+                const currentUserFollowing = getFollowersAndFollowing(currentUser, false)
+                let users;
+                if (followersAndFollowing) {
+                    users = { ...followersAndFollowing };
                 }
-            })
-            .catch(error => {
-                if (error) {
-                    console.error("ERROR in finding user's account and followers: ", error)
+                if (currentUserFollowing) {
+                    users = users ? { ...users, currentUserFollowing: currentUserFollowing.following } : { currentUserFollowing: currentUserFollowing.following };
                 }
+                users ? response.json(users) : response.json({ isEmpty: true })
             })
+        }
+
     } else if (name === 'checkIfUserNameWasTaken') {
         console.log('checking if username was taken...')
         User.find({ username: username, _id: { $ne: userId } }).countDocuments().then(results => {
