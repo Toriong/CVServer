@@ -77,7 +77,6 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
     const targetPathUrl = path.join(__dirname, `./writingPostImageUploads/${imageTempFile.name}`);
     // if (path.extname(imageTempFile.originalFilename).toLowerCase() === ".png" || ".jpg") {
 
-    // what is url doing?
     res.status(200).json({
         uploaded: true,
 

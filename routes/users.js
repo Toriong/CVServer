@@ -5181,7 +5181,7 @@ router.route("/users/:package").get((request, response) => {
                                 })
                             }
 
-                            let userDefaultVals = !isOnOwnProfile ? { _id, readingLists: _readingLists, userIconPath: iconPath, _currentUserReadingLists } : { readingLists: _readingLists };
+                            let userDefaultVals = !isOnOwnProfile ? { _id: _userId, readingLists: _readingLists, userIconPath: iconPath, _currentUserReadingLists } : { readingLists: _readingLists };
                             if (followers?.length && !isOnOwnProfile) {
                                 userDefaultVals = {
                                     ...userDefaultVals,
@@ -5194,7 +5194,9 @@ router.route("/users/:package").get((request, response) => {
                                     following: activities.following
                                 }
                             }
-                            postsWithIntroPics.length ? response.json({ postsWithIntroPics, ...userDefaultVals }) : response.json({ ...userDefaultVals });
+                            const usersInfo = postsWithIntroPics.length ? { postsWithIntroPics, ...userDefaultVals } : { ...userDefaultVals }
+                            console.log('usersInfo: ', usersInfo);
+                            response.json(usersInfo);
                         })
                     } else {
                         let user = { userIconPath: iconPath };
@@ -5208,7 +5210,7 @@ router.route("/users/:package").get((request, response) => {
                         response.json(user);
                     }
                 } else if (!isOnOwnProfile) {
-                    let user = { userIconPath: iconPath };
+                    let user = { userIconPath: iconPath, _id: userBeingViewed._id };
                     if (followers) {
                         user = { ...user, followers };
                     };
@@ -5329,7 +5331,77 @@ router.route("/users/:package").get((request, response) => {
             }
 
         })
-
+    } else if (name === 'getSearchResults') {
+        // const { input, userId } = package;
+        const _regex = new RegExp(package.input, 'i')
+        let _searchResults;
+        const getSortNum = (itemA, itemB) => {
+            if (itemA > itemB) return 1;
+            if (itemA < itemB) return -1;
+            return 0
+        }
+        User.aggregate([
+            { $addFields: { isUserPresent: { $regexMatch: { input: "$username", regex: _regex } } } },
+            {
+                $project: {
+                    _id: 1,
+                    username: 1,
+                    iconPath: 1,
+                    isUserPresent: 1
+                }
+            }
+        ]).then(userResults => {
+            // const _searchResults = userResults.filter()
+            if (userResults.length) {
+                let _userResults = userResults.filter(({ isUserPresent }) => isUserPresent);
+                _userResults = _userResults ? _userResults.sort(({ username: usernameA }, { username: usernameB }) => getSortNum(usernameA, usernameB)) : _userResults;
+                _searchResults = _userResults ?? _searchResults;
+            }
+            BlogPost.aggregate([
+                {
+                    $addFields: { isPostPresent: { $regexMatch: { input: '$title', regex: _regex } } }
+                },
+                {
+                    $project: {
+                        _id: 1,
+                        authorId: 1,
+                        title: 1,
+                        subtitle: 1,
+                        publicationDate: 1,
+                        isPostPresent: 1,
+                        imgUrl: 1
+                    }
+                }
+            ]).then(postsResults => {
+                if (postsResults.length) {
+                    let _postsResults = postsResults.filter(({ isPostPresent }) => isPostPresent);
+                    _postsResults = _postsResults?.length ? postsResults.map(post => {
+                        const { authorId, publicationDate } = post
+                        const { username, iconPath } = userResults.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                        return { ...post, publicationDate: publicationDate.date, authorUsername: username, authorIconPath: iconPath };
+                    }) : _postsResults;
+                    _postsResults = _postsResults?.length > 1 ? _postsResults.sort(({ title: titleA }, { title: titleB }) => getSortNum(titleA, titleB)) : _postsResults;
+                    if (_postsResults.length) {
+                        _searchResults = _searchResults ? [..._searchResults, ..._postsResults] : _postsResults
+                    }
+                };
+                Tag.aggregate([
+                    {
+                        $addFields: { isTagPresent: { $regexMatch: { input: '$topic', regex: _regex } } }
+                    }
+                ]).then(tagsResults => {
+                    if (tagsResults.length) {
+                        let _tagsResults = tagsResults.filter(({ isTagPresent }) => isTagPresent);
+                        _tagsResults = _tagsResults.length > 1 ? _tagsResults.sort(({ topic: topicA }, { topic: topicB }) => getSortNum(topicA, topicB)) : _tagsResults;
+                        if (_tagsResults.length) {
+                            _searchResults = _searchResults ? [..._searchResults, ..._tagsResults] : _tagsResults;
+                        }
+                    };
+                    console.log('_searchResults: ', _searchResults)
+                    _searchResults ? response.json({ searchResults: _searchResults }) : response.json({ isEmpty: true });
+                })
+            })
+        })
     }
 })
 
