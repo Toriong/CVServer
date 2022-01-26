@@ -5332,76 +5332,114 @@ router.route("/users/:package").get((request, response) => {
 
         })
     } else if (name === 'getSearchResults') {
-        // const { input, userId } = package;
-        const _regex = new RegExp(package.input, 'i')
+        const { input, searchType } = package;
+        const _regex = new RegExp(input, 'i')
         let _searchResults;
         const getSortNum = (itemA, itemB) => {
             if (itemA > itemB) return 1;
             if (itemA < itemB) return -1;
             return 0
+        };
+        let Collection;
+        if (searchType === 'people') {
+            Collection = User;
+        } else if (searchType === 'tags') {
+            Collection = Tag;
+        } else {
+            Collection = BlogPost;
         }
-        User.aggregate([
-            { $addFields: { isUserPresent: { $regexMatch: { input: "$username", regex: _regex } } } },
-            {
-                $project: {
-                    _id: 1,
-                    username: 1,
-                    iconPath: 1,
-                    isUserPresent: 1
-                }
-            }
-        ]).then(userResults => {
-            // const _searchResults = userResults.filter()
-            if (userResults.length) {
-                let _userResults = userResults.filter(({ isUserPresent }) => isUserPresent);
-                _userResults = _userResults ? _userResults.sort(({ username: usernameA }, { username: usernameB }) => getSortNum(usernameA, usernameB)) : _userResults;
-                _searchResults = _userResults ?? _searchResults;
-            }
-            BlogPost.aggregate([
-                {
-                    $addFields: { isPostPresent: { $regexMatch: { input: '$title', regex: _regex } } }
-                },
+
+        if (!searchType) {
+            User.aggregate([
+                { $addFields: { isUserPresent: { $regexMatch: { input: "$username", regex: _regex } } } },
                 {
                     $project: {
                         _id: 1,
-                        authorId: 1,
-                        title: 1,
-                        subtitle: 1,
-                        publicationDate: 1,
-                        isPostPresent: 1,
-                        imgUrl: 1
+                        username: 1,
+                        iconPath: 1,
+                        isUserPresent: 1
                     }
                 }
-            ]).then(postsResults => {
-                if (postsResults.length) {
-                    let _postsResults = postsResults.filter(({ isPostPresent }) => isPostPresent);
-                    _postsResults = _postsResults?.length ? postsResults.map(post => {
-                        const { authorId, publicationDate } = post
-                        const { username, iconPath } = userResults.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
-                        return { ...post, publicationDate: publicationDate.date, authorUsername: username, authorIconPath: iconPath };
-                    }) : _postsResults;
-                    _postsResults = _postsResults?.length > 1 ? _postsResults.sort(({ title: titleA }, { title: titleB }) => getSortNum(titleA, titleB)) : _postsResults;
-                    if (_postsResults.length) {
-                        _searchResults = _searchResults ? [..._searchResults, ..._postsResults] : _postsResults
-                    }
-                };
-                Tag.aggregate([
+            ]).then(userResults => {
+                // const _searchResults = userResults.filter()
+                if (userResults.length) {
+                    let _userResults = userResults.filter(({ isUserPresent }) => isUserPresent);
+                    _userResults = _userResults ? _userResults.sort(({ username: usernameA }, { username: usernameB }) => getSortNum(usernameA, usernameB)) : _userResults;
+                    _searchResults = _userResults ?? _searchResults;
+                }
+                BlogPost.aggregate([
                     {
-                        $addFields: { isTagPresent: { $regexMatch: { input: '$topic', regex: _regex } } }
+                        $addFields: { isPostPresent: { $regexMatch: { input: '$title', regex: _regex } } }
+                    },
+                    {
+                        $project: {
+                            _id: 1,
+                            authorId: 1,
+                            title: 1,
+                            subtitle: 1,
+                            publicationDate: 1,
+                            isPostPresent: 1,
+                            imgUrl: 1
+                        }
                     }
-                ]).then(tagsResults => {
-                    if (tagsResults.length) {
-                        let _tagsResults = tagsResults.filter(({ isTagPresent }) => isTagPresent);
-                        _tagsResults = _tagsResults.length > 1 ? _tagsResults.sort(({ topic: topicA }, { topic: topicB }) => getSortNum(topicA, topicB)) : _tagsResults;
-                        if (_tagsResults.length) {
-                            _searchResults = _searchResults ? [..._searchResults, ..._tagsResults] : _tagsResults;
+                ]).then(postsResults => {
+                    if (postsResults.length) {
+                        let _postsResults = postsResults.filter(({ isPostPresent }) => isPostPresent);
+                        _postsResults = _postsResults?.length ? postsResults.map(post => {
+                            const { authorId, publicationDate } = post
+                            const { username, iconPath } = userResults.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
+                            return { ...post, publicationDate: publicationDate.date, authorUsername: username, authorIconPath: iconPath };
+                        }) : _postsResults;
+                        _postsResults = _postsResults?.length > 1 ? _postsResults.sort(({ title: titleA }, { title: titleB }) => getSortNum(titleA, titleB)) : _postsResults;
+                        if (_postsResults.length) {
+                            _searchResults = _searchResults ? [..._searchResults, ..._postsResults] : _postsResults
                         }
                     };
-                    console.log('_searchResults: ', _searchResults)
-                    _searchResults ? response.json({ searchResults: _searchResults }) : response.json({ isEmpty: true });
+                    Tag.aggregate([
+                        {
+                            $addFields: { isTagPresent: { $regexMatch: { input: '$topic', regex: _regex } } }
+                        }
+                    ]).then(tagsResults => {
+                        if (tagsResults.length) {
+                            let _tagsResults = tagsResults.filter(({ isTagPresent }) => isTagPresent);
+                            _tagsResults = _tagsResults.length > 1 ? _tagsResults.sort(({ topic: topicA }, { topic: topicB }) => getSortNum(topicA, topicB)) : _tagsResults;
+                            if (_tagsResults.length) {
+                                _searchResults = _searchResults ? [..._searchResults, ..._tagsResults] : _tagsResults;
+                            }
+                        };
+                        console.log('_searchResults: ', _searchResults)
+                        _searchResults ? response.json({ searchResults: _searchResults }) : response.json({ isEmpty: true });
+                    })
                 })
             })
-        })
+        } else if (searchType === 'tags') {
+            Tag.aggregate([
+                {
+                    $addFields: { isTagPresent: { $regexMatch: { input: '$topic', regex: _regex } } }
+                }
+            ]).then(tagsResults => {
+                const _tagsResults = tagsResults.filter(({ isTagPresent }) => isTagPresent)
+                if (_tagsResults.length) {
+                    let tagIds = _tagsResults.map(tag => JSON.stringify({ ...tag }));
+                    tagIds = tagIds.map(tag => JSON.parse(tag)._id);
+                    console.table(tagIds);
+
+                    const tagsResultsIds = _tagsResults.map(({ _id }) => _id);
+                    // title: 1, subtitle: 1, imgUrl: 1, publicationDate: 1, userIdsOfLikes: 1
+                    BlogPost.find({}, { _id: 1, tags: 1 }).then(posts => {
+                        const _posts = posts.filter(({ tags }) => {
+                            const postTagsIds = tags.map(({ _id }) => _id);
+                            const hasSearchedTag = tagsResultsIds.some(tagId => postTagsIds.includes(tagId));
+                            return hasSearchedTag;
+                        });
+                        // console.log('_posts: ', _posts)
+                    })
+                } else {
+                    response.json([]);
+                }
+            })
+        }
+
     }
 })
 
