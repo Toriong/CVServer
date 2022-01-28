@@ -5332,7 +5332,8 @@ router.route("/users/:package").get((request, response) => {
 
         })
     } else if (name === 'getSearchResults') {
-        const { input, searchType } = package;
+        console.log({ package });
+        const { input, searchType, userId } = package;
         const _regex = new RegExp(input, 'i')
         let _searchResults;
         const getSortNum = (itemA, itemB) => {
@@ -5340,7 +5341,6 @@ router.route("/users/:package").get((request, response) => {
             if (itemA < itemB) return -1;
             return 0
         };
-        let Collection;
         if (searchType === 'people') {
             Collection = User;
         } else if (searchType === 'tags') {
@@ -5413,27 +5413,67 @@ router.route("/users/:package").get((request, response) => {
                 })
             })
         } else if (searchType === 'tags') {
+            const getUser = (users, userId) => users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
             Tag.aggregate([
                 {
                     $addFields: { isTagPresent: { $regexMatch: { input: '$topic', regex: _regex } } }
                 }
             ]).then(tagsResults => {
-                const _tagsResults = tagsResults.filter(({ isTagPresent }) => isTagPresent)
+                let _tagsResults = tagsResults.filter(({ isTagPresent }) => isTagPresent)
                 if (_tagsResults.length) {
                     let tagIds = _tagsResults.map(tag => JSON.stringify({ ...tag }));
                     tagIds = tagIds.map(tag => JSON.parse(tag)._id);
-                    console.table(tagIds);
+                    User.find({}, { _id: 1, username: 1 }).then(users => {
+                        console.log('userId: ', userId)
+                        const currentUser = getUser(users, userId);
+                        console.log('currentUser: ', currentUser);
+                        const currentUserBlockedUsers = currentUser.blockedUsers?.length && currentUser.blockedUser.map(({ userId }) => userId);
+                        BlogPost.find({ 'tags._id': { $in: tagIds } }, { _id: 1, tags: 1, publicationDate: 1, authorId: 1, comments: 1, userIdsOfLikes: 1, title: 1, subtitle: 1, imgUrl: 1, body: 1 }).then(posts => {
+                            const _posts = posts.filter(({ authorId }) => {
+                                const author = getUser(users, authorId);
+                                if (author) {
+                                    const blockedUsersOfAuthor = author.blockedUsers?.length && author.blockedUser.map(({ userId }) => userId);
+                                    const didAuthorBlockedUser = blockedUsersOfAuthor && blockedUsersOfAuthor.includes(userId);
+                                    const didUserBlockedAuthor = currentUserBlockedUsers && currentUserBlockedUsers.includes(authorId);
+                                    if (didUserBlockedAuthor || didAuthorBlockedUser) return false;
+                                    return true;
+                                };
+                                return false;
+                            });
+                            if (_posts.length) {
+                                console.table(_tagsResults)
+                                _tagsResults = _tagsResults.map(tag => {
+                                    const tagCopy = JSON.stringify({ ...tag });
+                                    return JSON.parse(tagCopy);
+                                });
+                                // GOAL: have the following data structure for the search tag: {topic: (put tag name here), description: (put description here), postsWithTag: [put all posts that has the tag here]}
+                                // GOAL: for the _tagsResults array, for each post, find the post that has the tag that the user search for 
+                                _tagsResults = _tagsResults.map(tag => {
+                                    const _postsWithTags = _posts.filter(({ tags }) => tags.map(({ _id }) => _id).includes(tag._id));
+                                    return {
+                                        ...tag,
+                                        postsWithTag: _postsWithTags.map(post => {
+                                            const { username, _id, iconPath } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.authorId));
+                                            // why do I have to use the ._doc to get the original values in post?
+                                            return {
+                                                ...post._doc,
+                                                iconPath,
+                                                authorUsername: username,
+                                                authorId: _id,
+                                            }
+                                        })
+                                    }
+                                })
+                                response.json(_tagsResults)
+                            } else {
+                                // posts are empty since the user blocked the authors or the authors blocked the user
+                                response.json([]);
+                            }
+                        })
+                    }
 
-                    const tagsResultsIds = _tagsResults.map(({ _id }) => _id);
-                    // title: 1, subtitle: 1, imgUrl: 1, publicationDate: 1, userIdsOfLikes: 1
-                    BlogPost.find({}, { _id: 1, tags: 1 }).then(posts => {
-                        const _posts = posts.filter(({ tags }) => {
-                            const postTagsIds = tags.map(({ _id }) => _id);
-                            const hasSearchedTag = tagsResultsIds.some(tagId => postTagsIds.includes(tagId));
-                            return hasSearchedTag;
-                        });
-                        // console.log('_posts: ', _posts)
-                    })
+                    )
+
                 } else {
                     response.json([]);
                 }
