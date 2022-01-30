@@ -5531,14 +5531,18 @@ router.route("/users/:package").get((request, response) => {
                     Collection.aggregate(searchQuery).then(results => {
                         if (results.length) {
                             const _results = results.filter(filterResults)
+                            console.log('_results length: ', _results.length)
                             if (_results.length && (searchType === 'stories')) {
                                 const currentUser = getUser(users, userId)
                                 console.log({ currentUser })
-                                let postResults = delBlockedUsers(results, currentUser, users, true);
+                                let postResults = delBlockedUsers(_results, currentUser, users, true);
                                 postResults = postResults.length ? addUserInfoToPosts(postResults, users, currentUser, tags) : postResults
-                                console.log(postResults)
                                 response.json(postResults.length ? sortResults(postResults, input, searchType) : postResults)
+                            } else {
+                                response.json([]);
                             }
+                        } else {
+                            response.json([]);
                         }
 
 
@@ -5546,9 +5550,6 @@ router.route("/users/:package").get((request, response) => {
                     });
                 })
             })
-
-
-            response.json([]);
         }
 
     }
