@@ -17,6 +17,9 @@ const moment = require('moment');
 // what does he do?
 const he = require('he');
 const { getFollowersAndFollowing } = require("../functions/getFollowersAndFollowing");
+const { sortTagsOrUsersResults, sortResults } = require("../functions/searchFns");
+const { getUser } = require("../functions/getUser");
+const { delBlockedUsers } = require("../functions/delBlockedUsers");
 
 
 
@@ -5341,17 +5344,38 @@ router.route("/users/:package").get((request, response) => {
         const { input, searchType, userId } = package;
         const _regex = new RegExp(input, 'i')
         let _searchResults;
+        let Collection;
+        let searchQuery;
+
         const getSortNum = (itemA, itemB) => {
             if (itemA > itemB) return 1;
             if (itemA < itemB) return -1;
             return 0
         };
-        if (searchType === 'people') {
-            Collection = User;
-        } else if (searchType === 'tags') {
-            Collection = Tag;
-        } else {
+
+        if (searchType === 'stories') {
             Collection = BlogPost;
+            searchQuery = [
+                {
+                    $addFields: { isPostPresent: { $regexMatch: { input: '$title', regex: _regex } } }
+                },
+                {
+                    $project: {
+                        tags: 1,
+                        publicationDate: 1,
+                        authorId: 1,
+                        comments: 1,
+                        userIdsOfLikes: 1,
+                        title: 1,
+                        subtitle: 1,
+                        imgUrl: 1,
+                        body: 1,
+                        isPostPresent: 1,
+                    }
+                }
+            ]
+        } else if (searchType === 'people') {
+            Collection = User;
         }
 
         if (!searchType) {
@@ -5418,7 +5442,6 @@ router.route("/users/:package").get((request, response) => {
                 })
             })
         } else if (searchType === 'tags') {
-            const getUser = (users, userId) => users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
             Tag.aggregate([
                 {
                     $addFields: { isTagPresent: { $regexMatch: { input: '$topic', regex: _regex } } }
@@ -5459,23 +5482,25 @@ router.route("/users/:package").get((request, response) => {
                                     // GOAL: have the following data structure for the search tag: {topic: (put tag name here), description: (put description here), postsWithTag: [put all posts that has the tag here]}
                                     // GOAL: for the _tagsResults array, for each post, find the post that has the tag that the user search for 
                                     _tagsResults = _tagsResults.map(tag => {
-                                        const _postsWithTags = _posts.filter(({ tags }) => tags.map(({ _id }) => _id).includes(tag._id)).sort(({ title: titleA }, { title: titleB }) => {
-                                            if (titleA.toUpperCase() > titleB.toUpperCase()) return 1;
-                                            if (titleA.toUpperCase() < titleB.toUpperCase()) return -1;
-                                            return 0;
-                                        });
-                                        if (tag.topic === 'logic') {
-                                            console.log('all posts num for logic tag: ', _postsWithTags.length)
-                                        }
+                                        let _postsWithTags = _posts.filter(({ tags }) => tags.map(({ _id }) => _id).includes(tag._id));
+                                        if (_postsWithTags.length > 1) {
+                                            _postsWithTags = _postsWithTags.sort(({ publicationDate: timeA }, { publicationDate: timeB }) => timeB.miliSeconds - timeA.miliSeconds)
+                                        };
+
                                         return {
                                             ...tag,
                                             postsWithTag: addUserInfoToPosts(_postsWithTags, users, currentUser, _tags)
                                         }
                                     });
-                                    console.log('_tagsResults: ')
-                                    console.table(_tagsResults)
+                                    if (_tagsResults.length > 1) {
+                                        _tagsResults = _tagsResults.sort(({ topic: topicA }, { topic: topicB }) => {
+                                            if (topicA > topicB) return -1;
+                                            if (topicA < topicB) return 1;
+                                            return 0;
+                                        })
+                                    };
                                     // GOAL: put the tags that start with the user input first, then put all tags that consist of the user input next
-                                    response.json(_tagsResults)
+                                    response.json(sortResults(_tagsResults, input, searchType))
                                 } else {
                                     // posts are empty since the user blocked the authors or the authors blocked the user
                                     response.json([]);
@@ -5491,6 +5516,39 @@ router.route("/users/:package").get((request, response) => {
                     response.json([]);
                 }
             })
+        } else {
+            const getFilterResultsFn = searchType => {
+                const isStoriesSearch = searchType === 'stories';
+                const filterResultsFn = ({ isPostPresent }) => isPostPresent;
+                const _filterResultFns = ({ isUserPresent }) => isUserPresent;
+
+                return isStoriesSearch ? filterResultsFn : _filterResultFns
+            }
+            // GOAL: get the posts based on the user input 
+            const filterResults = getFilterResultsFn(searchType);
+            Tag.find({}).then(tags => {
+                User.find({}, { username: 1, blockedUsers: 1, topics: 1, readingLists: 1, activities: 1, iconPath: 1, _id: 1 }).then(users => {
+                    Collection.aggregate(searchQuery).then(results => {
+                        if (results.length) {
+                            const _results = results.filter(filterResults)
+                            if (_results.length && (searchType === 'stories')) {
+                                const currentUser = getUser(users, userId)
+                                console.log({ currentUser })
+                                let postResults = delBlockedUsers(results, currentUser, users, true);
+                                postResults = postResults.length ? addUserInfoToPosts(postResults, users, currentUser, tags) : postResults
+                                console.log(postResults)
+                                response.json(postResults.length ? sortResults(postResults, input, searchType) : postResults)
+                            }
+                        }
+
+
+
+                    });
+                })
+            })
+
+
+            response.json([]);
         }
 
     }
