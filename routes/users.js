@@ -4,6 +4,7 @@ const { getPostTags, getTextPreview } = require("../functions/blogPostsFns/blogP
 const { v4: uuidv4 } = require('uuid');
 const { insertNewLike } = require("../functions/insertNewLike");
 const { sortListNamesByCreation } = require("../functions/sortListNamesByCreation");
+const { addUserInfoToPosts } = require('../functions/addUserInfoToPosts')
 const express = require('express');
 const multer = require('multer');
 const User = require("../models/user");
@@ -5084,7 +5085,7 @@ router.route("/users/:package").get((request, response) => {
             response.json({ previousNames: namesSortedByCreation })
         })
     } else if (name === 'getReadingLists') {
-        const { isOnOwnProfile, isViewingPost } = package;
+        const { isOnOwnProfile, isViewingPost, isOnSearchPage } = package;
         const getReadingListsAndPostsPics = (_readingLists, posts, users, _userId) => {
             let readingLists = _readingLists;
             const listNames = Object.keys(readingLists);
@@ -5138,11 +5139,13 @@ router.route("/users/:package").get((request, response) => {
             const userBeingViewed = !isOnOwnProfile && users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
             const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
-            if (isOnOwnProfile || userBeingViewed || isViewingPost) {
+            const isViewingDiffUserReadingLists = (!isOnOwnProfile && !isOnSearchPage && !isViewingPost)
+            console.log('isViewingDiffUserReadingLists: ', isViewingDiffUserReadingLists);
+            if (isOnOwnProfile || userBeingViewed || isViewingPost || isOnSearchPage) {
                 console.log('yo meng, sup')
                 // if the user is viewing a different user's reading list, then get the reading list info for that user
-                let { _id, readingLists, iconPath, activities, followers } = (isOnOwnProfile || isViewingPost) ? currentUser : userBeingViewed;
-                const currentUserReadingLists = (!isOnOwnProfile && !isViewingPost) && currentUser.readingLists
+                let { _id, readingLists, iconPath, activities, followers } = (isOnOwnProfile || isViewingPost || isOnSearchPage) ? currentUser : userBeingViewed;
+                const currentUserReadingLists = (!isOnOwnProfile && !isViewingPost && !isOnSearchPage) && currentUser.readingLists
                 const currentUserListNames = currentUserReadingLists && Object.keys(currentUserReadingLists);
                 let listsToDel;
                 let postIds = [];
@@ -5150,7 +5153,7 @@ router.route("/users/:package").get((request, response) => {
                     console.log('washington');
                     let listNames = Object.keys(readingLists);
                     // when viewing a diff user, delete all of the lists that are private
-                    (!isOnOwnProfile && !isViewingPost) && listNames.forEach(listName => {
+                    (!isOnOwnProfile && !isViewingPost && !isOnSearchPage) && listNames.forEach(listName => {
                         if (readingLists[listName].isPrivate) {
                             delete readingLists[listName];
                             listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
@@ -5158,7 +5161,7 @@ router.route("/users/:package").get((request, response) => {
                     });
 
                     // when viewing a diff user, delete all of the list names that are private
-                    listNames = (listsToDel && !isOnOwnProfile) ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
+                    listNames = (listsToDel && !isOnOwnProfile && !isOnSearchPage && !isViewingPost) ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
                     if (listNames.length) {
                         // get all of the postIds for the search query on the BlogPost collection
                         listNames.forEach(listName => {
@@ -5166,13 +5169,13 @@ router.route("/users/:package").get((request, response) => {
                             list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
                         });
                         // get the post ids of the posts that were saved by the current user when viewing the reading lists of another user
-                        (!isOnOwnProfile && currentUserListNames) && getPostIds(currentUserReadingLists, currentUserListNames, postIds);
+                        (!isOnOwnProfile && currentUserListNames && !isOnSearchPage) && getPostIds(currentUserReadingLists, currentUserListNames, postIds);
                         BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { publicationDate: 1, title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
-                            const _userId = (isOnOwnProfile || isViewingPost) ? userId : userBeingViewed._id;
+                            const _userId = (isOnOwnProfile || isViewingPost || isOnSearchPage) ? userId : userBeingViewed._id;
                             let { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(readingLists, posts, users, _userId);
                             // if the user is viewing a different user's profile, then get the reading list of the current user as well 
                             let _currentUserReadingLists;
-                            if (!isOnOwnProfile) {
+                            if (isViewingDiffUserReadingLists) {
                                 const { readingLists, postsWithIntroPics: _postsWithIntroPics } = getReadingListsAndPostsPics(currentUserReadingLists, posts, users, userId)
                                 _currentUserReadingLists = readingLists;
                                 _postsWithIntroPics?.length && _postsWithIntroPics.forEach(post => {
@@ -5181,20 +5184,22 @@ router.route("/users/:package").get((request, response) => {
                                 })
                             }
 
-                            let userDefaultVals = !isOnOwnProfile ? { _id: _userId, readingLists: _readingLists, userIconPath: iconPath, _currentUserReadingLists } : { readingLists: _readingLists };
-                            if (followers?.length && !isOnOwnProfile) {
+                            // get the first option if the user is viewing another user's reading list 
+                            let userDefaultVals = isViewingDiffUserReadingLists ? { _id: _userId, readingLists: _readingLists, userIconPath: iconPath, _currentUserReadingLists } : { readingLists: _readingLists };
+                            console.log('userDefaultVals: ', userDefaultVals);
+                            if (followers?.length && !isOnOwnProfile && !isOnSearchPage) {
                                 userDefaultVals = {
                                     ...userDefaultVals,
                                     followers
                                 }
                             };
-                            if (activities?.following?.length && !isOnOwnProfile) {
+                            if (activities?.following?.length && !isOnOwnProfile && !isOnSearchPage) {
                                 userDefaultVals = {
                                     ...userDefaultVals,
                                     following: activities.following
                                 }
                             }
-                            const usersInfo = postsWithIntroPics.length ? { postsWithIntroPics, ...userDefaultVals } : { ...userDefaultVals }
+                            const usersInfo = (postsWithIntroPics.length && isViewingDiffUserReadingLists) ? { postsWithIntroPics, ...userDefaultVals } : { ...userDefaultVals }
                             console.log('usersInfo: ', usersInfo);
                             response.json(usersInfo);
                         })
@@ -5423,56 +5428,64 @@ router.route("/users/:package").get((request, response) => {
                 if (_tagsResults.length) {
                     let tagIds = _tagsResults.map(tag => JSON.stringify({ ...tag }));
                     tagIds = tagIds.map(tag => JSON.parse(tag)._id);
-                    User.find({}, { _id: 1, username: 1 }).then(users => {
-                        console.log('userId: ', userId)
-                        const currentUser = getUser(users, userId);
-                        console.log('currentUser: ', currentUser);
-                        const currentUserBlockedUsers = currentUser.blockedUsers?.length && currentUser.blockedUser.map(({ userId }) => userId);
-                        BlogPost.find({ 'tags._id': { $in: tagIds } }, { _id: 1, tags: 1, publicationDate: 1, authorId: 1, comments: 1, userIdsOfLikes: 1, title: 1, subtitle: 1, imgUrl: 1, body: 1 }).then(posts => {
-                            const _posts = posts.filter(({ authorId }) => {
-                                const author = getUser(users, authorId);
-                                if (author) {
-                                    const blockedUsersOfAuthor = author.blockedUsers?.length && author.blockedUser.map(({ userId }) => userId);
-                                    const didAuthorBlockedUser = blockedUsersOfAuthor && blockedUsersOfAuthor.includes(userId);
-                                    const didUserBlockedAuthor = currentUserBlockedUsers && currentUserBlockedUsers.includes(authorId);
-                                    if (didUserBlockedAuthor || didAuthorBlockedUser) return false;
-                                    return true;
-                                };
-                                return false;
-                            });
-                            if (_posts.length) {
-                                console.table(_tagsResults)
-                                _tagsResults = _tagsResults.map(tag => {
-                                    const tagCopy = JSON.stringify({ ...tag });
-                                    return JSON.parse(tagCopy);
-                                });
-                                // GOAL: have the following data structure for the search tag: {topic: (put tag name here), description: (put description here), postsWithTag: [put all posts that has the tag here]}
-                                // GOAL: for the _tagsResults array, for each post, find the post that has the tag that the user search for 
-                                _tagsResults = _tagsResults.map(tag => {
-                                    const _postsWithTags = _posts.filter(({ tags }) => tags.map(({ _id }) => _id).includes(tag._id));
-                                    return {
-                                        ...tag,
-                                        postsWithTag: _postsWithTags.map(post => {
-                                            const { username, _id, iconPath } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.authorId));
-                                            // why do I have to use the ._doc to get the original values in post?
-                                            return {
-                                                ...post._doc,
-                                                iconPath,
-                                                authorUsername: username,
-                                                authorId: _id,
-                                            }
-                                        })
-                                    }
-                                })
-                                response.json(_tagsResults)
-                            } else {
-                                // posts are empty since the user blocked the authors or the authors blocked the user
-                                response.json([]);
-                            }
+                    Tag.find({}).then(tags => {
+                        const _tags = tags.map(tag => {
+                            const _tag = JSON.stringify({ ...tag._doc });
+                            return JSON.parse(_tag);
                         })
-                    }
+                        User.find({}, { _id: 1, username: 1, blockedUsers: 1, topics: 1, readingLists: 1, activities: 1, iconPath: 1 }).then(users => {
+                            console.log('userId: ', userId)
+                            const currentUser = getUser(users, userId);
+                            console.log('currentUser: ', currentUser);
+                            const currentUserBlockedUsers = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
+                            BlogPost.find({ 'tags._id': { $in: tagIds } }, { _id: 1, tags: 1, publicationDate: 1, authorId: 1, comments: 1, userIdsOfLikes: 1, title: 1, subtitle: 1, imgUrl: 1, body: 1 }).then(posts => {
+                                const _posts = posts.filter(({ authorId }) => {
+                                    const author = getUser(users, authorId);
+                                    if (author) {
+                                        const blockedUsersOfAuthor = author.blockedUsers?.length && author.blockedUsers.map(({ userId }) => userId);
+                                        const didAuthorBlockedUser = blockedUsersOfAuthor && blockedUsersOfAuthor.includes(userId);
+                                        const didUserBlockedAuthor = currentUserBlockedUsers && currentUserBlockedUsers.includes(authorId);
+                                        if (didUserBlockedAuthor || didAuthorBlockedUser) return false;
+                                        return true;
+                                    };
+                                    return false;
+                                });
 
-                    )
+                                if (_posts.length) {
+                                    _tagsResults = _tagsResults.map(tag => {
+                                        const tagCopy = JSON.stringify({ ...tag });
+                                        return JSON.parse(tagCopy);
+                                    });
+                                    // GOAL: have the following data structure for the search tag: {topic: (put tag name here), description: (put description here), postsWithTag: [put all posts that has the tag here]}
+                                    // GOAL: for the _tagsResults array, for each post, find the post that has the tag that the user search for 
+                                    _tagsResults = _tagsResults.map(tag => {
+                                        const _postsWithTags = _posts.filter(({ tags }) => tags.map(({ _id }) => _id).includes(tag._id)).sort(({ title: titleA }, { title: titleB }) => {
+                                            if (titleA.toUpperCase() > titleB.toUpperCase()) return 1;
+                                            if (titleA.toUpperCase() < titleB.toUpperCase()) return -1;
+                                            return 0;
+                                        });
+                                        if (tag.topic === 'logic') {
+                                            console.log('all posts num for logic tag: ', _postsWithTags.length)
+                                        }
+                                        return {
+                                            ...tag,
+                                            postsWithTag: addUserInfoToPosts(_postsWithTags, users, currentUser, _tags)
+                                        }
+                                    });
+                                    console.log('_tagsResults: ')
+                                    console.table(_tagsResults)
+                                    // GOAL: put the tags that start with the user input first, then put all tags that consist of the user input next
+                                    response.json(_tagsResults)
+                                } else {
+                                    // posts are empty since the user blocked the authors or the authors blocked the user
+                                    response.json([]);
+                                }
+                            })
+                        }
+
+                        )
+                    })
+
 
                 } else {
                     response.json([]);
@@ -5485,7 +5498,7 @@ router.route("/users/:package").get((request, response) => {
 
 router.route("/users").get((req, res) => {
     console.log("getting all users");
-    User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 })
+    User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0, blockedUsers: 0, bio: 0, followers: 0, activities: 0, isUserNew: 0, readingLists: 0 })
         .then(users => {
             res.json(users)
         })
