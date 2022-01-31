@@ -4074,7 +4074,7 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getUserActivities') {
-        const { willGetLikes, willGetRepliesAndComments, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetFollowing } = package;
+        const { willGetLikes, willGetRepliesAndComments, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetFollowing, willGetSearchedHistory } = package;
         // GOAL: get the deleted post activities 
         User.findOne(
             { _id: userId },
@@ -4086,7 +4086,6 @@ router.route("/users/:package").get((request, response) => {
                 }
             }
         ).then(result => {
-
             const blockedUserIds = result?.blockedUsers ? result.blockedUsers.map(({ userId }) => userId) : [];
             const activitiesDeleted = result?.activitiesDeleted?.likes
             if (willGetLikes && (result?.activities?.likes?.replies || result?.activities?.likes?.comments || result?.activities?.likes?.posts)) {
@@ -5308,18 +5307,8 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'checkListNameExistence') {
-        const { listName } = package;
-        console.log('listName: ', listName)
-        User.findOne({ _id: userId, [`readingLists.${listName}`]: { $exists: true } }, { _id: 0 }).countDocuments().then(doesExist => {
-            console.log({ doesExist });
-            response.json(!!doesExist);
-        })
+        User.findOne({ _id: userId, [`readingLists.${package.listName}`]: { $exists: true } }, { _id: 0 }).countDocuments().then(doesExist => { response.json(!!doesExist); })
     } else if (name === 'getAboutUserInfo') {
-        console.log('hello there ma');
-        console.log({
-            username,
-            userId
-        })
         User.find({ $or: [{ username: username }, { _id: userId }] }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1, topics: 1, bio: 1, socialMedia: 1, username: 1 }).then(users => {
             console.log('users: ', users);
             const userBeingViewed = users.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username));
@@ -5342,7 +5331,7 @@ router.route("/users/:package").get((request, response) => {
         })
     } else if (name === 'getSearchResults') {
         console.log({ package });
-        const { input, searchType, userId } = package;
+        const { input, searchType, userId, searchedAt } = package;
         const _regex = new RegExp(input, 'i')
         console.log({ _regex });
         let _searchResults;
@@ -5568,6 +5557,20 @@ router.route("/users/:package").get((request, response) => {
                     });
                 })
             })
+            if (searchedAt) {
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $push: { 'activities.searchedHistory': { _id: uuidv4(), searchedAt, input } }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error('An error has occurred in tracking search activity of user: ', error);
+                        }
+                        console.log('Search is being tracked: ', numsAffected);
+                    }
+                )
+            }
         }
 
     }

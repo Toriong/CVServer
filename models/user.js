@@ -38,7 +38,8 @@ const activitiesSchema = new Schema(
         comments: Array,
         replies: Array,
         likes: Object,
-        following: Array
+        following: Array,
+        searchedHistory: Array
     }
 );
 
