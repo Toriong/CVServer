@@ -21,6 +21,7 @@ const { sortTagsOrUsersResults, sortResults, getFilterResultsFn } = require("../
 const { getUser } = require("../functions/getUser");
 const { delBlockedUsers } = require("../functions/delBlockedUsers");
 const { getSortNum } = require("../functions/getSortNum");
+const { insertNewActivity } = require("../functions/insertNewActivity");
 
 
 
@@ -2537,6 +2538,19 @@ router.route("/users/updateInfo").post((request, response) => {
             User.findOne({ _id: userId, 'blockedUsers.userId': activityId }).countDocuments().then(isPresent => {
                 isPresent ? addDeletedActivity(field, userId, activityId) : console.log('The blocked user has been unblocked. The profile of the current user has not been modified.')
             })
+        } else if (field === 'isSearchedHistory') {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull: { 'activities.searchedHistory': { _id: activityId } }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in deleting searched item: ', error);
+                    }
+                    console.log('Searched item was deleted: ', numsAffected);
+                }
+            )
         }
         response.sendStatus(200);
     } else if (name === 'checkActivityDeletionStatus') {
@@ -4277,12 +4291,8 @@ router.route("/users/:package").get((request, response) => {
                 })
             } else if (willGetLikes) {
                 response.json({ isEmpty: true });
-                // get the replies that were made by the current user
+                // get the replies and comments that were made by the current user
             } else if (willGetRepliesAndComments && (result?.activities?.replies || result?.activities?.comments)) {
-                // GOAL: get both the replies and comments by the current
-                // brain dump:
-                // get all of the posts that the comments and the replies reside in
-                // clear any duplicates
                 const { replies: repliesByUser, comments: commentsByUser } = result.activities;
                 let postIds = repliesByUser ? repliesByUser.map(({ postId }) => postId) : [];
                 commentsByUser && commentsByUser.forEach(({ postIdOfComment }) => { !postIds.includes(postIdOfComment) && postIds.push(postIdOfComment) });
@@ -4516,11 +4526,10 @@ router.route("/users/:package").get((request, response) => {
                 })
             } else if (willGetRepliesAndComments) {
                 response.json({ isEmpty: true })
-                // get the comments that were liked by the current user
+                // get the posts that were posted by the current user
             } else if (willGetPosts && result?.publishedDrafts?.length) {
                 const { publishedDrafts, activitiesDeleted } = result;
                 const postIds = activitiesDeleted?.posts ? publishedDrafts.filter(draftId => !activitiesDeleted.posts.includes(draftId)) : publishedDrafts;
-
                 BlogPost.find(
                     { _id: { $in: postIds } },
                     { publicationDate: 1, previousVersions: 1, editsPublishedAt: 1, title: 1, body: 1, imgUrl: 1, tags: 1, subtitle: 1 },
@@ -4809,7 +4818,6 @@ router.route("/users/:package").get((request, response) => {
             } else if (willGetPosts) {
                 response.json({ isEmpty: true })
             } else if (willGetReadingLists && result?.readingLists) {
-                // GOAL: don't get the reading list that was deleted from activities. 
                 let postIds = [];
                 let { readingLists, activitiesDeleted } = result;
                 const dontShowReadingLists = activitiesDeleted?.readingLists;
@@ -5004,15 +5012,6 @@ router.route("/users/:package").get((request, response) => {
                     { _id: { $in: userIds } },
                     { username: 1 }
                 ).then(users => {
-                    // the variable values: the date, time and miliSeconds, and the new activity
-                    // GOAL: this function will insert a new activity into the followingUsers array
-                    // CASE 1: the function finds the existing date within the array, and adds the new activity within the activities field
-                    // the date of the activity exists
-                    // if the date of the activity exists in the activities array, then the function finds the existing date within the array, and adds the new activity within the activities field
-                    // get the activities array 
-                    // get the time of the activity 
-                    // get the newActivity 
-
                     const insertNewActivity = values => {
                         const { dateOfActivity, newActivity, activities, dateField, activityType } = values;
                         let _activities;
@@ -5040,13 +5039,13 @@ router.route("/users/:package").get((request, response) => {
                         console.log('followingActivitiesDel: ', followingActivitiesDel);
                         activities.following.forEach(user => {
                             const isActivityDeleted = followingActivitiesDel?.includes(user.userId);
+                            // if the activity was deleted, then don't show the activity on the ui
                             if (!isActivityDeleted) {
                                 const { userId: _userId, followedUserAt } = user;
                                 const targetUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(_userId));
                                 if (targetUser) {
                                     const { date, time, miliSeconds } = followedUserAt;
                                     const following = { _id: _userId, followedAt: { miliSeconds, time }, username: targetUser.username, uIText: ` followed ${targetUser.username}.` }
-                                    // GOAL: IMPLEMENT THE FUNCTION THAT WILL ADD A NEW ACTIVITY INTO THE ACTIVITIES ARRAY (IN THIS CASE THE ARRAY THAT WILL CONTAIN ALL OF THE USER'S FOLLOWING)
                                     const _values = { dateOfActivity: date, newActivity: following, activities: followingUsers, dateField: 'followedOn', activityType: 'isFollowing' }
                                     followingUsers = insertNewActivity(_values);
                                 }
@@ -5075,6 +5074,36 @@ router.route("/users/:package").get((request, response) => {
                     }
                     followingUsers ? response.json(followingUsers) : response.json({ isEmpty: true });
                 })
+            } else if (willGetSearchedHistory && result?.activities?.searchedHistory?.length) {
+                let _searchedHistory;
+                result.activities.searchedHistory.forEach(searchedItem => {
+                    const { _id, searchedAt, input } = searchedItem;
+                    const { date, time, miliSeconds } = searchedAt;
+                    const newActivity = { uIText: ` searched: `, input, _id, timeOfSearch: { time, miliSeconds } };
+                    const _values = { dateOfActivity: date, newActivity, activities: _searchedHistory, dateField: 'searchedOn', activityType: 'isSearchedHistory' }
+                    _searchedHistory = insertNewActivity(_values)
+                    if (_searchedHistory.length) {
+                        _searchedHistory = _searchedHistory.map(searchDay => {
+                            if (searchDay.activities.length > 1) {
+                                return {
+                                    ...searchDay,
+                                    activities: searchDay.activities.sort(({ timeOfSearch: timeA }, { timeOfSearch: timeB }) => timeB.miliSeconds - timeA.miliSeconds)
+                                }
+                            };
+                            return searchDay;
+                        })
+                    }
+                    if (_searchedHistory.length > 1) {
+                        _searchedHistory = _searchedHistory.sort(({ searchedOn: dateA }, { searchedOn: dateB }) => {
+                            if (dateA > dateB) return -1;
+                            if (dateB < dateA) return 1;
+                            return 0;
+                        });
+                    }
+                });
+                response.json(_searchedHistory)
+            } else if (willGetSearchedHistory) {
+                response.json({ isEmpty: true })
             }
         })
     } else if (name === 'getPreviousListNames') {
@@ -5383,15 +5412,20 @@ router.route("/users/:package").get((request, response) => {
                         _id: 1,
                         username: 1,
                         iconPath: 1,
-                        isUserPresent: 1
+                        isUserPresent: 1,
+                        blockedUsers: 1
                     }
                 }
             ]).then(userResults => {
                 // const _searchResults = userResults.filter()
                 if (userResults.length) {
+                    console.log('userId: ', userId)
+                    const currentUser = getUser(userResults, userId);
+                    console.log('currentUser: ', currentUser)
                     let _userResults = userResults.filter(({ isUserPresent }) => isUserPresent);
-                    _userResults = _userResults ? _userResults.sort(({ username: usernameA }, { username: usernameB }) => getSortNum(usernameA, usernameB)) : _userResults;
-                    _searchResults = _userResults ?? _searchResults;
+                    _userResults = _userResults?.length ? delBlockedUsers(_userResults, currentUser, userResults) : _userResults;
+                    _userResults = _userResults?.length > 1 ? _userResults.sort(({ username: usernameA }, { username: usernameB }) => getSortNum(usernameA, usernameB)) : _userResults;
+                    _searchResults = _userResults || _searchResults;
                 }
                 BlogPost.aggregate([
                     {
@@ -5578,7 +5612,7 @@ router.route("/users/:package").get((request, response) => {
 
 router.route("/users").get((req, res) => {
     console.log("getting all users");
-    User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0, blockedUsers: 0, bio: 0, followers: 0, activities: 0, isUserNew: 0, readingLists: 0 })
+    User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0, blockedUsers: 0, isUserNew: 0, readingLists: 0 })
         .then(users => {
             res.json(users)
         })
