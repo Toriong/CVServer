@@ -12,10 +12,8 @@ const checkForBlockedUsers = (users, array, currentUser) => array.filter(val => 
 const addUserInfoToPosts = (allPosts, users, currentUser, allTags) => {
     const { topics: likedTopicIds, readingLists, blockedUsers, activities } = currentUser;
     const userFollowings = activities?.following?.length && activities.following
-    console.log('readingLists: ', readingLists);
     const savedPosts = readingLists && Object.values(readingLists).map(({ list }) => list).flat();
     return allPosts.map(post => {
-        console.log('post: ', post);
         const { userIdsOfLikes, comments, authorId, tags, _id: postId, title, subtitle, imgUrl, publicationDate, body, isPostPresent } = post;
         let likedTags = [];
         let unLikedTags = [];
@@ -31,15 +29,12 @@ const addUserInfoToPosts = (allPosts, users, currentUser, allTags) => {
         const _tags = likedTags.length ? [...likedTags, ...unLikedTags] : unLikedTags;
         const { username, iconPath } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
         let _post = { title, subtitle, imgUrl, publicationDate, username, iconPath, tags: _tags, body, isPostPresent, _id: postId, authorId };
-        console.log('_post: ', _post);
         let postLikes = (userIdsOfLikes && userIdsOfLikes.length) && checkForBlockedUsers(users, userIdsOfLikes, currentUser);
         let _comments = (blockedUsers?.length && comments?.length) ? checkForBlockedUsers(users, comments, currentUser) : comments
         const totalComments = (_comments && _comments.length) ? _comments.reduce((_commentsRepliesTotal, comment) => { return _commentsRepliesTotal + ((comment?.replies?.length ?? 0) + 1); }, 0) : 0;
         const wasPostSaved = savedPosts && savedPosts.map(({ postId }) => postId).includes(postId);
         const isFollowingAuthor = userFollowings?.length && userFollowings.map(({ userId }) => userId).includes(authorId);
-        console.log('wasPostSaved: ', wasPostSaved)
         if (wasPostSaved) {
-            console.log('post was saved')
             _post = { ..._post, wasPostSaved };
         }
 
@@ -98,7 +93,6 @@ const addUserInfoToPosts = (allPosts, users, currentUser, allTags) => {
         }
         delete _post.comments
 
-        console.log('_post 2: ', _post);
         return _post
     });
 }

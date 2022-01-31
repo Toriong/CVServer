@@ -17,9 +17,10 @@ const moment = require('moment');
 // what does he do?
 const he = require('he');
 const { getFollowersAndFollowing } = require("../functions/getFollowersAndFollowing");
-const { sortTagsOrUsersResults, sortResults } = require("../functions/searchFns");
+const { sortTagsOrUsersResults, sortResults, getFilterResultsFn } = require("../functions/searchFns");
 const { getUser } = require("../functions/getUser");
 const { delBlockedUsers } = require("../functions/delBlockedUsers");
+const { getSortNum } = require("../functions/getSortNum");
 
 
 
@@ -5343,15 +5344,10 @@ router.route("/users/:package").get((request, response) => {
         console.log({ package });
         const { input, searchType, userId } = package;
         const _regex = new RegExp(input, 'i')
+        console.log({ _regex });
         let _searchResults;
         let Collection;
         let searchQuery;
-
-        const getSortNum = (itemA, itemB) => {
-            if (itemA > itemB) return 1;
-            if (itemA < itemB) return -1;
-            return 0
-        };
 
         if (searchType === 'stories') {
             Collection = BlogPost;
@@ -5376,6 +5372,18 @@ router.route("/users/:package").get((request, response) => {
             ]
         } else if (searchType === 'people') {
             Collection = User;
+            searchQuery = [
+                { $addFields: { isUserPresent: { $regexMatch: { input: "$username", regex: _regex } } } },
+                {
+                    $project: {
+                        username: 1,
+                        iconPath: 1,
+                        followers: 1,
+                        bio: 1,
+                        isUserPresent: 1
+                    }
+                }
+            ]
         }
 
         if (!searchType) {
@@ -5433,6 +5441,7 @@ router.route("/users/:package").get((request, response) => {
                             let _tagsResults = tagsResults.filter(({ isTagPresent }) => isTagPresent);
                             _tagsResults = _tagsResults.length > 1 ? _tagsResults.sort(({ topic: topicA }, { topic: topicB }) => getSortNum(topicA, topicB)) : _tagsResults;
                             if (_tagsResults.length) {
+                                _tagsResults = sortResults(_tagsResults, input, 'tags');
                                 _searchResults = _searchResults ? [..._searchResults, ..._tagsResults] : _tagsResults;
                             }
                         };
@@ -5517,27 +5526,36 @@ router.route("/users/:package").get((request, response) => {
                 }
             })
         } else {
-            const getFilterResultsFn = searchType => {
-                const isStoriesSearch = searchType === 'stories';
-                const filterResultsFn = ({ isPostPresent }) => isPostPresent;
-                const _filterResultFns = ({ isUserPresent }) => isUserPresent;
-
-                return isStoriesSearch ? filterResultsFn : _filterResultFns
-            }
             // GOAL: get the posts based on the user input 
             const filterResults = getFilterResultsFn(searchType);
             Tag.find({}).then(tags => {
                 User.find({}, { username: 1, blockedUsers: 1, topics: 1, readingLists: 1, activities: 1, iconPath: 1, _id: 1 }).then(users => {
                     Collection.aggregate(searchQuery).then(results => {
+                        const currentUser = getUser(users, userId)
                         if (results.length) {
                             const _results = results.filter(filterResults)
                             console.log('_results length: ', _results.length)
                             if (_results.length && (searchType === 'stories')) {
-                                const currentUser = getUser(users, userId)
                                 console.log({ currentUser })
                                 let postResults = delBlockedUsers(_results, currentUser, users, true);
                                 postResults = postResults.length ? addUserInfoToPosts(postResults, users, currentUser, tags) : postResults
                                 response.json(postResults.length ? sortResults(postResults, input, searchType) : postResults)
+                            } else if (_results.length && (searchType === 'people')) {
+                                // GOAL: SEND THE sorted users array to the client
+                                let _users = delBlockedUsers(_results, currentUser, users);
+                                _users = _users.length ?
+                                    _users.map(user => {
+                                        const isFollowing = user?.followers?.length && user.followers.map(({ userId }) => userId).includes(userId);
+                                        delete user.isUserPresent
+                                        user.followers && delete user.followers
+
+                                        return {
+                                            ...user,
+                                            isFollowing
+                                        }
+                                    })
+                                    : _users;
+                                response.json(_users.length ? sortResults(_users, input) : _users)
                             } else {
                                 response.json([]);
                             }

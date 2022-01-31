@@ -36,7 +36,16 @@ const sortResults = (searchResults, input, searchType) => {
     return [...resultsStartWithInput, ...resultsIncludesInput]
 };
 
+const getFilterResultsFn = searchType => {
+    const isStoriesSearch = searchType === 'stories';
+    const filterResultsFn = ({ isPostPresent }) => isPostPresent;
+    const _filterResultFns = ({ isUserPresent }) => isUserPresent;
+
+    return isStoriesSearch ? filterResultsFn : _filterResultFns
+}
+
 
 module.exports = {
-    sortResults
+    sortResults,
+    getFilterResultsFn
 }
