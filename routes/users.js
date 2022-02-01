@@ -5360,7 +5360,7 @@ router.route("/users/:package").get((request, response) => {
         })
     } else if (name === 'getSearchResults') {
         console.log({ package });
-        const { input, searchType, userId, searchedAt } = package;
+        const { input, searchType, userId, searchedAt, isOnMessenger } = package;
         const _regex = new RegExp(input, 'i')
         console.log({ _regex });
         let _searchResults;
@@ -5552,9 +5552,10 @@ router.route("/users/:package").get((request, response) => {
             // GOAL: get the posts based on the user input 
             const filterResults = getFilterResultsFn(searchType);
             Tag.find({}).then(tags => {
-                User.find({}, { username: 1, blockedUsers: 1, topics: 1, readingLists: 1, activities: 1, iconPath: 1, _id: 1 }).then(users => {
+                User.find({}, { username: 1, blockedUsers: 1, topics: 1, readingLists: 1, activities: 1, iconPath: 1, _id: 1, followers: 1 }).then(users => {
                     Collection.aggregate(searchQuery).then(results => {
-                        const currentUser = getUser(users, userId)
+                        const currentUser = getUser(users, userId);
+                        const followersIds = currentUser.followers?.length && currentUser.followers.map(({ userId }) => userId);
                         if (results.length) {
                             const _results = results.filter(filterResults)
                             console.log('_results length: ', _results.length)
@@ -5568,16 +5569,40 @@ router.route("/users/:package").get((request, response) => {
                                 let _users = delBlockedUsers(_results, currentUser, users);
                                 _users = _users.length ?
                                     _users.map(user => {
-                                        const isFollowing = user?.followers?.length && user.followers.map(({ userId }) => userId).includes(userId);
                                         delete user.isUserPresent
-                                        user.followers && delete user.followers
+                                        if (JSON.stringify(user._id) !== JSON.stringify(userId)) {
+                                            const isFollowing = !!user?.followers?.length && user.followers.map(({ userId }) => userId).includes(userId);
+                                            user.followers && delete user.followers
+                                            isOnMessenger && delete user.bio
 
-                                        return {
-                                            ...user,
-                                            isFollowing
-                                        }
+                                            return {
+                                                ...user,
+                                                isFollowing
+                                            }
+                                        };
+                                        user.followers && delete user.followers
+                                        isOnMessenger && delete user.bio
+
+                                        return user;
+
                                     })
                                     : _users;
+
+                                // check whether the user that was searched is either: following the current user, is followed by the current user, or neither 
+                                if (isOnMessenger) {
+                                    _users = _users?.length ? _users.map(user => {
+                                        if (JSON.stringify(user._id) !== JSON.stringify(userId)) {
+                                            const isAFollower = followersIds?.length && followersIds.includes(user._id);
+                                            return {
+                                                ...user,
+                                                isAFollower
+                                            }
+                                        }
+                                        return user;
+                                    })
+                                        :
+                                        _users;
+                                }
                                 response.json(_users.length ? sortResults(_users, input) : _users)
                             } else {
                                 response.json([]);

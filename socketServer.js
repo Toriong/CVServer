@@ -5,10 +5,13 @@ const io = require("socket.io")(server, {
     },
 });
 
+const User = require('./models/user')
+
 const PORT = 4000;
-const messageEventName = "newChatMessage";
+const commentEvent = "newComment";
 const likeEventName = "userClicksLikeBtn";
 const commentNumEvent = "commentNumChanged";
+const messageEvent = 'newMessage';
 
 // save User data in when the user send the data through this server?
 
@@ -17,13 +20,13 @@ io.on("connection", socket => {
     // console.log(socket.handshake)
 
     // Join a conversation
-    const { roomId } = socket.handshake.query;
-    // console.log(`user has joined roomId ${roomId}`)
+    const { roomId, messagesRoomId } = socket.handshake.query;
+    // console.log(`user has joined roomId ${roomId}`))
     socket.join(roomId);
 
     // Listen for new messages
-    socket.on(messageEventName, data => {
-        io.in(roomId).emit(messageEventName, data);
+    socket.on(commentEvent, data => {
+        io.in(roomId).emit(commentEvent, data);
     });
 
     socket.on(likeEventName, data => {
