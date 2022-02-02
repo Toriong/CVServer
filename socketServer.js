@@ -20,28 +20,48 @@ io.on("connection", socket => {
     // console.log(socket.handshake)
 
     // Join a conversation
-    const { roomId, messagesRoomId } = socket.handshake.query;
+    const { roomId, usersToMessage, privateMessage } = socket.handshake.query;
     // console.log(`user has joined roomId ${roomId}`))
-    socket.join(roomId);
+    if (usersToMessage?.length) {
+        // console.log('usersToMessage: ', usersToMessage)
+        // console.log(usersToMessage);
+        // const userIds = Object.values(usersToMessage);
+        console.table(JSON.parse(usersToMessage))
+        JSON.parse(usersToMessage).forEach(userId => {
+            console.log(`roomId: ${userId}`)
+            socket.join(userId);
 
-    // Listen for new messages
-    socket.on(commentEvent, data => {
-        io.in(roomId).emit(commentEvent, data);
-    });
+            socket.on(messageEvent, data => {
+                io.in(userId).emit(messageEvent, data);
+            });
 
-    socket.on(likeEventName, data => {
-        io.in(roomId).emit(likeEventName, data);
-    });
+            socket.on("disconnect", () => {
+                socket.leave(userId);
+            });
+        })
+    } else {
+        socket.join(roomId);
 
-    socket.on(commentNumEvent, data => {
-        console.log({ data })
-        io.in(roomId).emit(commentNumEvent, data);
-    })
+        // Listen for new messages
+        socket.on(commentEvent, data => {
+            io.in(roomId).emit(commentEvent, data);
+        });
 
-    // Leave the room if the user closes the socket
-    socket.on("disconnect", () => {
-        socket.leave(roomId);
-    });
+        socket.on(likeEventName, data => {
+            io.in(roomId).emit(likeEventName, data);
+        });
+
+        socket.on(commentNumEvent, data => {
+            console.log({ data })
+            io.in(roomId).emit(commentNumEvent, data);
+        })
+
+        // Leave the room if the user closes the socket
+        socket.on("disconnect", () => {
+            socket.leave(roomId);
+        });
+    }
+
 });
 
 server.listen(PORT, () => {
