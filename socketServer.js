@@ -22,15 +22,10 @@ io.on("connection", socket => {
     // Join a conversation
     const { roomId, messageQuery } = socket.handshake.query;
     // console.log(`user has joined roomId ${roomId}`))
-    console.log('messageQuery: ', messageQuery)
     const { _roomId } = messageQuery ? JSON.parse(messageQuery) : {};
     socket.join(_roomId ?? roomId);
 
-    console.log('a user is connected.')
-    socket.on('new_visitor', user => {
-        console.log('new_visitor: ', user)
-        socket.user = user
-    })
+    _roomId && console.log(`User ${_roomId} is connected.`)
     // console.log('isGroup: ', isGroup)
     // Listen for new messages
     socket.on(commentEvent, data => {
