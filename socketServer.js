@@ -12,6 +12,7 @@ const likeEventName = "userClicksLikeBtn";
 const commentNumEvent = "commentNumChanged";
 const messageEvent = 'newMessage';
 
+
 // save User data in when the user send the data through this server?
 
 
@@ -22,10 +23,14 @@ io.on("connection", socket => {
     // Join a conversation
     const { roomId, messageQuery } = socket.handshake.query;
     // console.log(`user has joined roomId ${roomId}`))
-    const { _roomId } = messageQuery ? JSON.parse(messageQuery) : {};
+    const { _roomId, currentUserId } = messageQuery ? JSON.parse(messageQuery) : {};
     socket.join(_roomId ?? roomId);
 
-    _roomId && console.log(`User ${_roomId} is connected.`)
+    if (_roomId && (currentUserId === _roomId)) {
+        console.log(`User ${currentUserId} is available to message.`)
+    } else if (_roomId) {
+        console.log(`User ${currentUserId} entered user ${_roomId}'s message stream.`)
+    }
     // console.log('isGroup: ', isGroup)
     // Listen for new messages
     socket.on(commentEvent, data => {
@@ -42,16 +47,15 @@ io.on("connection", socket => {
     });
     socket.on(messageEvent, data => {
         console.log({ data })
-        console.log(`This message will be sent to user with the id of ${_roomId}. Message: ${data.body}.`)
+        console.log(`This message will be sent to user with the id of ${_roomId}.`)
         io.in(_roomId).emit(messageEvent, data);
-        socket.leave(_roomId);
     });
 
 
 
     // Leave the room if the user closes the socket
     socket.on("disconnect", () => {
-        socket.leave(roomId);
+        socket.leave(_roomId ?? roomId);
     });
 });
 

@@ -81,14 +81,44 @@ const userSchema = new Schema({
     readingLists: Object,
     blockedUsers: Array,
     notifications: Object,
-    activitiesDeleted: Object
+    activitiesDeleted: Object,
+    conversations: Array
 });
 
-// deleteActivities will consist of the following: {ids of replies, ids of comments,ids of posts by user, ids of liked replies, ids of liked comments, ids of liked posts, for reading list, don't show it if the user request to delete the log from their activity log (store a boolean that will determine whether or not to sho the reading list activity),  }
+// data structure for val in the conversation array: 
+
+// for one-to-one conversations
+// const conversationSingle = {
+//     conversationId: 1, // the id of the conversation goes here, this will be the user who will receive the current user's messages
+//     messages: [] // an array that will hold all of the messages for the conversation
+// }
 
 
-// what is mongoose.model is doing?
-// the first argument is hte name of the collection and the second argument is the schema that we defined
+// send this data structure to all users that are in the conversationUsers
+// const conversationGroup = {
+//     conversationId: 1, // the id of the conversation goes here
+//     conversationUsers: [], //the ids of the users that are in the convo
+//     adMins: [], //this array will hold all of the users that are in charged of the group (starting with the user that started the group)
+//     messages:[] //all of the messages in the group chat
+// }
+
+// the data structure for each message in the messages array will be as follows:
+
+// for group messages
+// const groupMessage = {
+//     userId: 1, //the id of the user
+//     text: "", //the text of the message
+//     timeOfSend: {} // an object that will hold the following {miliSeconds, dateAndTime, time}
+// }
+
+// for one on one messages
+// const oneOnOneMessage = {
+//     byRecipient: false,// if true, then use the id of the user (the conversation id) to get the user info in the database 
+//     text: "",
+//     timeOfSend: {}
+// }
+
+
 const User = mongoose.model("users", userSchema);
 
 module.exports = User;
