@@ -2605,6 +2605,137 @@ router.route("/users/updateInfo").post((request, response) => {
             )
         };
         pullIdFromActivitiesDel(activityId, field, userId);
+    } else if (name === 'saveMessage') {
+        // GOAL: save the following:
+        // 1) group messages
+        // 2) one-on-one messages
+
+        // NEW MESSAGE TO A NEW GROUP
+        // NOTES:
+        // send the conversation id to the server
+        // send the users that are part of the conversation
+        // send an array to the server of all of the user ids that are part of the group
+        // send the user that sent the messages to the server,
+        // send the object that contains the message
+        // if the group is new then send to the server: {isNewGroup: true}
+        // add the user to the array
+        // loop through the array
+        // for each userId in the array, use the id as the search query:
+        // push the following into the messages: {conversationId: (the id of the conversation), conversationUsers: [], messages: [(put the message here)]}
+        // if the current user in the loop is the user that sent the message, then for the object that contains the message, don't include the user Id
+
+        // GOAL: for a new group chat, the first message, for each user push the following in the conversation field: {conversationId: the id of the convo, conversationUsers: [all of the users that are part of the chat], adMins: [put the id of the user that staarted the chat], messages: [put the message here]}
+        // the above is pushed into the conversations field
+        // the user is found
+        // for each userId in the array that contains all of the users in the group chat, use it to find the user
+        // array now contains the user id of the sender
+        // push the id of the sender into the array of all of the users 
+        // the following is retrieved from the client: {the id of the sender, the ids of all of the users in the group convo, the message}
+        const { userIdsInChat, conversationId } = request.body;
+        const { newMessage, newConversation } = data;
+
+        // GOAL: have all ids of users that are in the group be saved into the conversation under the field of 'conversationUsers'
+        if (newConversation) {
+            const _newConversation = {
+                ...newConversation,
+                messages: [newConversation.newMessage]
+            };
+            // for the user that sent the message, don't inlcude the userId and the isRead status when saving the message into their profile
+            const { userId, isRead, ..._newMessage } = newConversation.newMessage;
+            const newConversationForSender = {
+                ...newConversation,
+                messages: [_newMessage]
+            }
+            delete _newConversation.newMessage; delete newConversationForSender.newMessage;
+            User.updateMany(
+                {
+                    _id: { $in: userIdsInChat }
+                },
+                {
+                    $push: {
+                        conversations: _newConversation
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in saving new conversation, ', error);
+                        response.sendStatus(404);
+                    } else {
+                        console.log(request.body);
+                        console.log({ userId });
+                        console.log('Message and conversation saved for users in group besides the sender user, new conversation started. NumsAffected: ', numsAffected)
+                        User.updateOne(
+                            {
+                                _id: userId
+                            },
+                            {
+                                $push: {
+                                    conversations: newConversationForSender
+                                }
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('An error has occurred in saving new conversation, ', error);
+                                    response.sendStatus(404);
+                                } else {
+                                    console.log('Message and conversation saved for the sender of the message, new conversation started. NumsAffected: ', numsAffected)
+                                    response.sendStatus(200);
+                                }
+                            }
+                        )
+                    }
+                }
+            )
+        } else {
+            // GOAL: find the conversation that the user replied to and push the newMessage into the messages field for that conversation 
+            console.log('userIdsInChat: ', userIdsInChat);
+            console.log({ conversationId })
+            const _newMessage = {
+                ...newMessage,
+                userId: newMessage.user._id
+            }
+            delete _newMessage.user
+            User.updateMany(
+                {
+                    _id: { $in: userIdsInChat },
+                    'conversations.conversationId': conversationId
+                },
+                {
+                    $push: {
+                        'conversations.$.messages': _newMessage
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) console.error('An error has occurred in saving new conversation, ', error);
+                    else {
+                        console.log('Message and conversation saved, new conversation started. NumsAffected: ', numsAffected)
+                        delete _newMessage.userId;
+                        delete _newMessage.isRead;
+                        User.updateOne(
+                            {
+                                _id: userId,
+                                'conversations.conversationId': conversationId
+                            },
+                            {
+                                $push: {
+                                    'conversations.$.messages': _newMessage
+                                }
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('An error has occurred in saving new message, ', error);
+                                    response.sendStatus(404);
+                                } else {
+                                    console.log('Message saved for the sender of the message. NumsAffected: ', numsAffected)
+                                    response.sendStatus(200);
+                                }
+                            }
+                        )
+                    }
+                }
+            )
+        }
+
     }
 }, (error, req, res, next) => {
     if (error) {
