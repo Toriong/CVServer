@@ -2631,29 +2631,41 @@ router.route("/users/updateInfo").post((request, response) => {
         // array now contains the user id of the sender
         // push the id of the sender into the array of all of the users 
         // the following is retrieved from the client: {the id of the sender, the ids of all of the users in the group convo, the message}
-        const { userIdsInChat, conversationId } = request.body;
+        const { userIdsInChat, conversationId, isGroup } = request.body;
         const { newMessage, newConversation } = data;
-
-        // GOAL: have all ids of users that are in the group be saved into the conversation under the field of 'conversationUsers'
         if (newConversation) {
-            const _newConversation = {
-                ...newConversation,
-                messages: [newConversation.newMessage]
-            };
+            console.log('request.body: ', request.body);
+            console.log('hello there')
+            // GOAL: check if the conversation is a one on one conversation. If so, then delete newConversation.recipient and add the field of userIdRecipient with the current user id
+            const _newConversationForRecipient = newConversation.conversationUsers ?
+                { ...newConversation, messages: [newConversation.newMessage] }
+                :
+                { ...newConversation, messages: [{ ...newConversation.newMessage, isByRecipient: true }], userIdRecipient: userId }
             // for the user that sent the message, don't inlcude the userId and the isRead status when saving the message into their profile
+            console.log({ _newConversationForRecipient });
+
             const { userId, isRead, ..._newMessage } = newConversation.newMessage;
+
+
             const newConversationForSender = {
                 ...newConversation,
                 messages: [_newMessage]
             }
-            delete _newConversation.newMessage; delete newConversationForSender.newMessage;
+            console.log({ newConversationForSender })
+
+
+            delete _newConversationForRecipient.newMessage;
+            delete newConversationForSender.newMessage;
+
+
+
             User.updateMany(
                 {
                     _id: { $in: userIdsInChat }
                 },
                 {
                     $push: {
-                        conversations: _newConversation
+                        conversations: _newConversationForRecipient
                     }
                 },
                 (error, numsAffected) => {
@@ -2690,11 +2702,12 @@ router.route("/users/updateInfo").post((request, response) => {
             // GOAL: find the conversation that the user replied to and push the newMessage into the messages field for that conversation 
             console.log('userIdsInChat: ', userIdsInChat);
             console.log({ conversationId })
-            const _newMessage = {
-                ...newMessage,
-                userId: newMessage.user._id
-            }
+            const _newMessage = isGroup ?
+                { ...newMessage, userId: newMessage.user._id }
+                :
+                { ...newMessage, isByCurrentUser: false }
             delete _newMessage.user
+
             User.updateMany(
                 {
                     _id: { $in: userIdsInChat },
@@ -2711,6 +2724,8 @@ router.route("/users/updateInfo").post((request, response) => {
                         console.log('Message and conversation saved, new conversation started. NumsAffected: ', numsAffected)
                         delete _newMessage.userId;
                         delete _newMessage.isRead;
+                        !isGroup && delete _newMessage.isByCurrentUser
+
                         User.updateOne(
                             {
                                 _id: userId,
@@ -5762,7 +5777,10 @@ router.route("/users/:package").get((request, response) => {
                 )
             }
         }
+    } else if (name === 'getConversations') {
+        // GOAL: for the one on one messaging, get the following values and store them into the recipient 
 
+        // GOAL: for each message insert user field which will contain the following: {_id: (the id of the user), username: (the username of the user), iconPath; (the icon path of the user)}
     }
 })
 
