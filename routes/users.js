@@ -2638,13 +2638,12 @@ router.route("/users/updateInfo").post((request, response) => {
             console.log('hello there')
             // GOAL: check if the conversation is a one on one conversation. If so, then delete newConversation.recipient and add the field of userIdRecipient with the current user id
             const _newConversationForRecipient = newConversation.conversationUsers ?
-                { ...newConversation, messages: [newConversation.newMessage] }
+                { ...newConversation, messages: [newConversation.newMessage], areMessagesRead: false }
                 :
-                { ...newConversation, messages: [{ ...newConversation.newMessage, isByRecipient: true }], userIdRecipient: userId }
-            // for the user that sent the message, don't inlcude the userId and the isRead status when saving the message into their profile
-            console.log({ _newConversationForRecipient });
+                { ...newConversation, messages: [newConversation.newMessage], userIdRecipient: userId, areMessagesRead: false }
 
-            const { userId, isRead, ..._newMessage } = newConversation.newMessage;
+
+            const { userId: _userId, isRead, ..._newMessage } = newConversation.newMessage;
 
 
             const newConversationForSender = {
@@ -2705,7 +2704,8 @@ router.route("/users/updateInfo").post((request, response) => {
             const _newMessage = isGroup ?
                 { ...newMessage, userId: newMessage.user._id }
                 :
-                { ...newMessage, isByCurrentUser: false }
+                newMessage;
+
             delete _newMessage.user
 
             User.updateMany(
@@ -2716,6 +2716,9 @@ router.route("/users/updateInfo").post((request, response) => {
                 {
                     $push: {
                         'conversations.$.messages': _newMessage
+                    },
+                    $set: {
+                        'conversations.$.areMessagesRead': false
                     }
                 },
                 (error, numsAffected) => {
@@ -2724,7 +2727,6 @@ router.route("/users/updateInfo").post((request, response) => {
                         console.log('Message and conversation saved, new conversation started. NumsAffected: ', numsAffected)
                         delete _newMessage.userId;
                         delete _newMessage.isRead;
-                        !isGroup && delete _newMessage.isByCurrentUser
 
                         User.updateOne(
                             {
@@ -2750,10 +2752,28 @@ router.route("/users/updateInfo").post((request, response) => {
                 }
             )
         }
-
+    } else if (name === 'updateMessagesReadStatus') {
+        const { conversationId } = request.body;
+        User.updateOne(
+            { _id: userId, "conversations.conversationId": conversationId },
+            {
+                $set: {
+                    "conversations.$.areMessagesRead": data.areMessagesRead
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error("An error has occurred in updating the read status of conversation, error: ", error)
+                    response.sendStatus(404);
+                }
+                console.log("'areMessagesRead' status has been updated: ", numsAffected);
+                response.json("The status of 'areMessagesRead' has been updated.")
+            }
+        )
     }
 }, (error, req, res, next) => {
     if (error) {
+        console.log('An error has occurred: ', error);
         res.status(404).send('An error has occurred. Please try again later.');
     };
 });
@@ -3467,9 +3487,7 @@ router.route("/users/:package").get((request, response) => {
                     });
                 } else if (willGetReplies) {
                     response.json({ isEmpty: true })
-                }
-
-                if (willGetReplyLikes && (likes && likes.replies && likes.replies.length)) {
+                } else if (willGetReplyLikes && (likes && likes.replies && likes.replies.length)) {
                     const { replies: replyLikes } = likes;
                     let userIds = [];
                     let postIds = [];
@@ -3656,9 +3674,7 @@ router.route("/users/:package").get((request, response) => {
 
                 } else if (willGetReplyLikes) {
                     response.json({ isEmpty: true })
-                }
-
-                if (willGetCommentLikes && (likes && likes.comments && likes.comments.length)) {
+                } else if (willGetCommentLikes && (likes && likes.comments && likes.comments.length)) {
                     let userIds = [];
                     let postIds = [];
                     const { comments: commentLikes } = likes;
@@ -3813,9 +3829,7 @@ router.route("/users/:package").get((request, response) => {
                     })
                 } else if (willGetCommentLikes) {
                     response.json({ isEmpty: true })
-                };
-
-                if (willGetPostLikes && (likes && likes.posts && likes.posts.length)) {
+                } else if (willGetPostLikes && (likes && likes.posts && likes.posts.length)) {
                     const { posts: postLikes } = likes;
                     // GOAL: send the postLikesNotifications array to the client with all of its info for the notifications
                     // the 'userIdsOfLikes' is modified and the notifications array is sent tot the client
@@ -3917,9 +3931,7 @@ router.route("/users/:package").get((request, response) => {
 
                 } else if (willGetPostLikes) {
                     response.json({ isEmpty: true })
-                }
-
-                if (willGetComments && comments && comments.length) {
+                } else if (willGetComments && comments && comments.length) {
                     const postIdsOfComments = comments.map(({ postId }) => postId);
                     let userIds = [];
                     comments.forEach(({ comments }) => {
@@ -4065,9 +4077,7 @@ router.route("/users/:package").get((request, response) => {
                     });
                 } else if (willGetComments) {
                     response.json({ isEmpty: true })
-                }
-
-                if (willGetPostsFromFollowing && newPostsFromFollowing?.length) {
+                } else if (willGetPostsFromFollowing && newPostsFromFollowing?.length) {
                     let authorIdsOfPosts = newPostsFromFollowing.map(({ authorId }) => authorId);
                     authorIdsOfPosts = blockedUserIds?.length ? authorIdsOfPosts.filter(userId => !blockedUserIds.includes(userId)) : authorIdsOfPosts;
                     let postIds = [];
@@ -4169,15 +4179,17 @@ router.route("/users/:package").get((request, response) => {
                                         }
                                     });
                                     _followingNewPosts.length ? response.json({ newPosts: _followingNewPosts }) : response.json({ isEmpty: true })
-                                };
+                                } else {
+                                    response.json({ isEmpty: true })
+                                }
                             })
                         })
-                    };
+                    } else {
+                        response.json({ isEmpty: true })
+                    }
                 } else if (willGetPostsFromFollowing) {
                     response.json({ isEmpty: true })
-                };
-
-                if (willGetNewFollowers && newFollowers && newFollowers.length) {
+                } else if (willGetNewFollowers && newFollowers && newFollowers.length) {
                     // followers = current followers of the user 
                     let newFollowersIds = followers.map(({ userId }) => userId);
                     newFollowersIds = blockedUserIds?.length ? newFollowersIds.filter(userId => !blockedUserIds.includes(userId)) : newFollowersIds;
@@ -4226,9 +4238,6 @@ router.route("/users/:package").get((request, response) => {
                 } else if (willGetNewFollowers) {
                     response.json({ isEmpty: true });
                 }
-
-
-
             } else {
                 response.json({ isEmpty: true });
             }
@@ -4668,7 +4677,9 @@ router.route("/users/:package").get((request, response) => {
 
                             datesOfActivities ? response.json(datesOfActivities) : response.json({ isEmpty: true })
                         })
-                    };
+                    } else {
+                        response.sendStatus(404);
+                    }
                 })
             } else if (willGetRepliesAndComments) {
                 response.json({ isEmpty: true })
@@ -4683,219 +4694,234 @@ router.route("/users/:package").get((request, response) => {
                         if (error) console.error('An error has occurred in getting published drafts of user.');
                     }
                 ).then(posts => {
-                    Tag.find({}).then(tags => {
-                        // GOAL: get all of the info for the tags that were selected if the tags were the default tags on the site
-                        const _posts = posts.map(post => {
-                            const { _id: postId, previousVersions, body: postedBody, imgUrl, title, subtitle, tags: postTags, editsPublishedAt } = post;
-                            const bodyHtmlStriped = postedBody.replace(/<[^>]+>/g, '');
-                            const decodedBodyHtmlStriped = he.decode(bodyHtmlStriped);
-                            const wordCount = getWordCount(decodedBodyHtmlStriped);
-                            // let bodyPreview;
-                            // if (wordCount > 50) {
-                            //     bodyPreview = decodedBodyHtmlStriped.split(' ').slice(0, 45);
-                            //     bodyPreview.splice(44, 1, `${bodyPreview[44]}...`);
-                            //     bodyPreview = bodyPreview.join(' ');
-                            // }
-                            const bodyPreview = wordCount > 50 && getTextPreview(decodedBodyHtmlStriped)
-                            // const isGreaterThan50Words = decodedBodyHtmlStriped.split(' ').length > 50;
-                            if (previousVersions.length) {
-                                const publishedVersion = { isPublished: true, title, subtitle, tags: postTags, imgUrl, wordCount, publicationDate: editsPublishedAt, body: postedBody };
-                                let _previousVersions = [...previousVersions, publishedVersion];
-                                _previousVersions = _previousVersions.map((versionA, index) => {
-                                    const _tags = versionA.tags.map(tag => {
-                                        const { _id: tagId, isNew } = tag;
-                                        if (!isNew) {
-                                            const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
-                                            const { ...allTagInfo } = _tag;
-                                            return {
-                                                ...tag,
-                                                topic: allTagInfo._doc.topic
-                                            }
-                                        };
-
-                                        return tag;
-                                    });
-                                    const { title, body: versionABody, subtitle, tags: tagsA, imgUrl: imgUrlA } = versionA;
-                                    const imgUrl = (imgUrlA && index === 0) && { path: imgUrlA };
-                                    const bodyWordCountA = getWordCount(versionABody)
-                                    if (index > 0) {
-                                        const titleWordCountA = getWordCount(title);
-                                        const subtitleWordCountA = subtitle && getWordCount(subtitle);
-                                        const versionB = _previousVersions[index - 1];
-                                        const { title: editedTitleB, body: editedBodyB, subtitle: editedSubtitleB, tags: tagsB, imgUrl: imgUrlB } = versionB;
-                                        const didBodyContentChange = editedBodyB !== versionABody;
-                                        const titleWordCountB = getWordCount(editedTitleB);
-                                        const subtitleWordCountB = editedSubtitleB && getWordCount(editedSubtitleB)
-                                        const bodyWordCountB = getWordCount(editedBodyB);
-                                        const didTitleWordCountChange = (titleWordCountA !== titleWordCountB);
-                                        const didTitleContentChange = title !== editedTitleB;
-                                        const didBodyCountChange = bodyWordCountA !== bodyWordCountB;
-                                        let subtitleStatus;
-                                        let introPicStatus;
-                                        if ((imgUrlB === undefined) && (imgUrlA === undefined)) {
-                                            introPicStatus = 'introPicUnavailable'
-                                        } else if ((imgUrlB === undefined) && imgUrlA) {
-                                            introPicStatus = 'introPicAdded'
-                                        } else if (imgUrlB && (imgUrlA === undefined)) {
-                                            introPicStatus = 'introPicDel'
-                                        } else if ((imgUrlB && imgUrlA) && (imgUrlB === imgUrlA)) {
-                                            introPicStatus = 'sameIntroPic'
-                                        } else if ((imgUrlB && imgUrlA) && (imgUrlB !== imgUrlA)) {
-                                            introPicStatus = 'introPicUpdated'
-                                        }
-                                        const _imgUrl = { status: introPicStatus, path: imgUrlA }
-                                        if ((editedSubtitleB === undefined) && (subtitle === undefined)) {
-                                            subtitleStatus = 'subtitleUnavailable'
-                                        } else if ((editedSubtitleB === undefined) && subtitle) {
-                                            subtitleStatus = 'subtitleAdded';
-                                        } else if (editedSubtitleB && (subtitle === undefined)) {
-                                            subtitleStatus = 'subtitleDel'
-                                        } else if ((editedSubtitleB && subtitle) && (editedSubtitleB === subtitle)) {
-                                            subtitleStatus = 'sameSubtitle'
-                                        } else if ((editedSubtitleB && subtitle) && (editedSubtitleB !== subtitle)) {
-                                            subtitleStatus = 'subtitleUpdated';
-                                        }
-                                        const _tagsB = tagsB.map(tag => {
-                                            const { _id, isNew, topic } = tag;
-                                            if (isNew) {
-                                                return topic.toLowerCase().trim();
+                    if (posts.length) {
+                        Tag.find({}).then(tags => {
+                            // GOAL: get all of the info for the tags that were selected if the tags were the default tags on the site
+                            const _posts = posts.map(post => {
+                                const { _id: postId, previousVersions, body: postedBody, imgUrl, title, subtitle, tags: postTags, editsPublishedAt } = post;
+                                const bodyHtmlStriped = postedBody.replace(/<[^>]+>/g, '');
+                                const decodedBodyHtmlStriped = he.decode(bodyHtmlStriped);
+                                const wordCount = getWordCount(decodedBodyHtmlStriped);
+                                // let bodyPreview;
+                                // if (wordCount > 50) {
+                                //     bodyPreview = decodedBodyHtmlStriped.split(' ').slice(0, 45);
+                                //     bodyPreview.splice(44, 1, `${bodyPreview[44]}...`);
+                                //     bodyPreview = bodyPreview.join(' ');
+                                // }
+                                const bodyPreview = wordCount > 50 && getTextPreview(decodedBodyHtmlStriped)
+                                // const isGreaterThan50Words = decodedBodyHtmlStriped.split(' ').length > 50;
+                                if (previousVersions.length) {
+                                    const publishedVersion = { isPublished: true, title, subtitle, tags: postTags, imgUrl, wordCount, publicationDate: editsPublishedAt, body: postedBody };
+                                    let _previousVersions = [...previousVersions, publishedVersion];
+                                    _previousVersions = _previousVersions.map((versionA, index) => {
+                                        const _tags = versionA.tags.map(tag => {
+                                            const { _id: tagId, isNew } = tag;
+                                            if (!isNew) {
+                                                const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
+                                                const { ...allTagInfo } = _tag;
+                                                return {
+                                                    ...tag,
+                                                    topic: allTagInfo._doc.topic
+                                                }
                                             };
 
-                                            return _id;
-                                        }).sort();
-                                        const _tagsA = tagsA.map(tag => {
-                                            const { _id, isNew, topic } = tag;
-                                            if (isNew) {
-                                                return topic.toLowerCase().trim();
-                                            };
+                                            return tag;
+                                        });
+                                        const { title, body: versionABody, subtitle, tags: tagsA, imgUrl: imgUrlA } = versionA;
+                                        const imgUrl = (imgUrlA && index === 0) && { path: imgUrlA };
+                                        const bodyWordCountA = getWordCount(versionABody)
+                                        if (index > 0) {
+                                            const titleWordCountA = getWordCount(title);
+                                            const subtitleWordCountA = subtitle && getWordCount(subtitle);
+                                            const versionB = _previousVersions[index - 1];
+                                            const { title: editedTitleB, body: editedBodyB, subtitle: editedSubtitleB, tags: tagsB, imgUrl: imgUrlB } = versionB;
+                                            const didBodyContentChange = editedBodyB !== versionABody;
+                                            const titleWordCountB = getWordCount(editedTitleB);
+                                            const subtitleWordCountB = editedSubtitleB && getWordCount(editedSubtitleB)
+                                            const bodyWordCountB = getWordCount(editedBodyB);
+                                            const didTitleWordCountChange = (titleWordCountA !== titleWordCountB);
+                                            const didTitleContentChange = title !== editedTitleB;
+                                            const didBodyCountChange = bodyWordCountA !== bodyWordCountB;
+                                            let subtitleStatus;
+                                            let introPicStatus;
+                                            if ((imgUrlB === undefined) && (imgUrlA === undefined)) {
+                                                introPicStatus = 'introPicUnavailable'
+                                            } else if ((imgUrlB === undefined) && imgUrlA) {
+                                                introPicStatus = 'introPicAdded'
+                                            } else if (imgUrlB && (imgUrlA === undefined)) {
+                                                introPicStatus = 'introPicDel'
+                                            } else if ((imgUrlB && imgUrlA) && (imgUrlB === imgUrlA)) {
+                                                introPicStatus = 'sameIntroPic'
+                                            } else if ((imgUrlB && imgUrlA) && (imgUrlB !== imgUrlA)) {
+                                                introPicStatus = 'introPicUpdated'
+                                            }
+                                            const _imgUrl = { status: introPicStatus, path: imgUrlA }
+                                            if ((editedSubtitleB === undefined) && (subtitle === undefined)) {
+                                                subtitleStatus = 'subtitleUnavailable'
+                                            } else if ((editedSubtitleB === undefined) && subtitle) {
+                                                subtitleStatus = 'subtitleAdded';
+                                            } else if (editedSubtitleB && (subtitle === undefined)) {
+                                                subtitleStatus = 'subtitleDel'
+                                            } else if ((editedSubtitleB && subtitle) && (editedSubtitleB === subtitle)) {
+                                                subtitleStatus = 'sameSubtitle'
+                                            } else if ((editedSubtitleB && subtitle) && (editedSubtitleB !== subtitle)) {
+                                                subtitleStatus = 'subtitleUpdated';
+                                            }
+                                            const _tagsB = tagsB.map(tag => {
+                                                const { _id, isNew, topic } = tag;
+                                                if (isNew) {
+                                                    return topic.toLowerCase().trim();
+                                                };
 
-                                            return _id;
-                                        }).sort();
-                                        const didTagsChanged = JSON.stringify(_tagsB) !== JSON.stringify(_tagsA);
-                                        const bodyWordCountChange = didBodyCountChange && (bodyWordCountA - bodyWordCountB);
-                                        const titleWordCountChange = didTitleWordCountChange && (titleWordCountA - titleWordCountB);
-                                        const subtitleWordCountChange = subtitle && (subtitleWordCountA - (subtitleWordCountB ?? 0));
-                                        // const { body, ...__versionA } = versionA;
-                                        // console.log('__versionA', __versionA);
-                                        let _versionA = subtitle ?
-                                            {
-                                                ...versionA,
-                                                title: {
-                                                    text: title
-                                                },
-                                                body: {
-                                                    wordCount: bodyWordCountA,
-                                                    text: versionABody
-                                                },
-                                                subtitle: {
-                                                    text: subtitle
-                                                }
-                                            }
-                                            :
-                                            {
-                                                ...versionA,
-                                                title: {
-                                                    text: title
-                                                },
-                                                body: {
-                                                    wordCount: bodyWordCountA,
-                                                    text: versionABody
-                                                }
-                                            }
-                                        if (didBodyContentChange) {
-                                            _versionA = {
-                                                ..._versionA,
-                                                body: {
-                                                    ..._versionA.body,
-                                                    didChange: didBodyContentChange
-                                                }
-                                            }
-                                        }
-                                        if (bodyWordCountChange) {
-                                            _versionA = {
-                                                ..._versionA,
-                                                body: {
-                                                    ..._versionA.body,
-                                                    wordCountChange: bodyWordCountChange
-                                                }
-                                            }
-                                        };
-                                        if (titleWordCountChange) {
-                                            _versionA = {
-                                                ..._versionA,
-                                                title: {
-                                                    ..._versionA.title,
-                                                    wordCountChange: titleWordCountChange
-                                                }
-                                            }
-                                        };
-                                        if (didTitleContentChange) {
-                                            _versionA = {
-                                                ..._versionA,
-                                                title: {
-                                                    ..._versionA.title,
-                                                    didChange: didTitleContentChange
-                                                }
-                                            }
-                                        }
-                                        if (subtitleWordCountChange) {
-                                            _versionA = {
-                                                ..._versionA,
-                                                subtitle: _versionA.subtitle ?
-                                                    {
-                                                        ..._versionA.subtitle,
-                                                        wordCountChange: subtitleWordCountChange
-                                                    }
-                                                    :
-                                                    {
-                                                        wordCountChange: subtitleWordCountChange
-                                                    }
-                                            };
-                                        };
-                                        if (didTagsChanged) {
-                                            _versionA = {
-                                                ..._versionA,
-                                                didTagsChanged
-                                            }
-                                        };
+                                                return _id;
+                                            }).sort();
+                                            const _tagsA = tagsA.map(tag => {
+                                                const { _id, isNew, topic } = tag;
+                                                if (isNew) {
+                                                    return topic.toLowerCase().trim();
+                                                };
 
-                                        delete _versionA._id;
-                                        return {
-                                            ..._versionA,
-                                            imgUrl: _imgUrl,
-                                            tags: _tags,
-                                            subtitle: _versionA.subtitle ?
+                                                return _id;
+                                            }).sort();
+                                            const didTagsChanged = JSON.stringify(_tagsB) !== JSON.stringify(_tagsA);
+                                            const bodyWordCountChange = didBodyCountChange && (bodyWordCountA - bodyWordCountB);
+                                            const titleWordCountChange = didTitleWordCountChange && (titleWordCountA - titleWordCountB);
+                                            const subtitleWordCountChange = subtitle && (subtitleWordCountA - (subtitleWordCountB ?? 0));
+                                            // const { body, ...__versionA } = versionA;
+                                            // console.log('__versionA', __versionA);
+                                            let _versionA = subtitle ?
                                                 {
-                                                    ..._versionA.subtitle,
-                                                    status: subtitleStatus
+                                                    ...versionA,
+                                                    title: {
+                                                        text: title
+                                                    },
+                                                    body: {
+                                                        wordCount: bodyWordCountA,
+                                                        text: versionABody
+                                                    },
+                                                    subtitle: {
+                                                        text: subtitle
+                                                    }
                                                 }
                                                 :
                                                 {
-                                                    status: subtitleStatus
+                                                    ...versionA,
+                                                    title: {
+                                                        text: title
+                                                    },
+                                                    body: {
+                                                        wordCount: bodyWordCountA,
+                                                        text: versionABody
+                                                    }
                                                 }
-                                        }
-                                    };
+                                            if (didBodyContentChange) {
+                                                _versionA = {
+                                                    ..._versionA,
+                                                    body: {
+                                                        ..._versionA.body,
+                                                        didChange: didBodyContentChange
+                                                    }
+                                                }
+                                            }
+                                            if (bodyWordCountChange) {
+                                                _versionA = {
+                                                    ..._versionA,
+                                                    body: {
+                                                        ..._versionA.body,
+                                                        wordCountChange: bodyWordCountChange
+                                                    }
+                                                }
+                                            };
+                                            if (titleWordCountChange) {
+                                                _versionA = {
+                                                    ..._versionA,
+                                                    title: {
+                                                        ..._versionA.title,
+                                                        wordCountChange: titleWordCountChange
+                                                    }
+                                                }
+                                            };
+                                            if (didTitleContentChange) {
+                                                _versionA = {
+                                                    ..._versionA,
+                                                    title: {
+                                                        ..._versionA.title,
+                                                        didChange: didTitleContentChange
+                                                    }
+                                                }
+                                            }
+                                            if (subtitleWordCountChange) {
+                                                _versionA = {
+                                                    ..._versionA,
+                                                    subtitle: _versionA.subtitle ?
+                                                        {
+                                                            ..._versionA.subtitle,
+                                                            wordCountChange: subtitleWordCountChange
+                                                        }
+                                                        :
+                                                        {
+                                                            wordCountChange: subtitleWordCountChange
+                                                        }
+                                                };
+                                            };
+                                            if (didTagsChanged) {
+                                                _versionA = {
+                                                    ..._versionA,
+                                                    didTagsChanged
+                                                }
+                                            };
 
-                                    delete versionA._id;
+                                            delete _versionA._id;
+                                            return {
+                                                ..._versionA,
+                                                imgUrl: _imgUrl,
+                                                tags: _tags,
+                                                subtitle: _versionA.subtitle ?
+                                                    {
+                                                        ..._versionA.subtitle,
+                                                        status: subtitleStatus
+                                                    }
+                                                    :
+                                                    {
+                                                        status: subtitleStatus
+                                                    }
+                                            }
+                                        };
+
+                                        delete versionA._id;
+                                        return {
+                                            ...versionA,
+                                            tags: _tags,
+                                            imgUrl,
+                                            body: {
+                                                wordCount: bodyWordCountA,
+                                                text: versionABody.text ?? versionABody
+                                            }
+                                        }
+                                    });
+                                    // _previousVersions = _previousVersions.map(prevVersion => {
+                                    //     const _prevVersion = { ...prevVersion };
+                                    //     _prevVersion.body && delete _prevVersion.body;
+                                    //     return _prevVersion;
+                                    // })
+
+
+
+                                    delete post._doc.body;
                                     return {
-                                        ...versionA,
-                                        tags: _tags,
+                                        ...post._doc,
                                         imgUrl,
                                         body: {
-                                            wordCount: bodyWordCountA,
-                                            text: versionABody.text ?? versionABody
-                                        }
+                                            preview: bodyPreview ?? decodedBodyHtmlStriped,
+                                            full: postedBody,
+                                            wordCount
+                                        },
+                                        previousVersions: _previousVersions.reverse()
                                     }
-                                });
-                                // _previousVersions = _previousVersions.map(prevVersion => {
-                                //     const _prevVersion = { ...prevVersion };
-                                //     _prevVersion.body && delete _prevVersion.body;
-                                //     return _prevVersion;
-                                // })
-
-
+                                };
 
                                 delete post._doc.body;
+                                delete post._doc.previousVersions;
                                 return {
                                     ...post._doc,
                                     imgUrl,
@@ -4903,63 +4929,53 @@ router.route("/users/:package").get((request, response) => {
                                         preview: bodyPreview ?? decodedBodyHtmlStriped,
                                         full: postedBody,
                                         wordCount
-                                    },
-                                    previousVersions: _previousVersions.reverse()
+                                    }
+                                };
+                            });
+
+                            // putting posts that were posted on the same date in the same object
+                            let postsSorted = [];
+                            _posts.forEach(post => {
+                                const { editsPublishedAt, publicationDate, ...postInfo } = post;
+                                const { miliSeconds, time, date } = publicationDate;
+                                const doesDateExist = postsSorted.map(({ publicationDate }) => publicationDate).includes(date);
+                                if (doesDateExist) {
+                                    postsSorted = postsSorted.map(post => {
+                                        const { publicationDate: _publicationDate, activities } = post;
+                                        if (date === _publicationDate) {
+                                            const _post = editsPublishedAt ? { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) }, editsPublishedAt: { ...editsPublishedAt, time: convertToStandardTime(editsPublishedAt.time) } } : { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) } }
+                                            return {
+                                                ...post,
+                                                activities: [...activities, _post]
+                                            }
+                                        };
+
+                                        return post;
+                                    })
+                                } else {
+                                    const _post = editsPublishedAt ? { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) }, editsPublishedAt: { ...editsPublishedAt, time: convertToStandardTime(editsPublishedAt.time) } } : { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) } }
+                                    const postActivity = { publicationDate: publicationDate.date, isPostByUser: true, activities: [_post] };
+                                    postsSorted.push(postActivity);
                                 }
-                            };
-
-                            delete post._doc.body;
-                            delete post._doc.previousVersions;
-                            return {
-                                ...post._doc,
-                                imgUrl,
-                                body: {
-                                    preview: bodyPreview ?? decodedBodyHtmlStriped,
-                                    full: postedBody,
-                                    wordCount
+                            })
+                            postsSorted = postsSorted.sort((postA, postB) => {
+                                if (postA.publicationDate > postB.publicationDate) return -1;
+                                if (postA.publicationDate < postB.publicationDate) return 1;
+                                return 0;
+                            });
+                            postsSorted = postsSorted.map(post => {
+                                const _activities = post.activities.sort(({ publication: publicationA }, { publication: publicationB }) => publicationB.miliSeconds - publicationA.miliSeconds);
+                                return {
+                                    ...post,
+                                    activities: _activities
                                 }
-                            };
+                            })
+                            response.json({ postsByUser: postsSorted })
                         });
+                    } else {
+                        response.json({ isEmpty: true })
+                    }
 
-                        // putting posts that were posted on the same date in the same object
-                        let postsSorted = [];
-                        _posts.forEach(post => {
-                            const { editsPublishedAt, publicationDate, ...postInfo } = post;
-                            const { miliSeconds, time, date } = publicationDate;
-                            const doesDateExist = postsSorted.map(({ publicationDate }) => publicationDate).includes(date);
-                            if (doesDateExist) {
-                                postsSorted = postsSorted.map(post => {
-                                    const { publicationDate: _publicationDate, activities } = post;
-                                    if (date === _publicationDate) {
-                                        const _post = editsPublishedAt ? { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) }, editsPublishedAt: { ...editsPublishedAt, time: convertToStandardTime(editsPublishedAt.time) } } : { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) } }
-                                        return {
-                                            ...post,
-                                            activities: [...activities, _post]
-                                        }
-                                    };
-
-                                    return post;
-                                })
-                            } else {
-                                const _post = editsPublishedAt ? { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) }, editsPublishedAt: { ...editsPublishedAt, time: convertToStandardTime(editsPublishedAt.time) } } : { ...postInfo, publication: { miliSeconds, time: convertToStandardTime(time) } }
-                                const postActivity = { publicationDate: publicationDate.date, isPostByUser: true, activities: [_post] };
-                                postsSorted.push(postActivity);
-                            }
-                        })
-                        postsSorted = postsSorted.sort((postA, postB) => {
-                            if (postA.publicationDate > postB.publicationDate) return -1;
-                            if (postA.publicationDate < postB.publicationDate) return 1;
-                            return 0;
-                        });
-                        postsSorted = postsSorted.map(post => {
-                            const _activities = post.activities.sort(({ publication: publicationA }, { publication: publicationB }) => publicationB.miliSeconds - publicationA.miliSeconds);
-                            return {
-                                ...post,
-                                activities: _activities
-                            }
-                        })
-                        response.json({ postsByUser: postsSorted })
-                    });
                 })
             } else if (willGetPosts) {
                 response.json({ isEmpty: true })
@@ -5220,6 +5236,8 @@ router.route("/users/:package").get((request, response) => {
                     }
                     followingUsers ? response.json(followingUsers) : response.json({ isEmpty: true });
                 })
+            } else if (willGetFollowing) {
+                response.json({ isEmpty: true })
             } else if (willGetSearchedHistory && result?.activities?.searchedHistory?.length) {
                 let _searchedHistory;
                 result.activities.searchedHistory.forEach(searchedItem => {
@@ -5778,9 +5796,91 @@ router.route("/users/:package").get((request, response) => {
             }
         }
     } else if (name === 'getConversations') {
+        // for the conversation: get the following for each conversation:
+
+        // GOAL: for one on one messages, get the user icon and the username and id of the user that the current user is messaging put that info in the recipient field;
+
+        // GOAL: for group messages, go through all of the messages and insert for each each user the following: {the id of the user , the icon of the user, the username of the user}
+        User.findOne({ _id: userId }, { _id: 0, conversations: 1, blockedUsers: 1 }).then(currentUser => {
+            User.find({ _id: { $nin: [userId] } }, { _id: 1, username: 1, iconPath: 1, blockedUsers: 1 }).then(users => {
+                // GOAL: for groups, if the user blocked any of the users in a group, then warn the user that a user or users that they have blocked is present in the group 
+                let totalNumUnreadMessages = 0;
+                const { conversations, blockedUsers } = currentUser;
+                if (conversations) {
+                    const currentUserBlockedUsers = !!blockedUsers?.length && blockedUsers.map(({ userId }) => userId)
+                    // get the user icon and the username for each user that the current user has messages 
+                    // check the blocked status for each user that the current user has messaged
+                    // check if the user that the current user has messaged has blocked the current user
+                    const _conversations = conversations.map(conversation => {
+                        const { userIdRecipient, messages, conversationUsers } = conversation;
+
+                        totalNumUnreadMessages = messages.reduce((totalUnreadMessages, message) => {
+                            return totalUnreadMessages + ((message?.isRead === false) ? 1 : 0);
+                        }, totalNumUnreadMessages);
+
+                        if (userIdRecipient) {
+                            const { iconPath, username, blockedUsers } = getUser(users, userIdRecipient) || {}
+                            const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
+                            const isUserOfMessageBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(userIdRecipient);
+                            username && delete conversation.userIdRecipient;
+
+                            return username ? { ...conversation, recipient: { _id: userIdRecipient, iconPath, username }, isUserOfMessageBlocked, isCurrentUserBlocked } : conversation;
+                        }
+
+                        const _conversationUsers = conversationUsers.filter(_userId => _userId !== userId).map(userId => {
+                            const { _id, username, iconPath } = getUser(users, userId);
+                            return { _id, username, iconPath };
+                        });
+
+                        return {
+                            ...conversation,
+                            conversationUsers: _conversationUsers,
+                            messages: messages.map(message => {
+                                // if the message is not by the current user
+                                if (message.userId) {
+                                    const { iconPath, username, blockedUsers } = getUser(users, message.userId) || {};
+                                    const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
+                                    const isUserOfMessageBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(message.userId);
+                                    username && delete message.userId
+                                    return username ? { ...message, user: { iconPath, username, _id: message.userId }, isUserOfMessageBlocked, isCurrentUserBlocked } : message;
+                                }
+
+                                // if no userId, then the message is by the current user
+                                return message;
+                            })
+                        }
+                    });
+
+                    response.json(
+                        {
+                            conversations: _conversations.length > 1 ?
+                                _conversations.sort(({ messages: chatA }, { messages: chatB }) => {
+                                    const firstMessageTime = chatA[0].timeOfSend.miliSeconds;
+                                    const secondMessageTime = chatB[0].timeOfSend.miliSeconds;
+
+                                    return secondMessageTime - firstMessageTime;
+                                })
+                                :
+                                _conversations,
+                            totalNumUnreadMessages
+                        }
+                    );
+                } else {
+                    response.json({ isEmpty: true })
+                }
+
+
+
+            })
+        })
+
         // GOAL: for the one on one messaging, get the following values and store them into the recipient 
 
         // GOAL: for each message insert user field which will contain the following: {_id: (the id of the user), username: (the username of the user), iconPath; (the icon path of the user)}
+    }
+}, error => {
+    if (error) {
+        console.error('An error has occurred: ', error);
     }
 })
 
