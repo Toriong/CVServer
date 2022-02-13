@@ -2786,13 +2786,13 @@ router.route("/users/updateInfo").post((request, response) => {
             )
         }
     } else if (name === 'inviteToGroupChat') {
-        const { conversationId, inviterId, invitationId } = data;
+        const { conversationId, inviterId, invitationId, timeOfSend } = data;
         const { userIdToInvite } = request.body;
         User.updateOne(
             { _id: userIdToInvite },
             {
                 $push: {
-                    conversations: { inviterId: inviterId, conversationId: conversationId, invitationId }
+                    conversations: { inviterId: inviterId, conversationToJoinId: conversationId, invitationId, timeOfSendInvitation: timeOfSend }
                 }
             },
             (error, numsAffected) => {
@@ -5884,47 +5884,68 @@ router.route("/users/:package").get((request, response) => {
 
         // GOAL: for group messages, go through all of the messages and insert for each each user the following: {the id of the user , the icon of the user, the username of the user}
         User.findOne({ _id: userId }, { _id: 0, conversations: 1, blockedUsers: 1 }).then(currentUser => {
-            User.find({ _id: { $nin: [userId] } }, { _id: 1, username: 1, iconPath: 1, blockedUsers: 1 }).then(users => {
-                // GOAL: for groups, if the user blocked any of the users in a group, then warn the user that a user or users that they have blocked is present in the group 
+            User.find({ _id: { $nin: [userId] } }, { _id: 1, username: 1, iconPath: 1, blockedUsers: 1, conversations: 1 }).then(users => {
                 let totalNumUnreadMessages = 0;
                 const { conversations, blockedUsers } = currentUser;
                 if (conversations) {
                     const currentUserBlockedUsers = !!blockedUsers?.length && blockedUsers.map(({ userId }) => userId)
-                    // get the user icon and the username for each user that the current user has messages 
-                    // check the blocked status for each user that the current user has messaged
-                    // check if the user that the current user has messaged has blocked the current user
                     let _conversations = conversations.map(conversation => {
-                        const { userIdRecipient, messages, conversationUsers } = conversation;
+                        const { userIdRecipient, messages, conversationUsers, conversationToJoinId, inviterId } = conversation;
 
-                        totalNumUnreadMessages = messages.reduce((totalUnreadMessages, message) => {
-                            return totalUnreadMessages + ((message?.isRead === false) ? 1 : 0);
-                        }, totalNumUnreadMessages);
+                        totalNumUnreadMessages = messages ?
+                            messages.reduce((totalUnreadMessages, message) => {
+                                return totalUnreadMessages + ((message?.isRead === false) ? 1 : 0);
+                            }, totalNumUnreadMessages)
+                            :
+                            inviterId ? totalNumUnreadMessages + 1 : totalNumUnreadMessages
 
-                        if (userIdRecipient) {
-                            const { iconPath, username, blockedUsers } = getUser(users, userIdRecipient) || {}
+                        const recipient = userIdRecipient && getUser(users, userIdRecipient);
+                        if (recipient && userIdRecipient) {
+                            const { iconPath, username, blockedUsers } = recipient
                             const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
                             const isUserOfMessageBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(userIdRecipient);
-                            username && delete conversation.userIdRecipient;
+                            delete conversation.userIdRecipient;
 
-                            return username ? { ...conversation, recipient: { _id: userIdRecipient, iconPath, username }, isUserOfMessageBlocked, isCurrentUserBlocked } : conversation;
+                            return { ...conversation, recipient: { _id: userIdRecipient, iconPath, username }, isUserOfMessageBlocked, isCurrentUserBlocked }
+                        } else if (userIdRecipient) {
+                            return { ...conversation, doesRecipientExist: false };
                         }
 
+                        const inviter = inviterId && getUser(users, inviterId);
+                        if (inviter && inviterId) {
+                            const { iconPath, username, blockedUsers, conversations } = inviter
+                            const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
+                            const isInviterUserBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(inviterId);
+                            const { conversationId, groupName } = conversations.find(({ conversationId }) => conversationId === conversationToJoinId);
+
+                            return {
+                                ...conversation,
+                                isCurrentUserBlocked,
+                                isInviterUserBlocked,
+                                groupToJoin: { _id: conversationId, groupName },
+                                inviter: { _id: inviterId, username, iconPath }
+                            }
+                        } else if (inviterId) {
+                            return { ...conversation, doesInviterExist: false }
+                        }
+
+                        // for groups get all of the info for the conversation users
                         const _conversationUsers = conversationUsers.filter(_userId => _userId !== userId).map(userId => {
                             const { _id, username, iconPath } = getUser(users, userId);
-                            return { _id, username, iconPath };
+                            return _id ? { _id, username, iconPath } : null
                         });
 
                         return {
                             ...conversation,
-                            conversationUsers: _conversationUsers,
+                            conversationUsers: _conversationUsers.filter(user => !!user),
                             messages: messages.map(message => {
                                 // if the message is not by the current user
                                 if (message.userId) {
                                     const { iconPath, username, blockedUsers } = getUser(users, message.userId) || {};
                                     const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
-                                    const isUserOfMessageBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(message.userId);
+                                    const isUserOfMessageBlocked = (currentUserBlockedUsers && username) && currentUserBlockedUsers.includes(message.userId);
                                     username && delete message.userId
-                                    return username ? { ...message, user: { iconPath, username, _id: message.userId }, isUserOfMessageBlocked, isCurrentUserBlocked } : message;
+                                    return username ? { ...message, user: { iconPath, username, _id: message.userId }, isUserOfMessageBlocked, isCurrentUserBlocked } : { doesUserExist: false, message };
                                 }
 
                                 // if no userId, then the message is by the current user
@@ -5934,7 +5955,7 @@ router.route("/users/:package").get((request, response) => {
                     });
 
                     _conversations = _conversations.map(conversation => {
-                        if (conversation.messages.length > 1) {
+                        if (conversation?.messages?.length > 1) {
                             return {
                                 ...conversation,
                                 messages: conversation.messages.sort(({ timeOfSend: messageATimeOfSend }, { timeOfSend: messageBTimeOfSend }) => {
@@ -5951,11 +5972,11 @@ router.route("/users/:package").get((request, response) => {
                     response.json(
                         {
                             conversations: _conversations.length > 1 ?
-                                _conversations.sort(({ messages: chatA }, { messages: chatB }) => {
-                                    const firstMessageTime = chatA[0].timeOfSend.miliSeconds;
-                                    const secondMessageTime = chatB[0].timeOfSend.miliSeconds;
+                                _conversations.sort((conversationA, conversationB) => {
+                                    const timeA = conversationA?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationA.timeOfSendInvitation.miliSeconds
+                                    const timeB = conversationB?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationB.timeOfSendInvitation.miliSeconds
 
-                                    return secondMessageTime - firstMessageTime;
+                                    return timeB - timeA;
                                 })
                                 :
                                 _conversations,
@@ -5970,10 +5991,10 @@ router.route("/users/:package").get((request, response) => {
 
             })
         })
-
-        // GOAL: for the one on one messaging, get the following values and store them into the recipient 
-
-        // GOAL: for each message insert user field which will contain the following: {_id: (the id of the user), username: (the username of the user), iconPath; (the icon path of the user)}
+    } else if (name === 'getBlockedUsers') {
+        User.findOne({ _id: userId }, { blockedUsers: 1 }).then(user => {
+            user?.blockedUsers?.length ? response.json({ blockedUserIds: user.blockedUsers.map(({ userId }) => userId) }) : response.json({ isEmpty: true });
+        })
     }
 }, error => {
     if (error) {
