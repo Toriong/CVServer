@@ -2606,31 +2606,6 @@ router.route("/users/updateInfo").post((request, response) => {
         };
         pullIdFromActivitiesDel(activityId, field, userId);
     } else if (name === 'saveMessage') {
-        // GOAL: save the following:
-        // 1) group messages
-        // 2) one-on-one messages
-
-        // NEW MESSAGE TO A NEW GROUP
-        // NOTES:
-        // send the conversation id to the server
-        // send the users that are part of the conversation
-        // send an array to the server of all of the user ids that are part of the group
-        // send the user that sent the messages to the server,
-        // send the object that contains the message
-        // if the group is new then send to the server: {isNewGroup: true}
-        // add the user to the array
-        // loop through the array
-        // for each userId in the array, use the id as the search query:
-        // push the following into the messages: {conversationId: (the id of the conversation), conversationUsers: [], messages: [(put the message here)]}
-        // if the current user in the loop is the user that sent the message, then for the object that contains the message, don't include the user Id
-
-        // GOAL: for a new group chat, the first message, for each user push the following in the conversation field: {conversationId: the id of the convo, conversationUsers: [all of the users that are part of the chat], adMins: [put the id of the user that staarted the chat], messages: [put the message here]}
-        // the above is pushed into the conversations field
-        // the user is found
-        // for each userId in the array that contains all of the users in the group chat, use it to find the user
-        // array now contains the user id of the sender
-        // push the id of the sender into the array of all of the users 
-        // the following is retrieved from the client: {the id of the sender, the ids of all of the users in the group convo, the message}
         const { userIdsInChat, conversationId, isGroup } = request.body;
         const { newMessage, newConversation } = data;
         if (newConversation) {
@@ -2754,20 +2729,79 @@ router.route("/users/updateInfo").post((request, response) => {
         }
     } else if (name === 'updateMessagesReadStatus') {
         const { conversationId } = request.body;
+        const { areMessagesRead } = data;
+        // GOAL: when the user updates 'areMessagesRead' status to true, then go through all of the messages that has isRead and change them to true 
+        if (areMessagesRead) {
+            User.findOne({ _id: userId }, { _id: 0, conversations: 1 }).then(user => {
+                const _conversations = user.conversations.map(conversation => {
+                    const { conversationId: _conversationId, messages } = conversation;
+                    if (_conversationId === conversationId) {
+                        return {
+                            ...conversation,
+                            messages: messages.map(message => {
+                                if (message?.isRead === false) {
+                                    return {
+                                        ...message,
+                                        isRead: true
+                                    }
+                                };
+
+                                return message;
+                            }),
+                            areMessagesRead: areMessagesRead
+                        }
+                    };
+
+                    return conversation;
+                });
+                User.updateOne(
+                    { _id: userId },
+                    {
+                        $set: {
+                            conversations: _conversations
+                        }
+                    },
+                    (error, numsAffected) => {
+                        if (error) {
+                            console.error('An error has occurred');
+                        }
+                        console.log("areMessagesRead's status has been updated to true, numsAffected: ", numsAffected)
+                    }
+                )
+            })
+        } else {
+            User.updateOne(
+                { _id: userId, "conversations.conversationId": conversationId },
+                {
+                    $set: {
+                        "conversations.$.areMessagesRead": areMessagesRead
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error("An error has occurred in updating areMessagesRead's status");
+                    }
+                    console.log("areMessagesRead's status has been updated to false, numsAffected: ", numsAffected)
+                }
+            )
+        }
+    } else if (name === 'inviteToGroupChat') {
+        const { conversationId, inviterId, invitationId } = data;
+        const { userIdToInvite } = request.body;
         User.updateOne(
-            { _id: userId, "conversations.conversationId": conversationId },
+            { _id: userIdToInvite },
             {
-                $set: {
-                    "conversations.$.areMessagesRead": data.areMessagesRead
+                $push: {
+                    conversations: { inviterId: inviterId, conversationId: conversationId, invitationId }
                 }
             },
             (error, numsAffected) => {
                 if (error) {
-                    console.error("An error has occurred in updating the read status of conversation, error: ", error)
-                    response.sendStatus(404);
+                    console.error("An error has occurred in sending invite to target user.");
+                    response.sendStatus(500)
                 }
-                console.log("'areMessagesRead' status has been updated: ", numsAffected);
-                response.json("The status of 'areMessagesRead' has been updated.")
+                console.log(`Invite sent to user with the id of ${userIdToInvite}. NumsAffected: `, numsAffected)
+                response.sendStatus(200);
             }
         )
     }
@@ -5430,7 +5464,7 @@ router.route("/users/:package").get((request, response) => {
     } else if (name === 'getReadingListNamesAndUsers') {
         User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 }).then(users => {
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-            let { readingLists, blockedUsers, activities } = currentUser;
+            let { readingLists, blockedUsers, activities, followers } = currentUser;
             const blockedUserIds = blockedUsers?.length && blockedUsers.map(({ userId }) => userId);
             const _users = users.map(user => {
                 if (user.readingList) {
@@ -5482,20 +5516,68 @@ router.route("/users/:package").get((request, response) => {
                                     };
                                 }
                             });
-                            const data = activities?.following?.length ? { readingLists, users: _users, following: activities.following } : { readingLists, users: _users }
+                            let data = { readingLists, users: _users };
+                            const _following = activities?.following?.length && activities.following.map(_user => {
+                                const user = getUser(users, _user.userId);
+                                const { iconPath, username } = user;
+                                return { ..._user, iconPath, username };
+                            })
+                            data = _following?.length ? { ...data, following: _following } : data;
+                            const _followers = followers.length && followers.map(_user => {
+                                const user = getUser(users, _user.userId);
+                                const { iconPath, username } = user;
+                                return { ..._user, iconPath, username };
+                            })
+                            data = _followers?.length ? { ...data, followers: _followers } : data;
                             response.json(data);
                         } else {
-                            const data = activities?.following?.length ? { readingLists, users: _users, following: activities.following } : { readingLists, users: _users }
+                            let data = { readingLists, users: _users };
+                            const _following = activities?.following?.length && activities.following.map(_user => {
+                                const user = getUser(users, _user.userId);
+                                const { iconPath, username } = user;
+                                return { ..._user, iconPath, username };
+                            })
+                            data = _following?.length ? { ...data, following: _following } : data;
+                            const _followers = followers.length && followers.map(_user => {
+                                const user = getUser(users, _user.userId);
+                                const { iconPath, username } = user;
+                                return { ..._user, iconPath, username };
+                            })
+                            data = followers?.length ? { ...data, followers: _followers } : data;
                             response.json(data);
                         }
 
                     });
                 } else {
-                    const data = activities?.following?.length ? { readingLists, users: _users, following: activities.following } : { readingLists, users: _users }
+                    let data = { readingLists, users: _users };
+                    const _following = activities?.following?.length && activities.following.map(_user => {
+                        const user = getUser(users, _user.userId);
+                        const { iconPath, username } = user;
+                        return { ..._user, iconPath, username };
+                    })
+                    data = _following?.length ? { ...data, following: _following } : data;
+                    const _followers = followers.length && followers.map(_user => {
+                        const user = getUser(users, _user.userId);
+                        const { iconPath, username } = user;
+                        return { ..._user, iconPath, username };
+                    })
+                    data = followers?.length ? { ...data, followers: _followers } : data;
                     response.json(data);
                 }
             } else {
-                const data = activities?.following?.length ? { following: activities.following, users: _users } : { users: _users };
+                let data = { users: _users };
+                const _following = activities?.following?.length && activities.following.map(_user => {
+                    const user = getUser(users, _user.userId);
+                    const { iconPath, username } = user;
+                    return { ..._user, iconPath, username };
+                })
+                data = _following?.length ? { ...data, following: _following } : data;
+                const _followers = followers.length && followers.map(_user => {
+                    const user = getUser(users, _user.userId);
+                    const { iconPath, username } = user;
+                    return { ..._user, iconPath, username };
+                })
+                data = followers?.length ? { ...data, followers: _followers } : data;
                 response.json(data);
             }
         })
@@ -5811,7 +5893,7 @@ router.route("/users/:package").get((request, response) => {
                     // get the user icon and the username for each user that the current user has messages 
                     // check the blocked status for each user that the current user has messaged
                     // check if the user that the current user has messaged has blocked the current user
-                    const _conversations = conversations.map(conversation => {
+                    let _conversations = conversations.map(conversation => {
                         const { userIdRecipient, messages, conversationUsers } = conversation;
 
                         totalNumUnreadMessages = messages.reduce((totalUnreadMessages, message) => {
@@ -5850,6 +5932,21 @@ router.route("/users/:package").get((request, response) => {
                             })
                         }
                     });
+
+                    _conversations = _conversations.map(conversation => {
+                        if (conversation.messages.length > 1) {
+                            return {
+                                ...conversation,
+                                messages: conversation.messages.sort(({ timeOfSend: messageATimeOfSend }, { timeOfSend: messageBTimeOfSend }) => {
+                                    const timeSortDeterminate = messageBTimeOfSend.miliSeconds - messageATimeOfSend.miliSeconds;
+                                    console.log('timeSortDeterminate: ', timeSortDeterminate);
+                                    return timeSortDeterminate;
+                                })
+                            };
+                        };
+
+                        return conversation;
+                    })
 
                     response.json(
                         {
