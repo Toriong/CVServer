@@ -1151,10 +1151,10 @@ router.route("/users/updateInfo").post((request, response) => {
         }
         // deleting the blocked user from the current user's followers list or just removing the user 
     } else if (name === "blockOrDelFollower") {
-        const { deletedUser, isBlocked, blockedAt, isFollowing } = request.body;
+        const { deletedUser, isBlocked, blockedAt, isFollowing, isAFollower } = request.body;
         let wasError;
         let wasRemovedOnly;
-        if (isBlocked && isFollowing) {
+        if (isBlocked && isFollowing && isAFollower) {
             console.log('user is being removed, blocked, and unFollowed.')
             User.updateOne(
                 { _id: userId },
@@ -1171,10 +1171,9 @@ router.route("/users/updateInfo").post((request, response) => {
                 },
                 (error, numsAffected) => {
                     if (error) {
-                        console.error('Error in deleting and blocking follower: ', error);
-                        wasError = true;
+                        console.error('Error in deleting and blocking target user: ', error);
                     } else {
-                        console.log('User was deleted as a follower and blocked, numsAffected: ', numsAffected);
+                        console.log('User was deleted as a follower and is no longer being followed by current user and is blocked, numsAffected: ', numsAffected);
                     };
                 }
             );
@@ -1189,19 +1188,55 @@ router.route("/users/updateInfo").post((request, response) => {
                 (error, numsAffected) => {
                     if (error) {
                         console.error('Error in deleting following: ', error);
-                        wasError = true;
                     } else {
-                        console.log('Current use was deleted as a follower from the blocked and deleted user, numsAffected: ', numsAffected);
+                        console.log('Current user was deleted as a follower from the blocked the blocked user. NumsAffected: ', numsAffected);
                     };
                 }
             );
-        } else if (isBlocked) {
-            console.log('user is being removed and blocked.')
+        } else if (isBlocked && isFollowing) {
+            console.log('user is being removed as a follower  and blocked.')
             User.updateOne(
                 { _id: userId },
                 {
                     $pull:
                     {
+                        "activities.following": { userId: deletedUser }
+                    },
+                    $push:
+                    {
+                        blockedUsers: { userId: deletedUser, blockedAt }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in deleting and blocking follower: ', error);
+                    } else {
+                        console.log('Target user is no longer being followed by current user and is blocked by current user, numsAffected: ', numsAffected);
+                    };
+                }
+            );
+            User.updateOne(
+                { _id: deletedUser },
+                {
+                    $pull:
+                    {
+                        followers: { userId: userId }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in deleting following: ', error);
+                    } else {
+                        console.log('Current use was deleted as a follower from the blocked and deleted user, numsAffected: ', numsAffected);
+                    };
+                }
+            );
+        } else if (isBlocked && isAFollower) {
+            console.log('user is being removed.')
+            User.updateOne(
+                { _id: userId },
+                {
+                    $pull: {
                         followers: { userId: deletedUser }
                     },
                     $push:
@@ -1212,59 +1247,47 @@ router.route("/users/updateInfo").post((request, response) => {
                 (error, numsAffected) => {
                     if (error) {
                         console.error('Error in deleting and blocking follower: ', error);
-                        wasError = true;
                     } else {
                         console.log('User was deleted as a follower and blocked, numsAffected: ', numsAffected);
                     };
                 }
             );
-        } else {
-            console.log('user is being removed.')
             User.updateOne(
-                { _id: userId },
+                { _id: deletedUser },
                 {
                     $pull:
                     {
-                        followers: { userId: deletedUser }
+                        "activities.following": { userId: userId }
+                    }
+                },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('Error in deleting following: ', error);
+                    } else {
+                        console.log('Update was successful. Current user was deleted as a follower from the targeted user profile. NumsAffected: ', numsAffected);
+                        // response.json('User was deleted as a follower and blocked.')
+                    };
+                }
+            )
+        } else {
+            User.updateOne(
+                { _id: userId },
+                {
+                    $push:
+                    {
+                        blockedUsers: { userId: deletedUser, blockedAt }
                     }
                 },
                 (error, numsAffected) => {
                     if (error) {
                         console.error('Error in deleting and blocking follower: ', error);
-                        wasError = true;
                     } else {
-                        console.log('User was deleted as a follower and blocked, numsAffected: ', numsAffected);
-                        wasRemovedOnly = true;
+                        console.log('Target user is blocked, numsAffected: ', numsAffected);
                     };
                 }
             );
         }
-        User.updateOne(
-            { _id: deletedUser },
-            {
-                $pull:
-                {
-                    "activities.following": { userId: userId }
-                }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.error('Error in deleting following: ', error);
-                    wasError = true;
-                    if (wasError) {
-                        response.status(404).send('Something went wrong, please try again later.')
-                    }
-                } else {
-                    console.log('Update was successful. User was deleted as a follower and blocked, numsAffected: ', numsAffected);
-                    // response.json('User was deleted as a follower and blocked.')
-                    response.json({
-                        message: wasRemovedOnly ? 'User was removed as a follower.' : 'User was deleted as a follower and blocked.',
-                        isBlocked: isBlocked,
-                        isFollowing: isFollowing
-                    })
-                };
-            }
-        )
+        response.sendStatus(200);
     } else if (name === 'unblockUser') {
         const { currentUserId, blockedUserId } = request.body;
         User.updateOne(
@@ -2613,25 +2636,16 @@ router.route("/users/updateInfo").post((request, response) => {
             console.log('hello there')
             // GOAL: check if the conversation is a one on one conversation. If so, then delete newConversation.recipient and add the field of userIdRecipient with the current user id
             const _newConversationForRecipient = newConversation.conversationUsers ?
-                { ...newConversation, messages: [newConversation.newMessage], areMessagesRead: false }
+                { ...newConversation, messages: [{ ...newConversation.newMessage }], areMessagesRead: false }
                 :
                 { ...newConversation, messages: [newConversation.newMessage], userIdRecipient: userId, areMessagesRead: false }
-
-
             const { userId: _userId, isRead, ..._newMessage } = newConversation.newMessage;
-
-
             const newConversationForSender = {
                 ...newConversation,
                 messages: [_newMessage]
             }
-            console.log({ newConversationForSender })
-
-
             delete _newConversationForRecipient.newMessage;
             delete newConversationForSender.newMessage;
-
-
 
             User.updateMany(
                 {
@@ -2792,7 +2806,7 @@ router.route("/users/updateInfo").post((request, response) => {
             { _id: userIdToInvite },
             {
                 $push: {
-                    conversations: { inviterId: inviterId, conversationToJoinId: conversationId, invitationId, timeOfSendInvitation: timeOfSend }
+                    conversations: { inviterId: inviterId, conversationToJoinId: conversationId, invitationId, timeOfSendInvitation: timeOfSend, isInvitationRead: false }
                 }
             },
             (error, numsAffected) => {
@@ -4277,6 +4291,7 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getUserActivities') {
+        // GOAL: do a bulk write to get all of the user's activities
         const { willGetLikes, willGetRepliesAndComments, willGetPosts, willGetReadingLists, willGetBlockedUsers, willGetFollowing, willGetSearchedHistory } = package;
         // GOAL: get the deleted post activities 
         User.findOne(
@@ -4418,7 +4433,7 @@ router.route("/users/:package").get((request, response) => {
                                                 };
                                             };
                                         });
-                                    };
+                                    }
                                 });
                                 likedPostIds && likedPostIds.forEach(postId => {
                                     // GOAL: do a check here if the user deleted the post from being tracked
@@ -4471,11 +4486,12 @@ router.route("/users/:package").get((request, response) => {
                                 // BRAIN DUMP:
                                 // go through each day activity, for each day activity, access the activities field, sort through that array according to the miliSeconds that is stored in the likedAt. Commence the sort only if the activities of that day exceeds one
                                 likes?.length ? response.json(likes) : response.json({ isEmpty: true });
-
                             })
                         } else {
                             response.json({ isEmpty: true });
                         }
+                    } else {
+                        response.json({ isEmpty: true });
                     }
                 })
             } else if (willGetLikes) {
@@ -5183,7 +5199,7 @@ router.route("/users/:package").get((request, response) => {
                                     const blockedUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
                                     if (blockedUser) {
                                         const { username, _id } = blockedUser;
-                                        const _blockedUser = { _id, username, blockedAt: { time, miliSeconds }, uIText: ` blocked ${username}.` };
+                                        const _blockedUser = { _id, username, blockedAt: { time, miliSeconds, date }, uIText: ` blocked ${username}.` };
                                         const _values = { dateOfActivity: date, newActivity: _blockedUser, activities: _blockedUsers, dateField: 'blockedOn', activityType: 'areBlockedUsers' };
                                         _blockedUsers = insertNewActivity(_values)
                                     }
@@ -5890,14 +5906,14 @@ router.route("/users/:package").get((request, response) => {
                 if (conversations) {
                     const currentUserBlockedUsers = !!blockedUsers?.length && blockedUsers.map(({ userId }) => userId)
                     let _conversations = conversations.map(conversation => {
-                        const { userIdRecipient, messages, conversationUsers, conversationToJoinId, inviterId } = conversation;
+                        const { userIdRecipient, messages, conversationUsers, conversationToJoinId, isInvitationRead, inviterId } = conversation;
 
                         totalNumUnreadMessages = messages ?
                             messages.reduce((totalUnreadMessages, message) => {
                                 return totalUnreadMessages + ((message?.isRead === false) ? 1 : 0);
                             }, totalNumUnreadMessages)
                             :
-                            inviterId ? totalNumUnreadMessages + 1 : totalNumUnreadMessages
+                            (isInvitationRead === false) ? totalNumUnreadMessages + 1 : totalNumUnreadMessages;
 
                         const recipient = userIdRecipient && getUser(users, userIdRecipient);
                         if (recipient && userIdRecipient) {
@@ -5916,12 +5932,25 @@ router.route("/users/:package").get((request, response) => {
                             const { iconPath, username, blockedUsers, conversations } = inviter
                             const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
                             const isInviterUserBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(inviterId);
-                            const { conversationId, groupName } = conversations.find(({ conversationId }) => conversationId === conversationToJoinId);
+                            const { conversationId, groupName, conversationUsers } = conversations.find(({ conversationId }) => conversationId === conversationToJoinId);
+                            let blockedUsersInChat = !!currentUserBlockedUsers?.length && conversationUsers.filter(_userId => currentUserBlockedUsers.includes(_userId));
+                            blockedUsersInChat = blockedUsersInChat?.length ?
+                                blockedUsersInChat.map(userId => {
+                                    return getUser(users, userId).username;
+                                })
+                                :
+                                blockedUsersInChat
 
+                            console.log('blockedUsersInChat')
+                            console.table(blockedUsersInChat)
+                            delete conversation.conversationToJoinId
+                            delete conversation.inviterId
                             return {
                                 ...conversation,
                                 isCurrentUserBlocked,
                                 isInviterUserBlocked,
+                                blockedUsersInChat: blockedUsersInChat,
+                                usersInConversation: conversationUsers,
                                 groupToJoin: { _id: conversationId, groupName },
                                 inviter: { _id: inviterId, username, iconPath }
                             }
@@ -5931,7 +5960,7 @@ router.route("/users/:package").get((request, response) => {
 
                         // for groups get all of the info for the conversation users
                         const _conversationUsers = conversationUsers.filter(_userId => _userId !== userId).map(userId => {
-                            const { _id, username, iconPath } = getUser(users, userId);
+                            const { _id, username, iconPath } = getUser(users, userId) || {};
                             return _id ? { _id, username, iconPath } : null
                         });
 
@@ -5973,8 +6002,8 @@ router.route("/users/:package").get((request, response) => {
                         {
                             conversations: _conversations.length > 1 ?
                                 _conversations.sort((conversationA, conversationB) => {
-                                    const timeA = conversationA?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationA.timeOfSendInvitation.miliSeconds
-                                    const timeB = conversationB?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationB.timeOfSendInvitation.miliSeconds
+                                    const timeA = conversationA?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationA?.timeOfSendInvitation?.miliSeconds
+                                    const timeB = conversationB?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationB?.timeOfSendInvitation?.miliSeconds
 
                                     return timeB - timeA;
                                 })
@@ -5995,6 +6024,118 @@ router.route("/users/:package").get((request, response) => {
         User.findOne({ _id: userId }, { blockedUsers: 1 }).then(user => {
             user?.blockedUsers?.length ? response.json({ blockedUserIds: user.blockedUsers.map(({ userId }) => userId) }) : response.json({ isEmpty: true });
         })
+    } else if (name === 'getConversationToJoin') {
+        const { inviterId, conversationId, usersInConversation } = package;
+        User.find({}, { conversations: 1, username: 1, iconPath: 1 }).then(users => {
+            const { iconPath, username, conversations } = getUser(users, inviterId) || {};
+            if (username) {
+                let targetConversation = conversations.find(({ conversationId: _conversationId }) => conversationId === _conversationId);
+                if (targetConversation) {
+                    const _conversationUsers = targetConversation.conversationUsers.map(userId => {
+                        const { _id, iconPath, username } = getUser(users, userId) || {};
+                        return _id ? { _id, iconPath, username } : null;
+                    }).filter(user => !!user);
+                    const _messages = targetConversation.messages.map(message => {
+                        // if the message is by the inviter
+                        if (!message.userId) {
+                            return {
+                                ...message,
+                                user: { _id: inviterId, username, iconPath },
+                                isRead: false
+                            }
+                            // if the message is not by the current user
+                        } else if (message?.userId !== userId) {
+                            const { _id, username, iconPath } = getUser(users, message.userId) || {}
+                            return _id ?
+                                {
+                                    ...message,
+                                    user: { _id, username, iconPath },
+                                    isRead: false
+                                }
+                                :
+                                {
+                                    ...message,
+                                    doesUserExist: false,
+                                    isRead: false
+                                }
+                        }
+
+                        // if the message is by the current user
+                        delete message.userId; delete message.isRead;
+                        return message;
+                    })
+                    targetConversation = {
+                        ...targetConversation,
+                        conversationUsers: _conversationUsers,
+                        messages: _messages,
+                        areMessagesRead: false
+                    }
+                    response.json({ targetConversation });
+
+                    // targetConversation = {
+                    //     ...targetConversation,
+                    //     conversationUsers: targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id)))
+                    // };
+                    // // console.log('invitationId: ', invitationId);
+                    // console.table(usersInConversation)
+                    // console.log('conversationId: ', conversationId)
+                    // User.bulkWrite(
+                    //     [
+                    //         {
+                    //             updateOne:
+                    //             {
+                    //                 "filter": { _id: userId },
+                    //                 "update": {
+                    //                     $pull: { conversations: { conversationToJoinId: conversationId } },
+                    //                 }
+                    //             }
+                    //         },
+                    //         {
+                    //             updateOne:
+                    //             {
+                    //                 "filter": { _id: userId },
+                    //                 "update": {
+                    //                     $push: { conversations: targetConversation },
+                    //                 }
+                    //             }
+                    //         },
+                    //         {
+                    //             updateMany:
+                    //             {
+                    //                 "filter": { _id: { $in: usersInConversation } },
+                    //                 "update": {
+                    //                     $push: { 'conversations.$[conversation].conversationUsers': userId },
+                    //                 },
+                    //                 "arrayFilters": [{ "conversation.conversationId": conversationId }]
+                    //             }
+                    //         }
+                    //     ]
+                    // ).catch((error, numsAffected) => {
+                    //     if (error) {
+                    //         console.error('An error has occurred in updating the conversations of the current user: ', error)
+                    //     }
+                    //     console.log('Conversation added and invite deleted, numsAffected: ', numsAffected);
+                    // })
+                }
+            } else {
+                response.sendStatus(503)
+            }
+        })
+    } else if (name === 'getSelectedUsers') {
+        const { userIds, userId: currentUserId } = package
+        User.find({ _id: { $in: [...userIds, currentUserId] } }, { username: 1, iconPath: 1, blockedUsers: 1 }).then(users => {
+            const { blockedUsers } = getUser(users, currentUserId);
+            const blockedUserIds = blockedUsers?.length && blockedUsers.map(({ userId }) => userId);
+            const _users = blockedUserIds ?
+                users.map(user => {
+                    const isBlocked = blockedUserIds.includes(user._id);
+                    return { ...user._doc, isBlocked };
+                })
+                :
+                users;
+
+            response.json(_users.filter(({ _id }) => JSON.stringify(_id) !== JSON.stringify(currentUserId)))
+        });
     }
 }, error => {
     if (error) {
