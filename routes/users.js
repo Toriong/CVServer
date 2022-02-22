@@ -2829,6 +2829,7 @@ router.route("/users/updateInfo").post((request, response) => {
         )
     } else if (name === 'deleteUserFromConversation') {
         const { conversationId, userToDeleteId, userIdsInGroup } = request.body;
+        console.log('request.body: ', request.body)
         User.bulkWrite(
             [
                 {
@@ -2836,8 +2837,17 @@ router.route("/users/updateInfo").post((request, response) => {
                     {
                         "filter": { _id: { $in: userIdsInGroup } },
                         "update": {
-                            $pull: { 'conversations.$[conversation].conversationUsers': userToDeleteId },
-                            $pull: { 'conversations.$[conversation].adMins': { userId: userToDeleteId } },
+                            $pull: { 'conversations.$[conversation].conversationUsers': userToDeleteId }
+                        },
+                        "arrayFilters": [{ "conversation.conversationId": conversationId }],
+                    }
+                },
+                {
+                    updateMany:
+                    {
+                        "filter": { _id: { $in: userIdsInGroup } },
+                        "update": {
+                            $pull: { 'conversations.$[conversation].adMins': { userId: userToDeleteId } }
                         },
                         "arrayFilters": [{ "conversation.conversationId": conversationId }],
                     }
@@ -2852,12 +2862,12 @@ router.route("/users/updateInfo").post((request, response) => {
                     }
                 }
             ]
-        ).catch(error => {
+        ).then(() => {
+            response.json('Update successful. User was deleted from chat.')
+        }).catch(error => {
             if (error) {
                 console.error('An error has occurred in deleting the user from the target documents: ', error);
                 response.sendStatus(503)
-            } else {
-                response.json('Update successful. User was deleted from chat.')
             }
         })
 
@@ -2965,121 +2975,147 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         )
     } else if (name === 'userLeavingGroup') {
-        // GOAL: 
-        // 1)target user will leave the target group by having the conversation deleted from the document,
-        // 2)for all users that are not the user that left group, update their document by deleting the target user from the adMins and the conversationUsers field
-        // 3) if the main admin left the group, then do the following:
-        // check if the new main admin is present in the admins array
-        // if so, then change the isMain status to true
-        // else, add the new main admin to the array
-
-        // CASE#1: THE MAIN ADMIN LEAVES THE GROUP
-        // GOAL:
-        // 1) for all users in the group add the new main admin to the admins array
-        // 2) delete the user that left the group from the 1) admins array and 2) conversationUsers 
-
         const { conversationId, usersInGroup, userThatLeftId, newMainAdminUserId } = request.body;
-        User.findOne({ _id: userThatLeftId }, { conversations: 1 }).then(({ conversations }) => {
-            const targetConversation = conversations.find(({ conversationId: _conversationId }) => _conversationId == conversationId)
-            const isAdmin = !!targetConversation.adMins.find(({ userId }) => userId === newMainAdminUserId);
-            if (isAdmin) {
-                console.log('Selected user to be the main admin of group is already an admin.')
-                User.bulkWrite(
-                    [
-                        {
-                            updateMany: {
-                                "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
-                                "update": {
-                                    $set: { 'conversations.$.adMins.$[admin].isMain': true },
-                                },
-                                "arrayFilters": [{ "admin.userId": newMainAdminUserId }]
-                            }
-                        },
-                        {
-                            updateMany: {
-                                "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
-                                "update": {
-                                    $pull: { 'conversations.$.conversationUsers': userThatLeftId }
-                                }
-                            }
-                        },
-                        {
-                            updateMany: {
-                                "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
-                                "update": {
-                                    $pull: { 'conversations.$.adMins': { userId: userThatLeftId } }
-                                }
-                            }
-                        },
-                        {
-                            updateOne:
+        if (newMainAdminUserId) {
+            User.findOne({ _id: userThatLeftId }, { conversations: 1 }).then(({ conversations }) => {
+                const targetConversation = conversations.find(({ conversationId: _conversationId }) => _conversationId == conversationId)
+                const isAdmin = !!targetConversation.adMins.find(({ userId }) => userId === newMainAdminUserId);
+                if (isAdmin) {
+                    console.log('Selected user to be the main admin of group is already an admin.')
+                    User.bulkWrite(
+                        [
                             {
-                                "filter": { _id: userThatLeftId },
-                                "update": {
-                                    $pull: { conversations: { conversationId: conversationId } },
+                                updateMany: {
+                                    "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
+                                    "update": {
+                                        $set: { 'conversations.$.adMins.$[admin].isMain': true },
+                                    },
+                                    "arrayFilters": [{ "admin.userId": newMainAdminUserId }]
                                 }
+                            },
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
+                                    "update": {
+                                        $pull: { 'conversations.$.conversationUsers': userThatLeftId }
+                                    }
+                                }
+                            },
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
+                                    "update": {
+                                        $pull: { 'conversations.$.adMins': { userId: userThatLeftId } }
+                                    }
+                                }
+                            },
+                            {
+                                updateOne:
+                                {
+                                    "filter": { _id: userThatLeftId },
+                                    "update": {
+                                        $pull: { conversations: { conversationId: conversationId } },
+                                    }
+                                }
+                            }
+                        ]
+                    ).catch(error => {
+                        if (error) {
+                            console.error('An error has occurred in deleting the user from target conversation, error message: ', error);
+                            response.sendStatus(503);
+                        } else {
+                            response.sendStatus(200);
+                            console.log('Conversations updated. User has left the targeted conversation.')
+                        }
+                    })
+                } else {
+                    const newMainAdmin = { userId: newMainAdminUserId, isMain: true };
+                    User.bulkWrite(
+                        [
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
+                                    "update": {
+                                        $push: { 'conversations.$.adMins': newMainAdmin },
+                                    }
+                                }
+                            },
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
+                                    "update": {
+                                        $pull: { 'conversations.$.conversationUsers': userThatLeftId }
+                                    }
+                                }
+                            },
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
+                                    "update": {
+                                        $pull: { 'conversations.$.adMins': { userId: userThatLeftId } }
+                                    }
+                                }
+                            },
+                            {
+                                updateOne:
+                                {
+                                    "filter": { _id: userThatLeftId },
+                                    "update": {
+                                        $pull: { conversations: { conversationId: conversationId } },
+                                    }
+                                }
+                            }
+                        ]
+                    ).catch(error => {
+                        if (error) {
+                            console.error('An error has occurred in deleting the user from target conversation, error message: ', error);
+                            response.sendStatus(503);
+                        } else {
+                            response.sendStatus(200);
+                            console.log('Conversations updated. User has left the targeted conversation.')
+                        }
+                    })
+                }
+            })
+        } else {
+            // GOAL: delete the user that left the group chat from the adMins array and the conversationUsers array for each user and for the user that left, delete the target conversation 
+            User.bulkWrite(
+                [
+                    {
+                        updateMany: {
+                            "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
+                            "update": {
+                                $pull: { 'conversations.$.adMins': { userId: userThatLeftId } },
                             }
                         }
-                    ]
-                ).catch(error => {
-                    if (error) {
-                        console.error('An error has occurred in deleting the user from target conversation, error message: ', error);
-                        response.sendStatus(503);
-                    } else {
-                        response.sendStatus(200);
-                        console.log('Conversations updated. User has left the targeted conversation.')
-                    }
-                })
-            } else {
-                const newMainAdmin = { userId: newMainAdminUserId, isMain: true };
-
-                User.bulkWrite(
-                    [
-                        {
-                            updateMany: {
-                                "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
-                                "update": {
-                                    $push: { 'conversations.$.adMins': newMainAdmin },
-                                }
-                            }
-                        },
-                        {
-                            updateMany: {
-                                "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
-                                "update": {
-                                    $pull: { 'conversations.$.conversationUsers': userThatLeftId }
-                                }
-                            }
-                        },
-                        {
-                            updateMany: {
-                                "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
-                                "update": {
-                                    $pull: { 'conversations.$.adMins': { userId: userThatLeftId } }
-                                }
-                            }
-                        },
-                        {
-                            updateOne:
-                            {
-                                "filter": { _id: userThatLeftId },
-                                "update": {
-                                    $pull: { conversations: { conversationId: conversationId } },
-                                }
+                    },
+                    {
+                        updateMany: {
+                            "filter": { _id: { $in: usersInGroup }, "conversations.conversationId": conversationId },
+                            "update": {
+                                $pull: { 'conversations.$.conversationUsers': userThatLeftId }
                             }
                         }
-                    ]
-                ).catch(error => {
-                    if (error) {
-                        console.error('An error has occurred in deleting the user from target conversation, error message: ', error);
-                        response.sendStatus(503);
-                    } else {
-                        response.sendStatus(200);
-                        console.log('Conversations updated. User has left the targeted conversation.')
+                    },
+                    {
+                        updateOne:
+                        {
+                            "filter": { _id: userThatLeftId },
+                            "update": {
+                                $pull: { conversations: { conversationId: conversationId } },
+                            }
+                        }
                     }
-                })
-            }
-        })
+                ]
+            ).catch(error => {
+                if (error) {
+                    console.error('An error has occurred in deleting the target user from the target conversation: ', error);
+                    response.sendStatus(503);
+                }
+                console.log('No error has occurred in deleting the user that left the conversation.')
+                response.sendStatus(200);
+            })
+        }
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -6343,7 +6379,7 @@ router.route("/users/:package").get((request, response) => {
 
                     targetConversation = {
                         ...targetConversation,
-                        conversationUsers: targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id)))
+                        conversationUsers: [...targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id))), userId]
                     };
                     // console.log('invitationId: ', invitationId);
                     // console.table(usersInConversation)
@@ -6385,6 +6421,9 @@ router.route("/users/:package").get((request, response) => {
                         }
                         console.log('Conversation added and invite deleted');
                     })
+                } else {
+                    console.log("The sender of the invitation had left the conversation.")
+                    response.sendStatus(503)
                 }
             } else {
                 response.sendStatus(503)
