@@ -2631,6 +2631,7 @@ router.route("/users/updateInfo").post((request, response) => {
     } else if (name === 'saveMessage') {
         const { userIdsInChat, conversationId, isGroup } = request.body;
         const { newMessage, newConversation } = data;
+        // CASE
         if (newConversation) {
             console.log('request.body: ', request.body);
             console.log('hello there')
@@ -2742,60 +2743,47 @@ router.route("/users/updateInfo").post((request, response) => {
             )
         }
     } else if (name === 'updateMessagesReadStatus') {
-        const { conversationId } = request.body;
+        const { conversationId, invitationId } = request.body;
         const { areMessagesRead } = data;
+        const searchQueryForChat = conversationId ? { "conversations.conversationId": conversationId } : { "conversations.invitationId": invitationId }
+        const updates = conversationId ?
+            {
+                "conversations.$.messages.$[message].isRead": true,
+                "conversations.$.areMessagesRead": true
+            }
+            :
+            {
+                "conversations.$.isInvitationRead": true
+            }
+        const arrayFilters = conversationId ? [{ "message.isRead": { $exists: true } }] : [];
+
         // GOAL: when the user updates 'areMessagesRead' status to true, then go through all of the messages that has isRead and change them to true 
         if (areMessagesRead) {
-            User.findOne({ _id: userId }, { _id: 0, conversations: 1 }).then(user => {
-                const _conversations = user.conversations.map(conversation => {
-                    const { conversationId: _conversationId, messages } = conversation;
-                    if (_conversationId === conversationId) {
-                        return {
-                            ...conversation,
-                            messages: messages.map(message => {
-                                if (message?.isRead === false) {
-                                    return {
-                                        ...message,
-                                        isRead: true
-                                    }
-                                };
-
-                                return message;
-                            }),
-                            areMessagesRead: areMessagesRead
-                        }
-                    };
-
-                    return conversation;
-                });
-                User.updateOne(
-                    { _id: userId },
-                    {
-                        $set: {
-                            conversations: _conversations
-                        }
-                    },
-                    (error, numsAffected) => {
-                        if (error) {
-                            console.error('An error has occurred');
-                        }
-                        console.log("areMessagesRead's status has been updated to true, numsAffected: ", numsAffected)
-                    }
-                )
-            })
-        } else {
             User.updateOne(
-                { _id: userId, "conversations.conversationId": conversationId },
-                {
-                    $set: {
-                        "conversations.$.areMessagesRead": areMessagesRead
+                { _id: userId, ...searchQueryForChat },
+                { $set: updates },
+                { arrayFilters: arrayFilters },
+                (error, numsAffected) => {
+                    if (error) {
+                        console.error('An error has occurred in updating the read status of target conversations, error: ', error);
+                        response.sendStatus(500);
                     }
-                },
+                    console.log("areMessagesRead's status has been updated to true, numsAffected: ", numsAffected)
+                    response.sendStatus(200)
+                }
+            )
+        } else {
+            const updatesObj = conversationId ? { "conversations.$.areMessagesRead": areMessagesRead } : { "conversations.$.isInvitationRead": areMessagesRead };
+            User.updateOne(
+                { _id: userId, ...searchQueryForChat },
+                { $set: updatesObj },
                 (error, numsAffected) => {
                     if (error) {
                         console.error("An error has occurred in updating areMessagesRead's status");
+                        response.sendStatus(500);
                     }
                     console.log("areMessagesRead's status has been updated to false, numsAffected: ", numsAffected)
+                    response.sendStatus(200)
                 }
             )
         }
@@ -2815,6 +2803,163 @@ router.route("/users/updateInfo").post((request, response) => {
                     response.sendStatus(500)
                 }
                 console.log(`Invite sent to user with the id of ${userIdToInvite}. NumsAffected: `, numsAffected)
+                response.sendStatus(200);
+            }
+        )
+    } else if (name === 'deleteChat') {
+        const { invitationId, conversationId, didAdminDelConversation } = request.body;
+        const deletionObj = invitationId ? { invitationId: invitationId } : { conversationId: conversationId }
+
+        // GOAL: if didAdminDelConversation is true, then for all users that are in group, delete the conversation from their profile/document
+        User.updateOne(
+            { _id: userId },
+            {
+                $pull: {
+                    conversations: deletionObj
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error("An error has occurred in deleting the group message invite, error: ", error);
+                    response.sendStatus(500)
+                }
+                console.log(`${invitationId ? "Invite" : "Conversation"} was deleted. NumsAffected: `, numsAffected)
+                response.sendStatus(200);
+            }
+        )
+    } else if (name === 'deleteUserFromConversation') {
+        const { conversationId, kickedUserId, userIdsInGroup } = request.body;
+        User.bulkWrite(
+            [
+                {
+                    updateMany:
+                    {
+                        "filter": { _id: { $in: userIdsInGroup } },
+                        "update": {
+                            $pull: { 'conversations.$[conversation].conversationUsers': kickedUserId },
+                        },
+                        "arrayFilters": [{ "conversation.conversationId": conversationId }],
+                    }
+                },
+                {
+                    updateOne:
+                    {
+                        "filter": { _id: kickedUserId },
+                        "update": {
+                            $pull: { conversations: { conversationId: conversationId } },
+                        }
+                    }
+                }
+            ]
+        ).catch(error => {
+            if (error) {
+                console.error('An error has occurred in deleting the kicked user from target documents: ', error);
+                response.sendStatus(503)
+            } else {
+                response.json('Update successful. User was kicked from chat.')
+            }
+        })
+
+    } else if (name === 'adMinChange') {
+        // GOAL: insert the new admin into the adMins array of the selected conversation 
+
+        const { userIdsInGroup, conversationId, newMainAdminUserId, willBeAnAdmin, type, deletedAdminUserId, newAdminUserId } = request.body;
+        if ((type === 'addNewAdmin') || (type === 'deleteAdmin')) {
+            const pushUpdateObj = (type === 'addNewAdmin') ?
+                { $push: { 'conversations.$.adMins': { userId: newAdminUserId, isMain: false } } }
+                :
+                { $pull: { 'conversations.$.adMins': { userId: deletedAdminUserId } } }
+            User.updateMany(
+                { _id: { $in: [...userIdsInGroup, userId] }, "conversations.conversationId": conversationId },
+                pushUpdateObj,
+                (error, numsAffected) => {
+                    if (error) {
+                        const errorMessage = (type === 'addNewAdmin') ? 'An error has occurred in adding new admin to target conversation: ' : 'An error has occurred in deleting target admin from target conversation: '
+                        console.error(errorMessage, error);
+                    };
+                    const numsAffectedMessage = (type === 'addNewAdmin') ? 'New admin added, numsAffected:  ' : 'Admin deleted, numsAffected: '
+                    console.log(numsAffectedMessage, numsAffected)
+                }
+            )
+        } else {
+            User.findOne({ _id: userId, "conversations.conversationId": conversationId }, { conversations: 1 }).then(user => {
+                const targetConversation = user.conversations.find(({ conversationId: _conversationId }) => conversationId === _conversationId)
+                const isAlreadyAnAdmin = targetConversation.adMins.map(({ userId }) => userId).includes(newMainAdminUserId);
+                console.log('isAlreadyAnAdmin: ', isAlreadyAnAdmin);
+                const arrayFilters = willBeAnAdmin ? [{ "adMin.userId": userId }] : [];
+                const updateObj = willBeAnAdmin ? { $set: { 'conversations.$.adMins.$[adMin].isMain': false } } : { $pull: { 'conversations.$.adMins': { userId: userId } } }
+                if (isAlreadyAnAdmin) {
+                    User.bulkWrite(
+                        [
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: [...userIdsInGroup, userId] }, "conversations.conversationId": conversationId },
+                                    "update": {
+                                        $set: { 'conversations.$.adMins.$[adMin].isMain': true },
+                                    },
+                                    "arrayFilters": [{ "adMin.userId": newMainAdminUserId }],
+                                }
+                            },
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: [...userIdsInGroup, userId] }, "conversations.conversationId": conversationId },
+                                    "update": updateObj,
+                                    "arrayFilters": arrayFilters,
+                                }
+                            }
+                        ]
+                    ).catch(error => {
+                        if (error) {
+                            console.error('An error has occurred in updating group conversation for users in group: ', error)
+                        } else {
+                            response.sendStatus(200)
+                        }
+                    })
+                } else {
+                    const newMainAdmin = { userId: newMainAdminUserId, isMain: true };
+                    User.bulkWrite(
+                        [
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: [...userIdsInGroup, userId] }, "conversations.conversationId": conversationId },
+                                    "update": {
+                                        $push: { 'conversations.$.adMins': newMainAdmin },
+                                    }
+                                }
+                            },
+                            {
+                                updateMany: {
+                                    "filter": { _id: { $in: [...userIdsInGroup, userId] }, "conversations.conversationId": conversationId },
+                                    "update": updateObj,
+                                    "arrayFilters": arrayFilters,
+                                }
+                            }
+                        ]
+                    ).catch(error => {
+                        if (error) {
+                            console.error('An error has occurred in updating group conversation for users in group: ', error)
+                        } else {
+                            response.sendStatus(200)
+                        }
+                    })
+                }
+            })
+        }
+    } else if (name === 'saveNameChange') {
+        const { groupName, conversationId, userIds } = request.body;
+        User.updateMany(
+            { _id: { $in: userIds }, "conversations.conversationId": conversationId },
+            {
+                $set: {
+                    "conversations.$.groupName": groupName
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('An error has occurred in updating the group name of the conversation: ', error);
+                    response.sendStatus(503);
+                };
+                console.log('Name of group has changed, numsAffected: ', numsAffected);
                 response.sendStatus(200);
             }
         )
@@ -5921,7 +6066,7 @@ router.route("/users/:package").get((request, response) => {
                             const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
                             const isUserOfMessageBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(userIdRecipient);
                             delete conversation.userIdRecipient;
-
+                            console.log("conversation: ", conversation);
                             return { ...conversation, recipient: { _id: userIdRecipient, iconPath, username }, isUserOfMessageBlocked, isCurrentUserBlocked }
                         } else if (userIdRecipient) {
                             return { ...conversation, doesRecipientExist: false };
@@ -5950,7 +6095,10 @@ router.route("/users/:package").get((request, response) => {
                                 isCurrentUserBlocked,
                                 isInviterUserBlocked,
                                 blockedUsersInChat: blockedUsersInChat,
-                                usersInConversation: conversationUsers,
+                                usersInConversation: conversationUsers.map(userId => {
+                                    const { _id, username, iconPath } = getUser(users, userId) || {};
+                                    return { _id, username, iconPath };
+                                }),
                                 groupToJoin: { _id: conversationId, groupName },
                                 inviter: { _id: inviterId, username, iconPath }
                             }
@@ -5966,6 +6114,7 @@ router.route("/users/:package").get((request, response) => {
 
                         return {
                             ...conversation,
+                            isGroup: true,
                             conversationUsers: _conversationUsers.filter(user => !!user),
                             messages: messages.map(message => {
                                 // if the message is not by the current user
@@ -6072,50 +6221,50 @@ router.route("/users/:package").get((request, response) => {
                     }
                     response.json({ targetConversation });
 
-                    // targetConversation = {
-                    //     ...targetConversation,
-                    //     conversationUsers: targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id)))
-                    // };
-                    // // console.log('invitationId: ', invitationId);
-                    // console.table(usersInConversation)
-                    // console.log('conversationId: ', conversationId)
-                    // User.bulkWrite(
-                    //     [
-                    //         {
-                    //             updateOne:
-                    //             {
-                    //                 "filter": { _id: userId },
-                    //                 "update": {
-                    //                     $pull: { conversations: { conversationToJoinId: conversationId } },
-                    //                 }
-                    //             }
-                    //         },
-                    //         {
-                    //             updateOne:
-                    //             {
-                    //                 "filter": { _id: userId },
-                    //                 "update": {
-                    //                     $push: { conversations: targetConversation },
-                    //                 }
-                    //             }
-                    //         },
-                    //         {
-                    //             updateMany:
-                    //             {
-                    //                 "filter": { _id: { $in: usersInConversation } },
-                    //                 "update": {
-                    //                     $push: { 'conversations.$[conversation].conversationUsers': userId },
-                    //                 },
-                    //                 "arrayFilters": [{ "conversation.conversationId": conversationId }]
-                    //             }
-                    //         }
-                    //     ]
-                    // ).catch((error, numsAffected) => {
-                    //     if (error) {
-                    //         console.error('An error has occurred in updating the conversations of the current user: ', error)
-                    //     }
-                    //     console.log('Conversation added and invite deleted, numsAffected: ', numsAffected);
-                    // })
+                    targetConversation = {
+                        ...targetConversation,
+                        conversationUsers: targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id)))
+                    };
+                    // console.log('invitationId: ', invitationId);
+                    console.table(usersInConversation)
+                    console.log('conversationId: ', conversationId)
+                    User.bulkWrite(
+                        [
+                            {
+                                updateOne:
+                                {
+                                    "filter": { _id: userId },
+                                    "update": {
+                                        $pull: { conversations: { conversationToJoinId: conversationId } },
+                                    }
+                                }
+                            },
+                            {
+                                updateOne:
+                                {
+                                    "filter": { _id: userId },
+                                    "update": {
+                                        $push: { conversations: targetConversation },
+                                    }
+                                }
+                            },
+                            {
+                                updateMany:
+                                {
+                                    "filter": { _id: { $in: usersInConversation } },
+                                    "update": {
+                                        $push: { 'conversations.$[conversation].conversationUsers': userId },
+                                    },
+                                    "arrayFilters": [{ "conversation.conversationId": conversationId }]
+                                }
+                            }
+                        ]
+                    ).catch((error, numsAffected) => {
+                        if (error) {
+                            console.error('An error has occurred in updating the conversations of the current user: ', error)
+                        }
+                        console.log('Conversation added and invite deleted, numsAffected: ', numsAffected);
+                    })
                 }
             } else {
                 response.sendStatus(503)
@@ -6134,7 +6283,8 @@ router.route("/users/:package").get((request, response) => {
                 :
                 users;
 
-            response.json(_users.filter(({ _id }) => JSON.stringify(_id) !== JSON.stringify(currentUserId)))
+            console.log('_users: ', _users);
+            response.json(_users)
         });
     }
 }, error => {
