@@ -727,21 +727,17 @@ router.route("/users/updateInfo").post((request, response) => {
             if (_repliesActivity) {
                 const targetPost = _repliesActivity.find(({ postId: _postId }) => _postId === postId);
                 if (targetPost) {
-                    console.log('sup')
                     const didRepliedToComment = targetPost.commentsRepliedTo.includes(commentId);
                     !didRepliedToComment ? addUserReplyActivity(request.body, response, true) : console.log('Replied to comment already.')
                 } else {
-                    console.log('beans')
                     addUserReplyActivity(request.body, response);
                 }
             } else {
-                console.log('hello');
                 addUserReplyActivity(request.body, response);
             }
         })
     } else if (name === "userLikedPost") {
         // GOAL: have user like activity be only sent to the server once
-        console.log("request.body", request.body);
         const { userId } = request.body;
         const { postId } = data;
         User.findOne({ _id: userId }, { 'activities.likes.likedPostIds': 1, _id: 0 }).then(result => {
@@ -1009,7 +1005,6 @@ router.route("/users/updateInfo").post((request, response) => {
         console.log('request.body: ', request.body);
         const { signedInUserId: userId, wasListCreated, listName: title, isPrivate, newPostSaved } = request.body;
         if ((isPrivate || isPrivate === false) && wasListCreated) {
-            // how to allow duplicate fields in MONGODB?
             const { savedAt: listCreatedAt } = newPostSaved;
             User.updateOne({ _id: userId },
                 {
@@ -2631,23 +2626,19 @@ router.route("/users/updateInfo").post((request, response) => {
     } else if (name === 'saveMessage') {
         const { userIdsInChat, conversationId, isGroup } = request.body;
         const { newMessage, newConversation } = data;
-        // CASE
         if (newConversation) {
-            console.log('request.body: ', request.body);
-            console.log('hello there')
             // GOAL: check if the conversation is a one on one conversation. If so, then delete newConversation.recipient and add the field of userIdRecipient with the current user id
             const _newConversationForRecipient = newConversation.conversationUsers ?
-                { ...newConversation, messages: [{ ...newConversation.newMessage }], areMessagesRead: false }
+                { ...newConversation, messages: [{ ...newConversation.newMessage }], areMessagesRead: false, conversationId }
                 :
-                { ...newConversation, messages: [newConversation.newMessage], userIdRecipient: userId, areMessagesRead: false }
+                { ...newConversation, messages: [newConversation.newMessage], userIdRecipient: userId, areMessagesRead: false, conversationId }
             const { userId: _userId, isRead, ..._newMessage } = newConversation.newMessage;
-            const newConversationForSender = {
-                ...newConversation,
-                messages: [_newMessage]
-            }
+            const newConversationForSender = { ...newConversation, messages: [_newMessage], conversationId };
+            console.log('newConversationForSender: ', newConversationForSender)
             delete _newConversationForRecipient.newMessage;
             delete newConversationForSender.newMessage;
 
+            // REFACTOR: use a bulkWrite to update user's messages
             User.updateMany(
                 {
                     _id: { $in: userIdsInChat }
@@ -2677,7 +2668,7 @@ router.route("/users/updateInfo").post((request, response) => {
                             (error, numsAffected) => {
                                 if (error) {
                                     console.error('An error has occurred in saving new conversation, ', error);
-                                    response.sendStatus(404);
+                                    response.sendStatus(503);
                                 } else {
                                     console.log('Message and conversation saved for the sender of the message, new conversation started. NumsAffected: ', numsAffected)
                                     response.sendStatus(200);
@@ -2691,13 +2682,20 @@ router.route("/users/updateInfo").post((request, response) => {
             // GOAL: find the conversation that the user replied to and push the newMessage into the messages field for that conversation 
             console.log('userIdsInChat: ', userIdsInChat);
             console.log({ conversationId })
-            const _newMessage = isGroup ?
+            let _newMessage = isGroup ?
                 { ...newMessage, userId: newMessage.user._id }
                 :
                 newMessage;
 
-            delete _newMessage.user
+            if (!isGroup) {
+                _newMessage = {
+                    ..._newMessage,
+                    userId: _newMessage.user._id
+                }
+                delete _newMessage.user
+            }
 
+            // use bulkWrite
             User.updateMany(
                 {
                     _id: { $in: userIdsInChat },
@@ -2731,7 +2729,7 @@ router.route("/users/updateInfo").post((request, response) => {
                             (error, numsAffected) => {
                                 if (error) {
                                     console.error('An error has occurred in saving new message, ', error);
-                                    response.sendStatus(404);
+                                    response.sendStatus(503);
                                 } else {
                                     console.log('Message saved for the sender of the message. NumsAffected: ', numsAffected)
                                     response.sendStatus(200);
@@ -3116,6 +3114,28 @@ router.route("/users/updateInfo").post((request, response) => {
                 response.sendStatus(200);
             })
         }
+    } else if (name === 'deleteMessages') {
+        // GOAL: find the target conversation and insert a empty array for the field of messages
+        const { conversationId } = request.body;
+        User.updateOne(
+            { _id: userId, 'conversations.conversationId': conversationId },
+            {
+                $set: {
+                    "conversations.$.messages": [],
+                },
+                $unset: {
+                    "conversations.$.areMessagesRead": ""
+                }
+            },
+            (error, numsAffected) => {
+                if (error) {
+                    console.error('An error has occurred in clearing messages of current user: ', error);
+                    response.sendStatus(503);
+                }
+                console.log('The messages for the target conversation has been deleted, numsAffected: ', numsAffected);
+                response.sendStatus(200);
+            }
+        )
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -3265,7 +3285,7 @@ router.route("/users/:package").get((request, response) => {
         console.log("user wants to sign in")
         User.findOne({ username: username }).then(user => {
             if (user?.password === passwordAttempt) {
-                const { username, firstName, lastName, iconPath, _id, readingLists, topics, isUserNew, bio, socialMedia, blockedUsers, publishedDrafts, activities } = user;
+                const { username, firstName, lastName, iconPath, _id, readingLists, topics, isUserNew, bio, socialMedia, blockedUsers, publishedDrafts, activities, followers } = user;
                 console.log('password matches user signed backed in.')
                 console.log("user signed back in")
                 const following = activities?.following;
@@ -3288,6 +3308,9 @@ router.route("/users/:package").get((request, response) => {
                 };
                 if (following?.length) {
                     user_ = (user_ && Object.keys(user_).length) ? { ...user_, following } : { following }
+                };
+                if (followers?.length) {
+                    user_ = (user_ && Object.keys(user_).length) ? { ...user_, followers } : { followers }
                 }
                 response.json({
                     message: `Welcome back ${username}!`,
@@ -3419,7 +3442,36 @@ router.route("/users/:package").get((request, response) => {
                         if (activities?.following?.length) {
                             user = user ? { ...user, following: activities.following } : { following: activities.following };
                         };
-                        user ? response.json(user) : response.json({ isEmpty: true })
+                        if (user) {
+                            // GOAL: get the icon and username of the targeted user:
+                            const { following, followers } = user;
+                            let userIds;
+                            if (following?.length) {
+                                userIds = following.map(({ userId }) => userId);
+                            }
+                            if (followers?.length) {
+                                userIds = userIds ? [...userIds, ...followers.map(({ userId }) => userId)] : userIds;
+                            };
+
+                            User.find({ _id: { $in: userIds } }, { _id: 1, iconPath: 1, username: 1 }).then(users => {
+                                let _following; let _followers;
+                                if (following?.length) {
+                                    _following = following.map(user => {
+                                        const targetUser = getUser(users, user.userId);
+                                        return { ...user._doc, ...targetUser._doc };
+                                    });
+                                };
+                                if (followers?.length) {
+                                    _followers = followers.map(user => {
+                                        const targetUser = getUser(users, user.userId);
+                                        return { ...user._doc, ...targetUser._doc };
+                                    })
+                                };
+                                response.json({ followers: _followers, following: _following });
+                            })
+                        } else {
+                            response.json({ isEmpty: true })
+                        }
                     } else {
                         response.json({ isEmpty: true })
                     }
@@ -4261,7 +4313,7 @@ router.route("/users/:package").get((request, response) => {
                                         _postLikes.forEach(post => {
                                             const { postId, title, userIdsOfLikes } = post;
                                             if (userIdsOfLikes.length) {
-                                                userIdsOfLikes.forEach(userOfLike => { userOfLike.username && _postLikeNotifications.push({ isPostLike: true, postId, title, notification: userOfLike }); });
+                                                userIdsOfLikes.forEach(userOfLike => { userOfLike?.username && _postLikeNotifications.push({ isPostLike: true, postId, title, notification: userOfLike }); });
                                             };
                                         });
                                         _postLikeNotifications.length ? response.json({ postLikes: _postLikeNotifications }) : response.json({ isEmpty: true });
@@ -4695,9 +4747,7 @@ router.route("/users/:package").get((request, response) => {
 
                                 likedComments && likedComments.forEach(({ postIdOfComment, likedCommentIds }) => {
                                     const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postIdOfComment));
-                                    console.log({ targetPost })
                                     if (targetPost) {
-                                        // console.log('targetPost: ', targetPost);
                                         const { comments, title, _id: postId, authorId: postAuthorId } = targetPost;
                                         const isPostByUser = postAuthorId === userId;
                                         const postAuthor = !isPostByUser && usernames.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postAuthorId));
@@ -4739,9 +4789,7 @@ router.route("/users/:package").get((request, response) => {
                                     const targetPost = !isPostNotTracked && posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId));
                                     const isPostByUser = !isPostNotTracked && (targetPost?.authorId === userId);
                                     const isPostAuthorBlocked = (blockedUserIds?.length && !isPostNotTracked && targetPost) && blockedUserIds.includes(targetPost.authorId);
-                                    console.log('targetPost: ', targetPost);
                                     if (!isPostNotTracked && targetPost && !isPostAuthorBlocked) {
-                                        console.log('wtf')
                                         const { title, authorId, userIdsOfLikes } = targetPost;
                                         const userOfLike = userIdsOfLikes.length && userIdsOfLikes.find(({ userId: _userId }) => _userId === userId);
                                         if (userOfLike) {
@@ -5459,8 +5507,8 @@ router.route("/users/:package").get((request, response) => {
             } else if (willGetBlockedUsers && result?.blockedUsers?.length) {
                 const insertNewActivity = values => {
                     const { dateOfActivity, newActivity, activities, dateField, activityType } = values;
-                    let _activities;
-                    const doesDateExist = activities?.map(activity => activity[dateField])?.includes(dateOfActivity);
+                    let _activities = activities;
+                    const doesDateExist = _activities?.map(activity => activity[dateField])?.includes(dateOfActivity);
                     if (doesDateExist) {
                         _activities = activities.map(activity => {
                             if (activity[dateField] === dateOfActivity) {
@@ -5486,7 +5534,6 @@ router.route("/users/:package").get((request, response) => {
                         { _id: { $in: blockedUserIds } },
                         { username: 1 }
                     ).then(users => {
-                        console.log('users: ', users);
                         if (users.length) {
                             let _blockedUsers;
                             blockedUsers.forEach(user => {
@@ -5494,7 +5541,7 @@ router.route("/users/:package").get((request, response) => {
                                 const isActivityDeleted = delBlockedUserActivityIds && delBlockedUserActivityIds.includes(userId);
                                 if (!isActivityDeleted) {
                                     const { date, time, miliSeconds } = blockedAt;
-                                    const blockedUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                                    const blockedUser = getUser(users, userId);
                                     if (blockedUser) {
                                         const { username, _id } = blockedUser;
                                         const _blockedUser = { _id, username, blockedAt: { time, miliSeconds, date }, uIText: ` blocked ${username}.` };
@@ -5504,7 +5551,15 @@ router.route("/users/:package").get((request, response) => {
                                 };
                             });
                             _blockedUsers = _blockedUsers.map(user => { return { ...user, activities: user.activities.reverse() } });
-                            _blockedUsers ? response.json(_blockedUsers) : response.json({ isEmpty: true })
+                            console.log('_blockedUsers: ', _blockedUsers);
+                            _blockedUsers ?
+                                response.json((_blockedUsers.length > 1) ? _blockedUsers.sort(({ blockedOn: blockedOnDayA }, { blockedOn: blockedOnDayB }) => {
+                                    if (blockedOnDayA > blockedOnDayB) return -1
+                                    if (blockedOnDayA < blockedOnDayB) return 1
+                                    return 0
+                                }) : _blockedUsers)
+                                :
+                                response.json({ isEmpty: true });
                         } else {
                             response.json({ isEmpty: true })
                         }
@@ -5522,9 +5577,11 @@ router.route("/users/:package").get((request, response) => {
                     { _id: { $in: userIds } },
                     { username: 1 }
                 ).then(users => {
+                    // GOAL: group activities based on their dates.
                     const insertNewActivity = values => {
                         const { dateOfActivity, newActivity, activities, dateField, activityType } = values;
-                        let _activities;
+                        console.log("activities: ", activities);
+                        let _activities = activities;
                         const doesDateExist = activities?.map(activity => activity[dateField])?.includes(dateOfActivity);
                         if (doesDateExist) {
                             _activities = activities.map(activity => {
@@ -5553,11 +5610,13 @@ router.route("/users/:package").get((request, response) => {
                             if (!isActivityDeleted) {
                                 const { userId: _userId, followedUserAt } = user;
                                 const targetUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(_userId));
+                                console.log('targetUser: ', targetUser)
                                 if (targetUser) {
                                     const { date, time, miliSeconds } = followedUserAt;
                                     const following = { _id: _userId, followedAt: { miliSeconds, time }, username: targetUser.username, uIText: ` followed ${targetUser.username}.` }
                                     const _values = { dateOfActivity: date, newActivity: following, activities: followingUsers, dateField: 'followedOn', activityType: 'isFollowing' }
                                     followingUsers = insertNewActivity(_values);
+                                    console.log('followerUsers: ', followingUsers)
                                 }
                             };
                         });
@@ -5684,11 +5743,12 @@ router.route("/users/:package").get((request, response) => {
         User.find({}, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(users => {
             const userBeingViewed = !isOnOwnProfile && users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+            console.log('userId: ', userId)
+            console.log('currentUser: ', currentUser)
             const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
             const isViewingDiffUserReadingLists = (!isOnOwnProfile && !isOnSearchPage && !isViewingPost)
             console.log('isViewingDiffUserReadingLists: ', isViewingDiffUserReadingLists);
             if (isOnOwnProfile || userBeingViewed || isViewingPost || isOnSearchPage) {
-                console.log('yo meng, sup')
                 // if the user is viewing a different user's reading list, then get the reading list info for that user
                 let { _id, readingLists, iconPath, activities, followers } = (isOnOwnProfile || isViewingPost || isOnSearchPage) ? currentUser : userBeingViewed;
                 const currentUserReadingLists = (!isOnOwnProfile && !isViewingPost && !isOnSearchPage) && currentUser.readingLists
@@ -5696,7 +5756,6 @@ router.route("/users/:package").get((request, response) => {
                 let listsToDel;
                 let postIds = [];
                 if (readingLists) {
-                    console.log('washington');
                     let listNames = Object.keys(readingLists);
                     // when viewing a diff user, delete all of the lists that are private
                     (!isOnOwnProfile && !isViewingPost && !isOnSearchPage) && listNames.forEach(listName => {
@@ -5718,16 +5777,20 @@ router.route("/users/:package").get((request, response) => {
                         (!isOnOwnProfile && currentUserListNames && !isOnSearchPage) && getPostIds(currentUserReadingLists, currentUserListNames, postIds);
                         BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { publicationDate: 1, title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
                             const _userId = (isOnOwnProfile || isViewingPost || isOnSearchPage) ? userId : userBeingViewed._id;
-                            let { readingLists: _readingLists, postsWithIntroPics } = getReadingListsAndPostsPics(readingLists, posts, users, _userId);
+                            let { readingLists: _readingLists, postsWithIntroPics } = readingLists ? getReadingListsAndPostsPics(readingLists, posts, users, _userId) : {}
+                            console.log('_readingLists: ', _readingLists)
                             // if the user is viewing a different user's profile, then get the reading list of the current user as well 
                             let _currentUserReadingLists;
                             if (isViewingDiffUserReadingLists) {
-                                const { readingLists, postsWithIntroPics: _postsWithIntroPics } = getReadingListsAndPostsPics(currentUserReadingLists, posts, users, userId)
-                                _currentUserReadingLists = readingLists;
-                                _postsWithIntroPics?.length && _postsWithIntroPics.forEach(post => {
-                                    const postsWithIntroPicsIds = postsWithIntroPics.map(({ _id }) => _id);
-                                    !postsWithIntroPicsIds.includes(post._id) && postsWithIntroPics.push(post)
-                                })
+                                console.log('currentUserReadingLists: ', currentUserReadingLists)
+                                const { readingLists, postsWithIntroPics: _postsWithIntroPics } = currentUserReadingLists ? getReadingListsAndPostsPics(currentUserReadingLists, posts, users, userId) : {}
+                                if (readingLists) {
+                                    _currentUserReadingLists = readingLists;
+                                    _postsWithIntroPics?.length && _postsWithIntroPics.forEach(post => {
+                                        const postsWithIntroPicsIds = postsWithIntroPics.map(({ _id }) => _id);
+                                        !postsWithIntroPicsIds.includes(post._id) && postsWithIntroPics.push(post)
+                                    })
+                                };
                             }
 
                             // get the first option if the user is viewing another user's reading list 
@@ -6221,7 +6284,6 @@ router.route("/users/:package").get((request, response) => {
                             const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
                             const isUserOfMessageBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(userIdRecipient);
                             delete conversation.userIdRecipient;
-                            console.log("conversation: ", conversation);
                             return { ...conversation, recipient: { _id: userIdRecipient, iconPath, username }, isUserOfMessageBlocked, isCurrentUserBlocked }
                         } else if (userIdRecipient) {
                             return { ...conversation, doesRecipientExist: false };
@@ -6241,8 +6303,6 @@ router.route("/users/:package").get((request, response) => {
                                 :
                                 blockedUsersInChat
 
-                            console.log('blockedUsersInChat')
-                            console.table(blockedUsersInChat)
                             delete conversation.conversationToJoinId
                             delete conversation.inviterId
                             return {
@@ -6288,13 +6348,17 @@ router.route("/users/:package").get((request, response) => {
                         }
                     });
 
+                    _conversations = _conversations.filter(conversation => {
+                        if (conversation?.messages && !conversation.messages.length) return false;
+                        return true;
+                    })
+
                     _conversations = _conversations.map(conversation => {
                         if (conversation?.messages?.length > 1) {
                             return {
                                 ...conversation,
                                 messages: conversation.messages.sort(({ timeOfSend: messageATimeOfSend }, { timeOfSend: messageBTimeOfSend }) => {
                                     const timeSortDeterminate = messageBTimeOfSend.miliSeconds - messageATimeOfSend.miliSeconds;
-                                    console.log('timeSortDeterminate: ', timeSortDeterminate);
                                     return timeSortDeterminate;
                                 })
                             };
@@ -6381,9 +6445,6 @@ router.route("/users/:package").get((request, response) => {
                         ...targetConversation,
                         conversationUsers: [...targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id))), userId]
                     };
-                    // console.log('invitationId: ', invitationId);
-                    // console.table(usersInConversation)
-                    // console.log('conversationId: ', conversationId)
                     User.bulkWrite(
                         [
                             {
@@ -6444,6 +6505,13 @@ router.route("/users/:package").get((request, response) => {
                 usersResults;
             response.json(_users)
         });
+    } else if (name === 'getBlockedStatus') {
+        const { targetUserId, userId } = package;
+        console.log('package: ', package)
+        User.find({ _id: targetUserId, "blockedUsers.userId": userId }, { _id: 0 }).countDocuments().then(isBlocked => {
+            console.log('isBlocked: ', !!isBlocked)
+            response.json(!!isBlocked)
+        })
     }
 }, error => {
     if (error) {

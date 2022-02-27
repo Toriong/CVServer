@@ -11,10 +11,11 @@ const commentEvent = "newComment";
 const likeEventName = "userClicksLikeBtn";
 const commentNumEvent = "commentNumChanged";
 const messageEvent = 'newMessage';
+const blockUserEvent = 'blockUser';
+const unblockUserEvent = 'unblockUser';
 
 
-// save User data in when the user send the data through this server?
-
+// the blockUserEvent room id will be the userId/blockingUser
 
 
 io.on("connection", socket => {
@@ -22,8 +23,8 @@ io.on("connection", socket => {
 
     // Join a conversation
     const { roomId, messageQuery } = socket.handshake.query;
-    // console.log(`user has joined roomId ${roomId}`))
     const { _roomId, currentUserId } = messageQuery ? JSON.parse(messageQuery) : {};
+
     socket.join(_roomId ?? roomId);
 
     if (_roomId && (currentUserId === _roomId)) {
@@ -31,11 +32,21 @@ io.on("connection", socket => {
     } else if (_roomId) {
         console.log(`User ${currentUserId} entered user ${_roomId}'s message stream.`)
     }
-    // console.log('isGroup: ', isGroup)
+
     // Listen for new messages
     socket.on(commentEvent, data => {
         io.in(roomId).emit(commentEvent, data);
     });
+
+    socket.on(blockUserEvent, data => {
+        // will block a user in real time
+        io.in(roomId).emit(blockUserEvent, data)
+    })
+
+    socket.on(unblockUserEvent, data => {
+        // will unblock a user in real time
+        io.in(roomId).emit(unblockUserEvent, data)
+    })
 
     socket.on(likeEventName, data => {
         io.in(roomId).emit(likeEventName, data);
