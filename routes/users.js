@@ -3136,6 +3136,8 @@ router.route("/users/updateInfo").post((request, response) => {
                 response.sendStatus(200);
             }
         )
+    } else if (name === 'deleteAccount') {
+
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -3458,6 +3460,7 @@ router.route("/users/:package").get((request, response) => {
                                 if (following?.length) {
                                     _following = following.map(user => {
                                         const targetUser = getUser(users, user.userId);
+                                        console.log('following: ', { targetUser })
                                         return { ...user._doc, ...targetUser._doc };
                                     });
                                 };
@@ -3482,19 +3485,61 @@ router.route("/users/:package").get((request, response) => {
                     }
                 })
         } else {
-            User.find(searchQuery, { followers: 1, username: 1, 'activities.following': 1 }).then(_users => {
+            User.find(searchQuery, { followers: 1, username: 1, 'activities.following': 1, _id: 1 }).then(_users => {
+                console.table(_users)
                 const userBeingViewed = _users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username))
                 const currentUser = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
                 const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
-                const currentUserFollowing = getFollowersAndFollowing(currentUser, false)
-                let users;
-                if (followersAndFollowing) {
-                    users = { ...followersAndFollowing };
+                const currentUserFollowersFollowing = getFollowersAndFollowing(currentUser);
+                console.log('currentUser: ', currentUser)
+                let userIds;
+                // GOAL: get all of the info (_id, username, iconPath) for both the user that is being viewed and the current user
+                if (followersAndFollowing?.following?.length) {
+                    userIds = [...followersAndFollowing.following.map(({ userId }) => userId)];
                 }
-                if (currentUserFollowing) {
-                    users = users ? { ...users, currentUserFollowing: currentUserFollowing.following } : { currentUserFollowing: currentUserFollowing.following };
+                if (followersAndFollowing?.followers?.length) {
+                    userIds = userIds ? [...userIds, ...followersAndFollowing.followers.map(({ userId }) => userId)] : followersAndFollowing.followers.map(({ userId }) => userId)
                 }
-                users ? response.json(users) : response.json({ isEmpty: true })
+                if (currentUserFollowersFollowing?.following?.length) {
+                    userIds = userIds ? [...userIds, ...currentUserFollowersFollowing.following.map(({ userId }) => userId)] : currentUserFollowersFollowing.following.map(({ userId }) => userId)
+                }
+                if (currentUserFollowersFollowing?.followers?.length) {
+                    userIds = userIds ? [...userIds, ...currentUserFollowersFollowing.followers.map(({ userId }) => userId)] : currentUserFollowersFollowing.followers.map(({ userId }) => userId)
+                };
+
+                const getIconAndUsername = (followingOrFollowers, users) => followingOrFollowers.map(user => {
+                    console.log('followingOrFollowers: ', followingOrFollowers)
+                    const targetUser = getUser(users, user.userId);
+                    return targetUser;
+                })
+                User.find({ _id: { $in: [...new Set(userIds)] } }, { _id: 1, username: 1, iconPath: 1 }).then(users => {
+                    let usersInfo;
+                    if (followersAndFollowing?.following?.length) {
+                        usersInfo = {
+                            following: getIconAndUsername(followersAndFollowing.following, users)
+                        }
+                    };
+                    if (followersAndFollowing?.followers?.length) {
+                        usersInfo = usersInfo ?
+                            { ...usersInfo, followers: getIconAndUsername(followersAndFollowing.followers, users) }
+                            :
+                            { ...usersInfo, followers: getIconAndUsername(followersAndFollowing.followers, users) }
+                    };
+                    if (currentUserFollowersFollowing?.following?.length) {
+                        usersInfo = usersInfo ?
+                            { ...usersInfo, currentUserFollowing: getIconAndUsername(currentUserFollowersFollowing.following, users) }
+                            :
+                            { ...usersInfo, currentUserFollowing: getIconAndUsername(currentUserFollowersFollowing.following, users) }
+                    }
+                    if (currentUserFollowersFollowing?.followers?.length) {
+                        usersInfo = usersInfo ?
+                            { ...usersInfo, currentUserFollowers: getIconAndUsername(currentUserFollowersFollowing.followers, users) }
+                            :
+                            { ...usersInfo, currentUserFollowers: getIconAndUsername(currentUserFollowersFollowing.followers, users) }
+                    }
+                    usersInfo ? response.json(usersInfo) : response.json({ isEmpty: true })
+                })
+
             })
         }
 
@@ -5985,7 +6030,7 @@ router.route("/users/:package").get((request, response) => {
         })
     } else if (name === 'getSearchResults') {
         console.log({ package });
-        const { input, searchType, userId, searchedAt, isOnMessenger } = package;
+        const { input, searchType, userId, searchedAt, isOnMessenger, blockedUserIds } = package;
         const _regex = new RegExp(input, 'i')
         console.log({ _regex });
         let _searchResults;
@@ -6183,20 +6228,23 @@ router.route("/users/:package").get((request, response) => {
                         const followersIds = currentUser.followers?.length && currentUser.followers.map(({ userId }) => userId);
                         if (results.length) {
                             const _results = results.filter(filterResults)
-                            console.log('_results length: ', _results.length)
                             if (_results.length && (searchType === 'stories')) {
-                                console.log({ currentUser })
                                 let postResults = delBlockedUsers(_results, currentUser, users, true);
                                 postResults = postResults.length ? addUserInfoToPosts(postResults, users, currentUser, tags) : postResults
                                 response.json(postResults.length ? sortResults(postResults, input, searchType) : postResults)
                             } else if (_results.length && (searchType === 'people')) {
-                                // GOAL: SEND THE sorted users array to the client
                                 let _users = delBlockedUsers(_results, currentUser, users);
+                                _users = blockedUserIds?.length ? _users.filter(({ _id }) => !blockedUserIds.includes(JSON.parse(JSON.stringify(_id)))) : _users;
                                 _users = _users.length ?
+                                    // check whether the user that was searched is followed by the current user
                                     _users.map(user => {
                                         delete user.isUserPresent
                                         if (JSON.stringify(user._id) !== JSON.stringify(userId)) {
+                                            console.log('followers of the user that was searched for');
+                                            console.table(user.followers)
+                                            console.log('currentUserId: ', userId)
                                             const isFollowing = !!user?.followers?.length && user.followers.map(({ userId }) => userId).includes(userId);
+                                            console.log('isFollowing: ', isFollowing);
                                             user.followers && delete user.followers
                                             isOnMessenger && delete user.bio
 
@@ -6214,8 +6262,9 @@ router.route("/users/:package").get((request, response) => {
                                     : _users;
 
                                 // check whether the user that was searched is either: following the current user, is followed by the current user, or neither 
-                                if (isOnMessenger) {
-                                    _users = _users?.length ? _users.map(user => {
+                                // if (isOnMessenger) {
+                                _users = _users?.length ?
+                                    _users.map(user => {
                                         if (JSON.stringify(user._id) !== JSON.stringify(userId)) {
                                             const isAFollower = followersIds?.length && followersIds.includes(user._id);
                                             return {
@@ -6225,9 +6274,9 @@ router.route("/users/:package").get((request, response) => {
                                         }
                                         return user;
                                     })
-                                        :
-                                        _users;
-                                }
+                                    :
+                                    _users;
+                                // }
                                 response.json(_users.length ? sortResults(_users, input) : _users)
                             } else {
                                 response.json([]);
@@ -6441,47 +6490,47 @@ router.route("/users/:package").get((request, response) => {
                     }
                     response.json({ targetConversation });
 
-                    targetConversation = {
-                        ...targetConversation,
-                        conversationUsers: [...targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id))), userId]
-                    };
-                    User.bulkWrite(
-                        [
-                            {
-                                updateOne:
-                                {
-                                    "filter": { _id: userId },
-                                    "update": {
-                                        $pull: { conversations: { conversationToJoinId: conversationId } },
-                                    }
-                                }
-                            },
-                            {
-                                updateOne:
-                                {
-                                    "filter": { _id: userId },
-                                    "update": {
-                                        $push: { conversations: targetConversation },
-                                    }
-                                }
-                            },
-                            {
-                                updateMany:
-                                {
-                                    "filter": { _id: { $in: usersInConversation } },
-                                    "update": {
-                                        $push: { 'conversations.$[conversation].conversationUsers': userId },
-                                    },
-                                    "arrayFilters": [{ "conversation.conversationId": conversationId }]
-                                }
-                            }
-                        ]
-                    ).catch(error => {
-                        if (error) {
-                            console.error('An error has occurred in updating the conversations of the current user: ', error)
-                        }
-                        console.log('Conversation added and invite deleted');
-                    })
+                    // targetConversation = {
+                    //     ...targetConversation,
+                    //     conversationUsers: [...targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id))), userId]
+                    // };
+                    // User.bulkWrite(
+                    //     [
+                    //         {
+                    //             updateOne:
+                    //             {
+                    //                 "filter": { _id: userId },
+                    //                 "update": {
+                    //                     $pull: { conversations: { conversationToJoinId: conversationId } },
+                    //                 }
+                    //             }
+                    //         },
+                    //         {
+                    //             updateOne:
+                    //             {
+                    //                 "filter": { _id: userId },
+                    //                 "update": {
+                    //                     $push: { conversations: targetConversation },
+                    //                 }
+                    //             }
+                    //         },
+                    //         {
+                    //             updateMany:
+                    //             {
+                    //                 "filter": { _id: { $in: usersInConversation } },
+                    //                 "update": {
+                    //                     $push: { 'conversations.$[conversation].conversationUsers': userId },
+                    //                 },
+                    //                 "arrayFilters": [{ "conversation.conversationId": conversationId }]
+                    //             }
+                    //         }
+                    //     ]
+                    // ).catch(error => {
+                    //     if (error) {
+                    //         console.error('An error has occurred in updating the conversations of the current user: ', error)
+                    //     }
+                    //     console.log('Conversation added and invite deleted');
+                    // })
                 } else {
                     console.log("The sender of the invitation had left the conversation.")
                     response.sendStatus(503)
@@ -6491,7 +6540,7 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getSelectedUsers') {
-        const { userIds, userId: currentUserId, isViewingAnInvite } = package
+        const { userIds, userId: currentUserId, isViewingAnInvite, isChatUser } = package
         User.find({ _id: { $in: [...userIds, currentUserId] } }, { username: 1, iconPath: 1, blockedUsers: 1 }).then(users => {
             const usersResults = isViewingAnInvite ? users.filter(({ _id }) => JSON.stringify(_id) !== JSON.stringify(currentUserId)) : users;
             const { blockedUsers } = getUser(users, currentUserId);
@@ -6511,6 +6560,24 @@ router.route("/users/:package").get((request, response) => {
         User.find({ _id: targetUserId, "blockedUsers.userId": userId }, { _id: 0 }).countDocuments().then(isBlocked => {
             console.log('isBlocked: ', !!isBlocked)
             response.json(!!isBlocked)
+        })
+    } else if (name === 'getChatUser') {
+        const { chatUserId, userId } = package;
+        console.log('chatUserId: ', chatUserId)
+        User.find({ _id: { $in: [chatUserId, userId] } }, { blockedUsers: 1, username: 1, iconPath: 1 }).then(users => {
+            console.log('users: ', users)
+            const currentUser = getUser(users, userId);
+            const chatUser = getUser(users, chatUserId);
+            const isChatUserBlocked = currentUser?.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId).includes(chatUserId)
+            const isCurrentUserBlocked = chatUser?.blockedUsers?.length && chatUser.blockedUsers.map(({ userId }) => userId).includes(userId)
+            if (!chatUser) {
+                response.json({ doesUserExist: false })
+            } else if (isChatUserBlocked || isCurrentUserBlocked) {
+                response.json({ willNotShowChatUser: true })
+            } else {
+                const { _id, iconPath, username } = chatUser;
+                response.json({ _id, iconPath, username });
+            }
         })
     }
 }, error => {

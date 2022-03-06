@@ -11,6 +11,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { getReadingListsAndPostsPics } = require('../functions/readingLIstFns');
 const { userInfo } = require('os');
+const { getUser } = require('../functions/getUser');
 // make an activities for all of the edits that the user did to comments replies and posts 
 
 // GOAL: display all notifications pertaining to the following: replies on user's post, replies to user comments, comments on user's posts, likes for the following: (comments, replies, posts)
@@ -879,16 +880,46 @@ router.route("/blogPosts/:package").get((req, res) => {
             User.findOne({ username: username }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1, topics: 1, bio: 1, socialMedia: 1 }).then(user => {
                 if (user) {
                     const { _id, followers, activities, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = user;
-                    // const topics = _topics?.length && _topics.map(topicId => {
-                    //     const _tag = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(topicId));
-                    //     return _tag;
-                    // })
                     let userInfo = { _id, iconPath, firstName, lastName, bio, topics };
                     userInfo = activities?.following?.length ? { ...userInfo, following: activities.following } : userInfo;
                     userInfo = followers?.length ? { ...userInfo, followers } : userInfo;
                     userInfo = readingLists ? { ...userInfo, readingLists } : userInfo;
                     userInfo = socialMedia?.length ? { ...userInfo, socialMedia } : userInfo;
-                    getPosts(_id, res, userInfo);
+                    if (followers?.length || activities?.following?.length) {
+                        // GOAL: get the icon and the username of the user's following and followers
+                        let userIds;
+                        if (followers?.length) {
+                            userIds = followers.map(({ userId }) => userId);
+                        }
+                        if (activities?.following?.length) {
+                            userIds = userIds ? [...userIds, ...activities.following.map(({ userId }) => userId)] : [...activities.following.map(({ userId }) => userId)]
+                        };
+                        User.find({ _id: { $in: userIds } }, { iconPath: 1, username: 1 }).then(users => {
+                            if (activities?.following?.length) {
+                                userInfo = {
+                                    ...userInfo,
+                                    following: activities.following.map(user => {
+                                        const targetUser = getUser(users, user.userId);
+                                        const userUpdated = { ...targetUser._doc, ...user._doc };
+                                        return userUpdated
+                                    })
+                                }
+                            }
+                            if (followers?.length) {
+                                userInfo = {
+                                    ...userInfo,
+                                    followers: followers.map(user => {
+                                        const targetUser = getUser(users, user.userId);
+                                        const userUpdated = { ...targetUser._doc, ...user._doc };
+                                        return userUpdated
+                                    })
+                                }
+                            };
+                            getPosts(null, res, userInfo);
+                        })
+                    } else {
+                        getPosts(_id, res, userInfo);
+                    }
                 } else {
                     res.json({ doesUserExist: false })
                 }

@@ -13,6 +13,8 @@ const commentNumEvent = "commentNumChanged";
 const messageEvent = 'newMessage';
 const blockUserEvent = 'blockUser';
 const unblockUserEvent = 'unblockUser';
+const accountDeletedEvent = 'accountDeleted';
+
 
 
 // the blockUserEvent room id will be the userId/blockingUser
@@ -23,8 +25,9 @@ io.on("connection", socket => {
 
     // Join a conversation
     const { roomId, messageQuery } = socket.handshake.query;
+    // when a messaging room is established, get the userId of the user who entered the room
     const { _roomId, currentUserId } = messageQuery ? JSON.parse(messageQuery) : {};
-
+    roomId && console.log('room started with the following name: ', roomId)
     socket.join(_roomId ?? roomId);
 
     if (_roomId && (currentUserId === _roomId)) {
@@ -33,10 +36,14 @@ io.on("connection", socket => {
         console.log(`User ${currentUserId} entered user ${_roomId}'s message stream.`)
     }
 
-    // Listen for new messages
     socket.on(commentEvent, data => {
         io.in(roomId).emit(commentEvent, data);
     });
+
+    socket.on(accountDeletedEvent, data => {
+        console.log('will delete account: ', data);
+        io.in(roomId).emit(accountDeletedEvent, data)
+    })
 
     socket.on(blockUserEvent, data => {
         // will block a user in real time
