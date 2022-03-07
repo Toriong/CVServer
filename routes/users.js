@@ -5832,6 +5832,8 @@ router.route("/users/:package").get((request, response) => {
                                 const { readingLists, postsWithIntroPics: _postsWithIntroPics } = currentUserReadingLists ? getReadingListsAndPostsPics(currentUserReadingLists, posts, users, userId) : {}
                                 if (readingLists) {
                                     _currentUserReadingLists = readingLists;
+                                    console.log('_postsWithIntroPics: ')
+                                    console.table(_postsWithIntroPics)
                                     _postsWithIntroPics?.length && _postsWithIntroPics.forEach(post => {
                                         const postsWithIntroPicsIds = postsWithIntroPics.map(({ _id }) => _id);
                                         !postsWithIntroPicsIds.includes(post._id) && postsWithIntroPics.push(post)
