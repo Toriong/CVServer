@@ -584,7 +584,7 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         );
         console.log("draft has been deleted")
-    } else if (name === "postDraft") {
+    } else if (name === "checkIfDraftIsValid") {
         // how to check if a value is present in the database?
         console.log("check if draft is ok to be published")
         User.find({
@@ -624,67 +624,68 @@ router.route("/users/updateInfo").post((request, response) => {
                             console.error("Error in updating user.roughDrafts: ", error);
                             response.sendStatus(404)
                         } else {
-                            const editSelectedTags = selectedTags => selectedTags.map(tag => {
-                                const { isNew, _id } = tag;
-                                if (!isNew) {
-                                    return { _id };
-                                };
-
-                                return tag;
-                            });
                             console.log("User has been updated. numsAffected: ", numsAffected);
-                            let newPost;
-                            const { title, tags: _tags, body } = draftInDB;
-                            const tags = editSelectedTags(_tags);
-                            if (subtitleInDb && imgUrlInDb) {
-                                console.log("I was executed")
-                                newPost = new BlogPost({
-                                    _id,
-                                    title,
-                                    authorId: userId,
-                                    subtitle: subtitleInDb,
-                                    imgUrl: imgUrlInDb,
-                                    body,
-                                    tags,
-                                    publicationDate: getTime()
-                                });
-                            } else if (!subtitleInDb && imgUrlInDb) {
-                                console.log("no subtitle present, publishing post")
-                                newPost = new BlogPost({
-                                    _id,
-                                    title,
-                                    authorId: userId,
-                                    imgUrl: imgUrlInDb,
-                                    body,
-                                    tags,
-                                    publicationDate: getTime()
-                                });
-                            } else if (subtitleInDb && !imgUrlInDb) {
-                                console.log("no intro pic present, publishing post");
-                                newPost = new BlogPost({
-                                    _id,
-                                    title,
-                                    authorId: userId,
-                                    subtitle: subtitleInDb,
-                                    body,
-                                    tags,
-                                    publicationDate: getTime()
-                                });
-                            } else {
-                                newPost = new BlogPost({
-                                    _id,
-                                    title,
-                                    authorId: userId,
-                                    body,
-                                    tags,
-                                    publicationDate: getTime()
-                                });
-                            };
-                            newPost.save()
-                            console.log("post published")
-                            response.json({
-                                message: "blog post successfully posted onto feed."
-                            });
+                            response.sendStatus(200)
+                            // const editSelectedTags = selectedTags => selectedTags.map(tag => {
+                            //     const { isNew, _id } = tag;
+                            //     if (!isNew) {
+                            //         return { _id };
+                            //     };
+
+                            //     return tag;
+                            // })
+                            // let newPost;
+                            // const { title, tags: _tags, body } = draftInDB;
+                            // const tags = editSelectedTags(_tags);
+                            // if (subtitleInDb && imgUrlInDb) {
+                            //     console.log("I was executed")
+                            //     newPost = new BlogPost({
+                            //         _id,
+                            //         title,
+                            //         authorId: userId,
+                            //         subtitle: subtitleInDb,
+                            //         imgUrl: imgUrlInDb,
+                            //         body,
+                            //         tags,
+                            //         publicationDate: getTime()
+                            //     });
+                            // } else if (!subtitleInDb && imgUrlInDb) {
+                            //     console.log("no subtitle present, publishing post")
+                            //     newPost = new BlogPost({
+                            //         _id,
+                            //         title,
+                            //         authorId: userId,
+                            //         imgUrl: imgUrlInDb,
+                            //         body,
+                            //         tags,
+                            //         publicationDate: getTime()
+                            //     });
+                            // } else if (subtitleInDb && !imgUrlInDb) {
+                            //     console.log("no intro pic present, publishing post");
+                            //     newPost = new BlogPost({
+                            //         _id,
+                            //         title,
+                            //         authorId: userId,
+                            //         subtitle: subtitleInDb,
+                            //         body,
+                            //         tags,
+                            //         publicationDate: getTime()
+                            //     });
+                            // } else {
+                            //     newPost = new BlogPost({
+                            //         _id,
+                            //         title,
+                            //         authorId: userId,
+                            //         body,
+                            //         tags,
+                            //         publicationDate: getTime()
+                            //     });
+                            // };
+                            // newPost.save()
+                            // console.log("post published")
+                            // response.json({
+                            //     message: "blog post successfully posted onto feed."
+                            // });
                         }
                     }
                 );

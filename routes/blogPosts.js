@@ -95,7 +95,14 @@ const getPostTags = (selectedTags, tags) => selectedTags.map(tag => {
     return tag;
 });
 
+const editSelectedTags = selectedTags => selectedTags.map(tag => {
+    const { isNew, _id } = tag;
+    if (!isNew) {
+        return { _id };
+    };
 
+    return tag;
+})
 
 
 //get the blogPost from the database and sends it to the Feed.js component
@@ -107,7 +114,8 @@ router.route("/blogPosts").get((req, res) => {
 
 router.route("/blogPosts").post((req, res) => {
     const { name, data } = req.body;
-    const { _id, title, authorId, subtitle, imgUrl, body, tags } = data
+    const { _id, title, authorId, subtitle, imgUrl, body, tags: _tags } = data
+    const tags = editSelectedTags(_tags);
     if (name === "publishDraft") {
         let newPost;
         if (subtitle && imgUrl) {
@@ -156,7 +164,7 @@ router.route("/blogPosts").post((req, res) => {
         };
         newPost.save()
         console.log("post published")
-        res.json({
+        res.status(200).send({
             message: "blog post successfully posted onto feed."
         });
     };
@@ -1256,68 +1264,25 @@ router.route("/blogPosts/:package").get((req, res) => {
         };
         // change to 'getPublishedPostsByUser'
     } else if (name === 'getPublishedPosts') {
-        const { publishedPostsIds } = package;
-        BlogPost.find(
-            { _id: { $in: publishedPostsIds } },
-            error => {
-                if (error) {
-                    console.error('An error has occurred in getting the published posts by current user.')
-                } else {
-                    console.log('No error has occurred in getting the published posts by current user.')
-                }
-            }
-        ).then(posts => {
-            console.log({ publishedPostsIds });
-            console.log('posts by user: ', posts);
-            console.log('userId, activitiesDeleted: ', userId);
-            User.findOne({ _id: userId }, { 'activitiesDeleted.posts': 1, _id: 0 }).then(result => {
-                console.log('result, activitiesDeletedPost: ', result)
-                const activitiesDeletedPosts = result?.activitiesDeleted?.posts
-                console.log('activitiesDeletedPosts: ', activitiesDeletedPosts)
-                Tag.find({})
-                    .then(tags => {
-                        const getPublishedTags = (postTags, tags) => postTags.map(tag => {
-                            const { isNew, _id: tagId } = tag;
-                            if (!isNew) {
-                                const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
-
-                                return allTagInfo;
-                            };
-
-                            return tag;
-                        });
-                        if (posts.length) {
-                            const _posts = posts.map(post => {
-                                const { editedPost, tags: postTags, _id } = post;
-                                const isActivityDeleted = activitiesDeletedPosts?.includes(_id);
-                                _id === "a3bb030a-5c05-49e3-9c14-490d90c62223" && console.log('isActivityDeleted: ', isActivityDeleted);
-                                if (editedPost) {
-                                    const _tags = getPublishedTags(postTags, tags);
-                                    const editedPostTags = editedPost.tags.map(tag => {
-                                        const { isNew, _id: tagId } = tag;
-                                        if (!isNew) {
-                                            const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
-
-                                            return allTagInfo;
-                                        };
-
-                                        return tag;
-                                    });
-                                    console.log('editedPost: ', editedPost);
-                                    return {
-                                        ...post._doc,
-                                        isActivityDeleted,
-                                        editedPost: {
-                                            ...editedPost,
-                                            tags: editedPostTags
-                                        },
-                                        tags: _tags
-                                    }
-                                }
-                                // if the post has editedPost field, then get all of the tag info for that field 
-                                // if the post doesn't have an editedPost field, then get all of the tag info for that field 
-
-                                const _tags = postTags.map(tag => {
+        User.findOne({ _id: userId }, { publishedDrafts: 1 }).then(({ publishedDrafts }) => {
+            if (publishedDrafts?.length) {
+                BlogPost.find(
+                    { _id: { $in: publishedDrafts } },
+                    error => {
+                        if (error) {
+                            console.error('An error has occurred in getting the published posts by current user.')
+                        } else {
+                            console.log('No error has occurred in getting the published posts by current user.')
+                        }
+                    }
+                ).then(posts => {
+                    User.findOne({ _id: userId }, { 'activitiesDeleted.posts': 1, _id: 0 }).then(result => {
+                        console.log('result, activitiesDeletedPost: ', result)
+                        const activitiesDeletedPosts = result?.activitiesDeleted?.posts
+                        console.log('activitiesDeletedPosts: ', activitiesDeletedPosts)
+                        Tag.find({})
+                            .then(tags => {
+                                const getPublishedTags = (postTags, tags) => postTags.map(tag => {
                                     const { isNew, _id: tagId } = tag;
                                     if (!isNew) {
                                         const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
@@ -1327,21 +1292,65 @@ router.route("/blogPosts/:package").get((req, res) => {
 
                                     return tag;
                                 });
+                                if (posts.length) {
+                                    const _posts = posts.map(post => {
+                                        const { editedPost, tags: postTags, _id } = post;
+                                        const isActivityDeleted = activitiesDeletedPosts?.includes(_id);
+                                        if (editedPost) {
+                                            const _tags = getPublishedTags(postTags, tags);
+                                            const editedPostTags = editedPost.tags.map(tag => {
+                                                const { isNew, _id: tagId } = tag;
+                                                if (!isNew) {
+                                                    const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
 
-                                return {
-                                    ...post._doc,
-                                    isActivityDeleted,
-                                    tags: _tags
+                                                    return allTagInfo;
+                                                };
+
+                                                return tag;
+                                            });
+                                            console.log('editedPost: ', editedPost);
+                                            return {
+                                                ...post._doc,
+                                                isActivityDeleted,
+                                                editedPost: {
+                                                    ...editedPost,
+                                                    tags: editedPostTags
+                                                },
+                                                tags: _tags
+                                            }
+                                        }
+                                        // if the post has editedPost field, then get all of the tag info for that field 
+                                        // if the post doesn't have an editedPost field, then get all of the tag info for that field 
+
+                                        const _tags = postTags.map(tag => {
+                                            const { isNew, _id: tagId } = tag;
+                                            if (!isNew) {
+                                                const allTagInfo = tags.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(tagId));
+
+                                                return allTagInfo;
+                                            };
+
+                                            return tag;
+                                        });
+
+                                        return {
+                                            ...post._doc,
+                                            isActivityDeleted,
+                                            tags: _tags
+                                        }
+                                    });
+
+                                    res.json({ publishedPosts: _posts });
+                                } else {
+                                    res.json({ isEmpty: true });
                                 }
                             });
-
-                            res.json({ publishedPosts: _posts });
-                        } else {
-                            res.json({ isEmpty: true });
-                        }
                     });
-            });
-        })
+                })
+            } else {
+                res.json({ isEmpty: true })
+            }
+        });
     } else if (name === 'getPostToEdit') {
         console.log('will get published post to edit it.');
         const { draftId } = package;
@@ -1450,7 +1459,16 @@ router.route("/blogPosts/:package").get((req, res) => {
             })
 
         })
-
+    } else if (name === 'getPostIdsByUser') {
+        BlogPost.find({ authorId: userId }, { _id: 1 }).then(posts => {
+            if (posts?.length) {
+                const _posts = posts.map(({ _id }) => _id)
+                console.log('_posts: ', _posts)
+                res.json({ publishedDraftIds: _posts });
+            } else {
+                res.json({ isEmpty: true });
+            }
+        })
     }
 });
 
