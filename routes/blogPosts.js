@@ -107,8 +107,7 @@ const editSelectedTags = selectedTags => selectedTags.map(tag => {
 
 //get the blogPost from the database and sends it to the Feed.js component
 router.route("/blogPosts").get((req, res) => {
-    BlogPost.find()
-        .then(blogPosts => { res.json(blogPosts) })
+
 });
 
 

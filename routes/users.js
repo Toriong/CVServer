@@ -1289,15 +1289,12 @@ router.route("/users/updateInfo").post((request, response) => {
         User.updateOne(
             { _id: currentUserId },
             {
-                $pull:
-                {
-                    blockedUsers: { userId: blockedUserId }
-                }
+                $pull: { blockedUsers: { userId: blockedUserId } }
             },
             (error, numsAffected) => {
                 if (error) {
                     console.error('Error in deleting user from block list: ', error);
-                    response.status(404).send('Something went wrong, please try again later.')
+                    response.status(503).send('Something went wrong, please try again later.')
                 } else {
                     console.log('Update was successful. User was deleted from block list, numsAffected: ', numsAffected);
                     response.json(' was removed from blocked list')
@@ -3729,11 +3726,14 @@ router.route("/users/:package").get((request, response) => {
                                                             const { authorId, replyIds } = replyInfo;
                                                             const replyAuthor = infoOfAuthors.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(authorId));
                                                             const isReplyAuthorBlocked = (replyAuthor && blockedUserIds?.length) && blockedUserIds.includes(authorId);
-                                                            if (replyAuthor && (replyIds && replyIds.length) && isReplyAuthorBlocked) {
+                                                            console.log('replyAuthor: ', replyAuthor)
+                                                            console.log({ isReplyAuthorBlocked })
+                                                            if (replyAuthor && replyIds?.length && !isReplyAuthorBlocked) {
                                                                 const _replyIds = replyIds.map(reply => {
                                                                     // const { _reply, createdAt } = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
                                                                     const targetReply = commentOnPost.replies.find(({ replyId }) => replyId === reply.id);
                                                                     // MS = miliSeconds
+                                                                    console.log('targetReply: ', targetReply)
                                                                     if (targetReply) {
                                                                         const { _reply, createdAt } = targetReply;
                                                                         const timeElapsedText = _getTimeElapsedText(createdAt);
@@ -3871,6 +3871,8 @@ router.route("/users/:package").get((request, response) => {
 
                                 // response.json({ replies: _notifications })
                             } else if (replies_) {
+                                console.log('replies_: ');
+                                console.table(replies_);
                                 let _replyNotifications = [];
                                 replies_.forEach(post => {
                                     const { postId, repliesInfo, title, postAuthorUN } = post;
@@ -3923,6 +3925,8 @@ router.route("/users/:package").get((request, response) => {
                                         })
                                     })
                                 });
+                                console.log('_replyNotifications: ');
+                                console.table(_replyNotifications);
                                 _replyNotifications.length ? response.json({ replies: _replyNotifications }) : response.json({ isEmpty: true });
                             } else {
                                 response.json({ isEmpty: true });
@@ -5872,6 +5876,7 @@ router.route("/users/:package").get((request, response) => {
                         response.json(user);
                     }
                 } else if (!isOnOwnProfile) {
+                    console.log('userBeingViewed: ', userBeingViewed);
                     let user = { userIconPath: iconPath, _id: userBeingViewed._id };
                     if (followers) {
                         user = { ...user, followers };
