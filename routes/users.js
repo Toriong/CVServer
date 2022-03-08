@@ -3925,8 +3925,6 @@ router.route("/users/:package").get((request, response) => {
                                         })
                                     })
                                 });
-                                console.log('_replyNotifications: ');
-                                console.table(_replyNotifications);
                                 _replyNotifications.length ? response.json({ replies: _replyNotifications }) : response.json({ isEmpty: true });
                             } else {
                                 response.json({ isEmpty: true });
