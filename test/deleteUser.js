@@ -177,7 +177,7 @@ before(done => {
 // })
 describe('delete reply likes', () => {
     let blogPost;
-    beforeEach(done => {
+    before(done => {
         // delete all of the reply likes 
         blogPost = new BlogPost({
             _id: '3e4eaf94-ef59-4e7b-a7d2-e7f0b6115e76',
@@ -217,17 +217,19 @@ describe('delete reply likes', () => {
                         commentId: '2a22bcab-7043-4d2b-bd84-9565bba6099d',
                         userId: 'bd82df82-c39a-45b5-a5a3-4b7707670b28'
                     }
-                ]
+                ],
+            totalRepliesAndComments: 5
         })
         blogPost.save()
             .then(() => { done() })
     });
-    it('will delete all reply likes by deleted user', () => {
+
+    before(done => {
         BlogPost.bulkWrite([
             {
                 // delete reply likes
                 updateMany: {
-                    'filter': { "comments": { $gt: [] } },
+                    'filter': { "comments": { $exists: true }, totalRepliesAndComments: { $gt: 0 } },
                     'update':
                     {
                         $pull: {
@@ -237,8 +239,16 @@ describe('delete reply likes', () => {
                     'arrayFilters': [{ 'comment.commentId': { $exists: true } }, { 'reply.replyId': { $exists: true } }]
                 }
             },
-        ])
-            .then(() => BlogPost.findOne({ _id: '3e4eaf94-ef59-4e7b-a7d2-e7f0b6115e76' }))
+        ]).then(() => { done() }).catch(error => {
+            if (error) {
+                console.error('An error has occurred in deleting reply like by deleted user: ', error)
+            }
+        })
+    })
+
+    it('will delete all reply likes by deleted user', () => {
+
+        BlogPost.findOne({ _id: '3e4eaf94-ef59-4e7b-a7d2-e7f0b6115e76' })
             .then(post => {
                 const commentReplyLikedDeleted = post.comments.find(({ commentId }) => commentId === '2c305eed-c5ea-4a23-9ad3-03d501a2aec6');
                 const replyLikedDeleted = commentReplyLikedDeleted.replies.find(({ replyId }) => replyId === 'dc078f7f-faaa-4acf-a2c0-2b669cbe4ec4');

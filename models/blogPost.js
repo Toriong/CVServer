@@ -44,6 +44,7 @@ const BlogPostSchema = new Mongoose.Schema(
         editedPost: Object,
         previousVersions: Array,
         editsPublishedAt: Object,
+        totalRepliesAndComments: Number
     }
 )
 
