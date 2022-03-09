@@ -127,6 +127,7 @@ router.route("/blogPosts").post((req, res) => {
                 imgUrl,
                 body,
                 tags,
+                comments: [],
                 publicationDate: timeFns.getTime()
             });
         } else if (!subtitle && imgUrl) {
@@ -138,6 +139,7 @@ router.route("/blogPosts").post((req, res) => {
                 imgUrl,
                 body,
                 tags,
+                comments: [],
                 publicationDate: timeFns.getTime()
             });
         } else if (subtitle && !imgUrl) {
@@ -149,6 +151,7 @@ router.route("/blogPosts").post((req, res) => {
                 subtitle,
                 body,
                 tags,
+                comments: [],
                 publicationDate: timeFns.getTime()
             });
         } else {
@@ -158,6 +161,7 @@ router.route("/blogPosts").post((req, res) => {
                 authorId,
                 body,
                 tags,
+                comments: [],
                 publicationDate: timeFns.getTime()
             });
         };
