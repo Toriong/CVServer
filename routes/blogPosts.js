@@ -128,6 +128,7 @@ router.route("/blogPosts").post((req, res) => {
                 body,
                 tags,
                 comments: [],
+                totalRepliesAndComments: 0,
                 publicationDate: timeFns.getTime()
             });
         } else if (!subtitle && imgUrl) {
@@ -140,6 +141,7 @@ router.route("/blogPosts").post((req, res) => {
                 body,
                 tags,
                 comments: [],
+                totalRepliesAndComments: 0,
                 publicationDate: timeFns.getTime()
             });
         } else if (subtitle && !imgUrl) {
@@ -152,6 +154,7 @@ router.route("/blogPosts").post((req, res) => {
                 body,
                 tags,
                 comments: [],
+                totalRepliesAndComments: 0,
                 publicationDate: timeFns.getTime()
             });
         } else {
@@ -162,6 +165,7 @@ router.route("/blogPosts").post((req, res) => {
                 body,
                 tags,
                 comments: [],
+                totalRepliesAndComments: 0,
                 publicationDate: timeFns.getTime()
             });
         };
@@ -182,7 +186,7 @@ router.route("/blogPosts/updatePost").post((req, res) => {
             { _id: postId },
             {
                 $push: {
-                    comments: data
+                    comments: { ...data, replies: [] }
                 }
             },
             (error, numbersAffected) => {

@@ -6225,7 +6225,6 @@ router.route("/users/:package").get((request, response) => {
                 }
             })
         } else {
-            // GOAL: get the posts based on the user input 
             const filterResults = getFilterResultsFn(searchType);
             Tag.find({}).then(tags => {
                 User.find({}, { username: 1, blockedUsers: 1, topics: 1, readingLists: 1, activities: 1, iconPath: 1, _id: 1, followers: 1 }).then(users => {
