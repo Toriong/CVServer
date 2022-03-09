@@ -58,7 +58,7 @@ const notificationsSchema = new Schema(
 
 // schema: allows us to define the field in a document that will be stored in the collection of the database
 const userSchema = new Schema({
-    _id: String,
+    id: String,
     isUserNew: Boolean,
     firstName: String,
     lastName: String,

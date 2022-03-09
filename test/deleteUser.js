@@ -8,6 +8,8 @@ const dbconnection = "mongodb+srv://gtorio:simba1997@clustercv.blvqa.mongodb.net
 const userToDeleteId = 'd912e3db-d8ff-4a7f-aba7-6433170ca10c';
 const postsToDelete = ['228f1140-f2e6-42a3-a152-dde27ac17445', '32f6243e-c851-40b3-998e-6af80e070e78', '3e4eaf94-ef59-4e7b-a7d2-e7f0b6115e76', '3de32081-0850-42d4-863a-de86c3d4bc31', '2c7ea4fb-960a-47b9-bfa5-2d756cfbc4b0']
 const usersToDelete = ['d912e3db-d8ff-4a7f-aba7-6433170ca10c', 'a3bb23d5-84ad-40e9-84c9-1065fac0d255', '9f381a8d-4ced-4598-9425-c6754047433c', 'aae2b14a-0d2f-4755-9874-d99a9387ec16', '7608fb16-6806-409a-bd28-3ab364c029fb']
+const hasFollowers = true;
+const isFollowingUsers = true
 
 before(done => {
     mongoose.connect(dbconnection, {
@@ -1031,8 +1033,45 @@ describe('Delete all material from the deletedUser', () => {
     })
 
     before(done => {
-        const userToDeleteFollowers = [userAId, userBId, userDId];
-        const userToDeleteFollowing = [userBId, userCId, userDId];
+        const userToDeleteFollowers = hasFollowers ? [userAId, userBId, userDId] : [];
+        const userToDeleteFollowing = isFollowingUsers ? [userBId, userCId, userDId] : [];
+        const deleteUserObj = { deleteOne: { 'filter': { _id: userToDeleteId } } };
+        let bulkWriteUpdates;
+
+        if (userToDeleteFollowing?.length) {
+            const pullUserFromFollowingObj = {
+                updateMany: {
+                    'filter': { _id: { $in: userToDeleteFollowing } },
+                    'update':
+                    {
+                        $pull: {
+                            'activities.following': { userId: userToDeleteId }
+                        }
+                    }
+                }
+            };
+            bulkWriteUpdates = [pullUserFromFollowingObj]
+        }
+
+        if (userToDeleteFollowers?.length) {
+            // if userA is being followed by the deleted user, then delete the deleted user from the array that is stored in followers 
+            const pullUserFromFollowersObj = {
+                updateMany: {
+                    'filter': { _id: { $in: userToDeleteFollowers } },
+                    'update':
+                    {
+                        $pull: {
+                            'followers': { userId: userToDeleteId }
+                        }
+                    }
+                }
+            }
+            bulkWriteUpdates = bulkWriteUpdates ? [...bulkWriteUpdates, pullUserFromFollowersObj] : [pullUserFromFollowersObj]
+        };
+
+
+        bulkWriteUpdates = bulkWriteUpdates ? [...bulkWriteUpdates, deleteUserObj] : [deleteUserObj]
+
         User.bulkWrite(
             [
                 {

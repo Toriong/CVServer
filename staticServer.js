@@ -64,6 +64,8 @@ app.use("/", require("./routes/tags"));
 
 app.use("/", require("./routes/blogPostsRoutes/getAllBlogPosts"))
 
+app.use("/", require("./routes/deleteUser"))
+
 
 
 app.use("/userIcons", express.static("userIcons"));
