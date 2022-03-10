@@ -957,7 +957,6 @@ router.route("/blogPosts/:package").get((req, res) => {
         ).then(posts => {
             // between each draft, if the publication date is greater, then include it in the array
             // if there is an edit date, then use that instead to make the comparison
-            console.log('posts: ', posts.length);
             const targetPost = posts.find(({ _id }) => _id === draftId);
             const restsOfPosts = posts.filter(({ _id }) => _id !== draftId)
             let _posts;
@@ -1243,7 +1242,6 @@ router.route("/blogPosts/:package").get((req, res) => {
                 // filter all users that blocked current user or were blocked by the current for the comments array
                 let _targetPostComments = targetPostComments.filter(({ userId: commentUserId }) => {
                     const userOfComment = getUser(users, commentUserId);
-                    console.log('userOfComment: ', userOfComment)
                     const isCurrentUserBlocked = userOfComment?.blockedUsers?.length && !!userOfComment.blockedUsers.find(({ userId: _userId }) => userId === _userId)
                     const didCurrentUserBlockedCommentUser = currentUserBlockedUserIds && currentUserBlockedUserIds.includes(commentUserId)
                     if (isCurrentUserBlocked || didCurrentUserBlockedCommentUser) return false
@@ -1317,7 +1315,6 @@ router.route("/blogPosts/:package").get((req, res) => {
                     userIdsOfLikes: _targetPostLikes,
                     comments: _targetPostComments
                 };
-                console.log('_targetPost: ', _targetPost)
                 _posts = {
                     ..._posts,
                     targetPost: _targetPost
@@ -1328,8 +1325,6 @@ router.route("/blogPosts/:package").get((req, res) => {
                         moreFromAuthor: _moreFromAuthor
                     }
                 };
-
-                console.log('_posts: ', _posts)
                 res.json(_posts);
             });
 

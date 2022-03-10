@@ -6393,7 +6393,7 @@ router.route("/users/:package").get((request, response) => {
                                     const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
                                     const isUserOfMessageBlocked = (currentUserBlockedUsers && username) && currentUserBlockedUsers.includes(message.userId);
                                     username && delete message.userId
-                                    return username ? { ...message, user: { iconPath, username, _id: message.userId }, isUserOfMessageBlocked, isCurrentUserBlocked } : { doesUserExist: false, message };
+                                    return username ? { ...message, user: { iconPath, username, _id: message.userId }, isUserOfMessageBlocked, isCurrentUserBlocked } : { ...message, doesUserExist: false };
                                 }
 
                                 // if no userId, then the message is by the current user
@@ -6401,6 +6401,7 @@ router.route("/users/:package").get((request, response) => {
                             })
                         }
                     });
+
 
                     _conversations = _conversations.filter(conversation => {
                         if (conversation?.messages && !conversation.messages.length) return false;
