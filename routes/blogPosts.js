@@ -875,9 +875,9 @@ router.route('/blogPosts/editPostAddPic').post(postIntroPicUpload.single('file')
 const getPosts = (userId, res, userInfo) => {
     BlogPost.find({ authorId: userId ?? userInfo._id }).then(posts => {
         if (posts.length) {
-            res.json({ arePostsPresent: true, _posts: posts, userInfo: userInfo });
+            res.json({ arePostsPresent: true, _posts: posts, userInfo: userInfo, doesUserExist: true });
         } else {
-            res.json({ arePostsPresent: false, userInfo: userInfo });
+            res.json({ arePostsPresent: false, userInfo: userInfo, doesUserExist: true });
         }
     })
 }
@@ -958,9 +958,9 @@ router.route("/blogPosts/:package").get((req, res) => {
         ).then(posts => {
             // between each draft, if the publication date is greater, then include it in the array
             // if there is an edit date, then use that instead to make the comparison
+            console.log("posts found: ", posts.length)
             const targetPost = posts.find(({ _id }) => _id === draftId);
             const restsOfPosts = posts.filter(({ _id }) => _id !== draftId)
-            console.log('yo there meng ')
             let _posts;
             if (restsOfPosts.length > 3) {
                 const postsByTime = restsOfPosts.sort((postA, postB) => {
@@ -1096,7 +1096,9 @@ router.route("/blogPosts/:package").get((req, res) => {
                     }
                 })
             };
-            !userIds.includes(_posts?.targetPost?.authorId) && userIds.push(_posts.targetPost.authorId);
+            if (_posts?.targetPost?.authorId) {
+                !userIds.includes(_posts.targetPost.authorId) && userIds.push(_posts.targetPost.authorId);
+            }
             if (_posts?.targetPost?.userIdsOfLikes?.length) {
                 // get the ids of the users of the post likes of the post 
                 _posts.targetPost.userIdsOfLikes.forEach(({ userId }) => {
@@ -1772,6 +1774,7 @@ router.route("/blogPosts/:package").get((req, res) => {
                 res.json(false);
             }
         });
+        // CHANGE THE NAME OF PACKAGE HERE 
     } else if (name === 'checkIfPostsExist') {
         console.log('bitchhhhh')
         const { userId, postIds } = package
@@ -1813,6 +1816,8 @@ router.route("/blogPosts/:package").get((req, res) => {
                 res.json({ isEmpty: true });
             }
         })
+    } else if (name === 'getPostExistenceStatus') {
+        BlogPost.findOne({ _id: postId }).countDocuments().then(doesPostExist => { res.json(!doesPostExist) })
     }
 });
 

@@ -3432,7 +3432,7 @@ router.route("/users/:package").get((request, response) => {
     } else if (name === 'getFollowersAndFollowing') {
         const searchQuery = username ? { $or: [{ username: username }, { _id: userId }] } : { _id: userId };
         if (!username) {
-            User.findOne(searchQuery, { followers: 1, _id: 0, 'activities.following': 1 })
+            User.findOne(searchQuery, { followers: 1, _id: 1, 'activities.following': 1 })
                 .then(result => {
                     if (result?.followers?.length || result?.activities?.following?.length) {
                         const { followers, activities } = result;
@@ -3459,22 +3459,23 @@ router.route("/users/:package").get((request, response) => {
                                 if (following?.length) {
                                     _following = following.map(user => {
                                         const targetUser = getUser(users, user.userId);
-                                        console.log('following: ', { targetUser })
-                                        return { ...user._doc, ...targetUser._doc };
+                                        return targetUser ? { ...user._doc, ...targetUser._doc } : null;
                                     });
                                 };
                                 if (followers?.length) {
                                     _followers = followers.map(user => {
                                         const targetUser = getUser(users, user.userId);
-                                        return { ...user._doc, ...targetUser._doc };
+                                        return targetUser ? { ...user._doc, ...targetUser._doc } : null;
                                     })
                                 };
+                                _following = _following && _following.filter(user => !!user);
+                                _followers = _followers && _followers.filter(user => !!user);
                                 response.json({ followers: _followers, following: _following });
                             })
                         } else {
                             response.json({ isEmpty: true })
                         }
-                    } else {
+                    } else if (result?._id) {
                         response.json({ isEmpty: true })
                     }
                 })
@@ -3486,59 +3487,65 @@ router.route("/users/:package").get((request, response) => {
         } else {
             User.find(searchQuery, { followers: 1, username: 1, 'activities.following': 1, _id: 1 }).then(_users => {
                 console.table(_users)
-                const userBeingViewed = _users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username))
-                const currentUser = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-                const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
-                const currentUserFollowersFollowing = getFollowersAndFollowing(currentUser);
-                console.log('currentUser: ', currentUser)
-                let userIds;
-                // GOAL: get all of the info (_id, username, iconPath) for both the user that is being viewed and the current user
-                if (followersAndFollowing?.following?.length) {
-                    userIds = [...followersAndFollowing.following.map(({ userId }) => userId)];
-                }
-                if (followersAndFollowing?.followers?.length) {
-                    userIds = userIds ? [...userIds, ...followersAndFollowing.followers.map(({ userId }) => userId)] : followersAndFollowing.followers.map(({ userId }) => userId)
-                }
-                if (currentUserFollowersFollowing?.following?.length) {
-                    userIds = userIds ? [...userIds, ...currentUserFollowersFollowing.following.map(({ userId }) => userId)] : currentUserFollowersFollowing.following.map(({ userId }) => userId)
-                }
-                if (currentUserFollowersFollowing?.followers?.length) {
-                    userIds = userIds ? [...userIds, ...currentUserFollowersFollowing.followers.map(({ userId }) => userId)] : currentUserFollowersFollowing.followers.map(({ userId }) => userId)
-                };
-
-                const getIconAndUsername = (followingOrFollowers, users) => followingOrFollowers.map(user => {
-                    console.log('followingOrFollowers: ', followingOrFollowers)
-                    const targetUser = getUser(users, user.userId);
-                    return targetUser;
-                })
-                User.find({ _id: { $in: [...new Set(userIds)] } }, { _id: 1, username: 1, iconPath: 1 }).then(users => {
-                    let usersInfo;
+                const userBeingViewed = _users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
+                // GOAL: send an error status to the client when the user that is being viewed no longer exists
+                if (!userBeingViewed) {
+                    const currentUser = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                    const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
+                    const currentUserFollowersFollowing = getFollowersAndFollowing(currentUser);
+                    console.log('currentUser: ', currentUser)
+                    let userIds;
+                    // getting all of the info (_id, username, iconPath) for both the user that is being viewed and the current user
                     if (followersAndFollowing?.following?.length) {
-                        usersInfo = {
-                            following: getIconAndUsername(followersAndFollowing.following, users)
-                        }
-                    };
+                        userIds = [...followersAndFollowing.following.map(({ userId }) => userId)];
+                    }
                     if (followersAndFollowing?.followers?.length) {
-                        usersInfo = usersInfo ?
-                            { ...usersInfo, followers: getIconAndUsername(followersAndFollowing.followers, users) }
-                            :
-                            { ...usersInfo, followers: getIconAndUsername(followersAndFollowing.followers, users) }
-                    };
+                        userIds = userIds ? [...userIds, ...followersAndFollowing.followers.map(({ userId }) => userId)] : followersAndFollowing.followers.map(({ userId }) => userId)
+                    }
                     if (currentUserFollowersFollowing?.following?.length) {
-                        usersInfo = usersInfo ?
-                            { ...usersInfo, currentUserFollowing: getIconAndUsername(currentUserFollowersFollowing.following, users) }
-                            :
-                            { ...usersInfo, currentUserFollowing: getIconAndUsername(currentUserFollowersFollowing.following, users) }
+                        userIds = userIds ? [...userIds, ...currentUserFollowersFollowing.following.map(({ userId }) => userId)] : currentUserFollowersFollowing.following.map(({ userId }) => userId)
                     }
                     if (currentUserFollowersFollowing?.followers?.length) {
-                        usersInfo = usersInfo ?
-                            { ...usersInfo, currentUserFollowers: getIconAndUsername(currentUserFollowersFollowing.followers, users) }
-                            :
-                            { ...usersInfo, currentUserFollowers: getIconAndUsername(currentUserFollowersFollowing.followers, users) }
-                    }
-                    usersInfo ? response.json(usersInfo) : response.json({ isEmpty: true })
-                })
+                        userIds = userIds ? [...userIds, ...currentUserFollowersFollowing.followers.map(({ userId }) => userId)] : currentUserFollowersFollowing.followers.map(({ userId }) => userId)
+                    };
 
+                    const getIconAndUsername = (followingOrFollowers, users) => followingOrFollowers.map(user => {
+                        console.log('followingOrFollowers: ', followingOrFollowers)
+                        const targetUser = getUser(users, user.userId);
+                        return targetUser;
+                    })
+                    User.find({ _id: { $in: [...new Set(userIds)] } }, { _id: 1, username: 1, iconPath: 1 }).then(users => {
+                        let usersInfo;
+                        if (followersAndFollowing?.following?.length) {
+                            usersInfo = {
+                                following: getIconAndUsername(followersAndFollowing.following, users)
+                            }
+                        };
+                        if (followersAndFollowing?.followers?.length) {
+                            usersInfo = usersInfo ?
+                                { ...usersInfo, followers: getIconAndUsername(followersAndFollowing.followers, users).filter(user => !!user) }
+                                :
+                                { followers: getIconAndUsername(followersAndFollowing.followers, users).filter(user => !!user) }
+                        };
+                        if (currentUserFollowersFollowing?.following?.length) {
+                            usersInfo = usersInfo ?
+                                { ...usersInfo, currentUserFollowing: getIconAndUsername(currentUserFollowersFollowing.following, users).filter(user => !!user) }
+                                :
+                                { currentUserFollowing: getIconAndUsername(currentUserFollowersFollowing.following, users).filter(user => !!user) }
+                        }
+                        if (currentUserFollowersFollowing?.followers?.length) {
+                            usersInfo = usersInfo ?
+                                { ...usersInfo, currentUserFollowers: getIconAndUsername(currentUserFollowersFollowing.followers, users).filter(user => !!user) }
+                                :
+                                { currentUserFollowers: getIconAndUsername(currentUserFollowersFollowing.followers, users).filter(user => !!user) }
+                        }
+                        usersInfo ? response.json(usersInfo) : response.json({ isEmpty: true })
+                    })
+                } else {
+                    // the user doesn't exist
+                    console.log("User doesn't exist.")
+                    response.sendStatus(404)
+                }
             })
         }
 
@@ -4893,7 +4900,6 @@ router.route("/users/:package").get((request, response) => {
                 const { replies: repliesByUser, comments: commentsByUser } = result.activities;
                 let postIds = repliesByUser ? repliesByUser.map(({ postId }) => postId) : [];
                 commentsByUser && commentsByUser.forEach(({ postIdOfComment }) => { !postIds.includes(postIdOfComment) && postIds.push(postIdOfComment) });
-
                 let repliedToCommentIds = [];
                 repliesByUser && repliesByUser.forEach(({ commentsRepliedTo }) => {
                     commentsRepliedTo.forEach(commentId => { repliedToCommentIds.push(commentId) });
@@ -4910,6 +4916,7 @@ router.route("/users/:package").get((request, response) => {
                     }
                 ).then(posts => {
                     if (posts.length) {
+                        // 
                         let postIdsOfComments = commentsByUser.map(({ postIdOfComment }) => postIdOfComment);
                         postIdsOfComments = posts.filter(({ _id }) => postIdsOfComments.includes(_id));
 
@@ -5092,29 +5099,24 @@ router.route("/users/:package").get((request, response) => {
                                 }
                             })
 
-                            // GOAL: push the following data s
-                            // CASE 1: the date already exist in the datesOfActivities
-                            // CASE 2: the date doesn't exist in the datesOfActivities
+                            if (datesOfActivities) {
+                                datesOfActivities = datesOfActivities.sort(({ publicationDate: dateA }, { publicationDate: dateB }) => {
+                                    if (dateA > dateB) return -1;
+                                    if (dateA < dateB) return 1;
+                                    return 0;
+                                });
 
+                                datesOfActivities = datesOfActivities.map(comment => {
+                                    if (comment.activities.length > 1) {
+                                        return {
+                                            ...comment,
+                                            activities: comment.activities.sort(({ publication: publishedAtA }, { publication: publishedAtB }) => -(publishedAtA.miliSeconds - publishedAtB.miliSeconds))
+                                        }
+                                    };
 
-                            // sort the dates (starting with the latest)
-                            // datesOfActivities = datesOfActivities.sort(({ publicationDate: dateA }, { publicationDate: dateB }) => -(dateA.miliSeconds - dateB.miliSeconds));
-                            datesOfActivities = datesOfActivities.sort(({ publicationDate: dateA }, { publicationDate: dateB }) => {
-                                if (dateA > dateB) return -1;
-                                if (dateA < dateB) return 1;
-                                return 0;
-                            });
-                            // sort the activities by time (starting with the latest)
-                            datesOfActivities = datesOfActivities.map(comment => {
-                                if (comment.activities.length > 1) {
-                                    return {
-                                        ...comment,
-                                        activities: comment.activities.sort(({ publication: publishedAtA }, { publication: publishedAtB }) => -(publishedAtA.miliSeconds - publishedAtB.miliSeconds))
-                                    }
-                                };
-
-                                return comment
-                            })
+                                    return comment
+                                })
+                            };
 
 
                             datesOfActivities ? response.json(datesOfActivities) : response.json({ isEmpty: true })
@@ -5782,7 +5784,6 @@ router.route("/users/:package").get((request, response) => {
                 list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
             });
         }
-        // GOAL: if the author of the post blocked the user that saved their post, then filter out that user 
         User.find({}, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(users => {
             const userBeingViewed = !isOnOwnProfile && users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
@@ -6013,7 +6014,7 @@ router.route("/users/:package").get((request, response) => {
             console.log('users: ', users);
             const userBeingViewed = users.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username));
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-            if (userBeingViewed) {
+            if (!userBeingViewed) {
                 const { _id, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = userBeingViewed;
                 let _users = { _id, iconPath, firstName, lastName, bio, topics };
                 const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
@@ -6025,6 +6026,7 @@ router.route("/users/:package").get((request, response) => {
                 _users = currentUserFollowing ? { ..._users, currentUserFollowing: currentUserFollowing.following } : _users;
                 response.json(_users);
             } else {
+                console.log("User doesn't exist.")
                 response.sendStatus(404)
             }
 
@@ -6584,7 +6586,10 @@ router.route("/users/:package").get((request, response) => {
             response.json(user.tags)
         })
     } else if (name === 'checkUserExistence') {
-        User.findOne({ _id: userId }).countDocuments().then(isExisting => { response.json(!!isExisting) })
+        User.findOne({ _id: userId }).countDocuments().then(isExisting => {
+            console.log({ isExisting })
+            response.json(isExisting)
+        })
     }
 }, error => {
     if (error) {
