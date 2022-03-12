@@ -892,6 +892,7 @@ router.route("/blogPosts/:package").get((req, res) => {
     if (name === "getPublishedDrafts") {
         // when viewing another user profile, get all of the posts that they've published
         if (username) {
+            console.log('meat')
             User.findOne({ username: username }, { _id: 1, firstName: 1, lastName: 1, followers: 1, 'activities.following': 1, iconPath: 1, readingLists: 1, topics: 1, bio: 1, socialMedia: 1 }).then(user => {
                 if (user) {
                     const { _id, followers, activities, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = user;
@@ -959,6 +960,7 @@ router.route("/blogPosts/:package").get((req, res) => {
             // if there is an edit date, then use that instead to make the comparison
             const targetPost = posts.find(({ _id }) => _id === draftId);
             const restsOfPosts = posts.filter(({ _id }) => _id !== draftId)
+            console.log('yo there meng ')
             let _posts;
             if (restsOfPosts.length > 3) {
                 const postsByTime = restsOfPosts.sort((postA, postB) => {

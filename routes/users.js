@@ -3165,6 +3165,7 @@ const userIconUpload = multer({
 
 router.route('/users/updateUserIcon').post(userIconUpload.single('file'), (req, res) => {
     const { bio, userId, name } = req.body;
+    console.log('req.body: ', req.body)
     if (bio) {
         User.updateOne(
             { _id: userId },
@@ -3412,12 +3413,12 @@ router.route("/users/:package").get((request, response) => {
         })
     } else if ((name === 'getUserId') && username) {
         console.log('username: ', username);
-        User.find({ username: username }).then(user => {
-            console.log('user: ', user);
-            const { _id } = user[0];
-            response.json({
-                _id
-            })
+        User.findOne({ username: username }).then(user => {
+            response.json(user._id)
+        }).catch(error => {
+            if (error) {
+                console.error('An error has occurred: ', error)
+            }
         })
     } else if (name === 'getAllUsers') {
         console.log('getting all users')
@@ -4855,15 +4856,12 @@ router.route("/users/:package").get((request, response) => {
                                 // use the likedOn field as the determinate of the sort
                                 // also sort out the activities for each activity of the day
                                 // STEPS: 
-                                console.log('likes, before: ', likes)
                                 likes = likes.length && likes.sort(({ likedOn: likedOnA }, { likedOn: likedOnB }) => {
                                     if (likedOnA > likedOnB) return -1;
                                     if (likedOnA < likedOnB) return 1;
                                     return 0;
                                 });
-                                console.log('yo there: ', likes);
                                 const sortDayActivities = likes => likes.map(like => {
-                                    console.log('likes: ', likes);
                                     if (like.activities.length > 1) {
                                         // how is this descending order? 
                                         return {
@@ -5651,20 +5649,17 @@ router.route("/users/:package").get((request, response) => {
                     }
                     let followingUsers;
                     if (users.length) {
-                        console.log('followingActivitiesDel: ', followingActivitiesDel);
                         activities.following.forEach(user => {
                             const isActivityDeleted = followingActivitiesDel?.includes(user.userId);
                             // if the activity was deleted, then don't show the activity on the ui
                             if (!isActivityDeleted) {
                                 const { userId: _userId, followedUserAt } = user;
                                 const targetUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(_userId));
-                                console.log('targetUser: ', targetUser)
                                 if (targetUser) {
                                     const { date, time, miliSeconds } = followedUserAt;
                                     const following = { _id: _userId, followedAt: { miliSeconds, time }, username: targetUser.username, uIText: ` followed ${targetUser.username}.` }
                                     const _values = { dateOfActivity: date, newActivity: following, activities: followingUsers, dateField: 'followedOn', activityType: 'isFollowing' }
                                     followingUsers = insertNewActivity(_values);
-                                    console.log('followerUsers: ', followingUsers)
                                 }
                             };
                         });
@@ -5892,9 +5887,9 @@ router.route("/users/:package").get((request, response) => {
             }
         })
     } else if (name === 'getReadingListNamesAndUsers') {
-        User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, topics: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 }).then(users => {
+        User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 }).then(users => {
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-            let { readingLists, blockedUsers, activities, followers } = currentUser;
+            let { readingLists, blockedUsers, activities, followers, topics } = currentUser;
             const blockedUserIds = blockedUsers?.length && blockedUsers.map(({ userId }) => userId);
             const _users = users.map(user => {
                 if (user.readingList) {
@@ -5946,7 +5941,7 @@ router.route("/users/:package").get((request, response) => {
                                     };
                                 }
                             });
-                            let data = { readingLists, users: _users };
+                            let data = { readingLists, users: _users, tags: topics };
                             const _following = activities?.following?.length && activities.following.map(_user => {
                                 const user = getUser(users, _user.userId);
                                 const { iconPath, username } = user;
@@ -5961,7 +5956,7 @@ router.route("/users/:package").get((request, response) => {
                             data = _followers?.length ? { ...data, followers: _followers } : data;
                             response.json(data);
                         } else {
-                            let data = { readingLists, users: _users };
+                            let data = { readingLists, users: _users, tags: topics };
                             const _following = activities?.following?.length && activities.following.map(_user => {
                                 const user = getUser(users, _user.userId);
                                 const { iconPath, username } = user;
@@ -5979,7 +5974,7 @@ router.route("/users/:package").get((request, response) => {
 
                     });
                 } else {
-                    let data = { readingLists, users: _users };
+                    let data = { readingLists, users: _users, tags: topics };
                     const _following = activities?.following?.length && activities.following.map(_user => {
                         const user = getUser(users, _user.userId);
                         const { iconPath, username } = user;
@@ -5995,7 +5990,7 @@ router.route("/users/:package").get((request, response) => {
                     response.json(data);
                 }
             } else {
-                let data = { users: _users };
+                let data = { users: _users, tags: topics };
                 const _following = activities?.following?.length && activities.following.map(_user => {
                     const user = getUser(users, _user.userId);
                     const { iconPath, username } = user;
@@ -6388,16 +6383,12 @@ router.route("/users/:package").get((request, response) => {
                             conversationUsers: _conversationUsers.filter(user => !!user),
                             messages: messages.map(message => {
                                 // if the message is not by the current user
-                                if (message.userId) {
-                                    const { iconPath, username, blockedUsers } = getUser(users, message.userId) || {};
-                                    const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
-                                    const isUserOfMessageBlocked = (currentUserBlockedUsers && username) && currentUserBlockedUsers.includes(message.userId);
-                                    username && delete message.userId
-                                    return username ? { ...message, user: { iconPath, username, _id: message.userId }, isUserOfMessageBlocked, isCurrentUserBlocked } : { ...message, doesUserExist: false };
-                                }
-
-                                // if no userId, then the message is by the current user
-                                return message;
+                                console.log('messages: ', messages)
+                                const isMsgByCurrentUser = (message.user._id === userId);
+                                const messageUser = !isMsgByCurrentUser && users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(message.user._id))
+                                const isCurrentUserBlocked = messageUser?.blockedUsers?.length && messageUser.blockedUsers.map(({ userId }) => userId).includes(userId);
+                                const isUserOfMessageBlocked = (currentUserBlockedUsers && messageUser) && currentUserBlockedUsers.includes(message.user._id);
+                                return (messageUser || isMsgByCurrentUser) ? { ...message, isUserOfMessageBlocked, isCurrentUserBlocked } : { ...message, doesUserExist: false };
                             })
                         }
                     });
@@ -6421,6 +6412,9 @@ router.route("/users/:package").get((request, response) => {
 
                         return conversation;
                     })
+
+                    _conversations = _conversations.filter(({ doesInviterExist }) => !(doesInviterExist === false));
+                    _conversations = _conversations.filter(({ doesRecipientExist }) => !(doesRecipientExist === false));
 
                     response.json(
                         {
@@ -6585,6 +6579,12 @@ router.route("/users/:package").get((request, response) => {
                 response.json({ _id, iconPath, username });
             }
         })
+    } else if (name === 'getLikedTags') {
+        User.findOne({ _id: userId }, { topics: 1 }).then(user => {
+            response.json(user.tags)
+        })
+    } else if (name === 'checkUserExistence') {
+        User.findOne({ _id: userId }).countDocuments().then(isExisting => { response.json(!!isExisting) })
     }
 }, error => {
     if (error) {

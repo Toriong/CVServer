@@ -25,56 +25,6 @@ const conversationCId = 'a567f531-68e1-42ea-8564-ad72b8dd1ecb';
 const conversationDId = '22a3e981-3729-48ca-b7b9-ee9cd3bbaeaf';
 const conversationEId = 'df62e709-5338-4260-959d-adb01c1e428d';
 
-const getChatsForUsersInChatA = users => {
-    const userA = users.find(({ id }) => id === userAId);
-    const userB = users.find(({ id }) => id === userBId);
-    const userC = users.find(({ id }) => id === userCId);
-    const userAChatA = userA.conversations.find(({ conversationId }) => conversationId === conversationAId);
-    const userBChatA = userB.conversations.find(({ conversationId }) => conversationId === conversationAId);
-    const userCChatA = userC.conversations.find(({ conversationId }) => conversationId === conversationAId);
-
-    return { userAChatA, userBChatA, userCChatA }
-};
-
-
-const getChatsForUsersInChatB = users => {
-    const userA = users.find(({ id }) => id === userAId);
-    const userB = users.find(({ id }) => id === userBId);
-    const userC = users.find(({ id }) => id === userCId);
-    const userD = users.find(({ id }) => id === userDId);
-    console.log('bacon, userD: ', userD)
-    const userAChatB = userA.conversations.find(({ conversationId }) => conversationId === conversationBId);
-    const userBChatB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId);
-    const userCChatB = userC.conversations.find(({ conversationId }) => conversationId === conversationBId);
-    const userDChatB = userD.conversations.find(({ conversationId }) => conversationId === conversationBId);
-
-    return { userAChatB, userBChatB, userCChatB, userDChatB }
-}
-
-const getIsDelUserPresentChatA = (users, willCheckAdmins) => {
-    const { userAChatA, userBChatA, userCChatA } = getChatsForUsersInChatA(users)
-    // if the deleted user is not present, should return a undefined 
-    const isDelUserNotInUserAGroupChat = !(willCheckAdmins ? userAChatA.adMins : userAChatA.conversationUsers).find(userId => userId === userToDeleteId);
-    const isDelUserNotInUserBGroupChat = !(willCheckAdmins ? userBChatA.adMins : userBChatA.conversationUsers).find(userId => userId === userToDeleteId);
-    const isDelUserNotInUserCGroupChat = !(willCheckAdmins ? userCChatA.adMins : userCChatA.conversationUsers).find(userId => userId === userToDeleteId);
-    const booleanValsIsDelUserNotInChat = [isDelUserNotInUserAGroupChat, isDelUserNotInUserBGroupChat, isDelUserNotInUserCGroupChat];
-    // if the values are 'undefined' for all cases, then if the values are put in an array and the duplication are deleted, then the length will be one  
-    return [...new Set(booleanValsIsDelUserNotInChat)]
-}
-const getIsDelUserPresentChatB = (users, willCheckAdmins) => {
-    const { userAChatB, userBChatB, userCChatB, userDChatB } = getChatsForUsersInChatB(users)
-    // if the deleted user is not present, should return a undefined 
-    const findConversationUserCb = userId => userId === userToDeleteId;
-    const findAdminCb = ({ userId }) => userId === userToDeleteId;
-    const isDelUserNotInUserAGroupChat = !(willCheckAdmins ? userAChatB.adMins : userAChatB.conversationUsers).find(willCheckAdmins ? findAdminCb : findConversationUserCb);
-    const isDelUserNotInUserBGroupChat = !(willCheckAdmins ? userBChatB.adMins : userBChatB.conversationUsers).find(willCheckAdmins ? findAdminCb : findConversationUserCb);
-    const isDelUserNotInUserCGroupChat = !(willCheckAdmins ? userCChatB.adMins : userCChatB.conversationUsers).find(willCheckAdmins ? findAdminCb : findConversationUserCb);
-    const isDelUserNotInUserDGroupChat = !(willCheckAdmins ? userDChatB.adMins : userDChatB.conversationUsers).find(willCheckAdmins ? findAdminCb : findConversationUserCb);
-    console.log({ isDelUserNotInUserDGroupChat })
-    const booleanValsIsDelUserNotInChat = [isDelUserNotInUserAGroupChat, isDelUserNotInUserBGroupChat, isDelUserNotInUserCGroupChat, isDelUserNotInUserDGroupChat];
-    // if the values are 'undefined' for all cases, then if the values are put in an array and the duplication are deleted, then the length will be one  
-    return [...new Set(booleanValsIsDelUserNotInChat)]
-}
 
 const conversations = [
     {
@@ -88,11 +38,17 @@ const conversations = [
         adMins: [{ userId: userToDeleteId, isMain: true }, { userId: userBId, isMain: false }, { userId: userCId, isMain: false }]
     },
     {
+        // GOAL: the following should occur:
+        // the main admin should be userA
+        // the deletedUser shouldn't be in conversationUsers array
+        // the deletedUser shouldn't be in adMins array 
         conversationId: conversationCId,
         conversationUsers: [userAId, userBId, userDId, userToDeleteId],
         adMins: [{ userId: userAId, isMain: true }, { userId: userToDeleteId, isMain: false }]
     },
     {
+        // GOAL:
+        // the deletedUser shouldn't be in the conversationUsers array
         conversationId: conversationDId,
         conversationUsers: [userAId, userCId, userToDeleteId],
         adMins: [{ userId: userAId, isMain: true }]
@@ -494,6 +450,9 @@ describe('Delete all material from the deletedUser', () => {
     });
 
     // for group messages, delete the deleted user from the arrays that is stored in admins and conversationUser fields
+    // for all group chats, the deleted user will not be present in all of them pertaining to the following fields:
+    // conversationUsers
+    // adMins
     before(done => {
         User.findOne({ id: userToDeleteId }, { conversations: 1 }).then(({ conversations }) => {
             if (conversations) {
@@ -505,7 +464,7 @@ describe('Delete all material from the deletedUser', () => {
                     if (isDeletedUserMainAdmin && (adMins?.length > 1)) {
                         let _adMins = adMins.filter(({ userId }) => userId !== userToDeleteId);
                         const newMainAdmin = _adMins[getRandomArrayIndex(_adMins.length)];
-                        _adMins = adMins.map(user => {
+                        _adMins = _adMins.map(user => {
                             if (user.userId === newMainAdmin.userId) {
                                 return {
                                     ...user,
@@ -561,7 +520,6 @@ describe('Delete all material from the deletedUser', () => {
 
                         conversationBulkWrites = conversationBulkWrites ? [...conversationBulkWrites, updateManyObj] : [updateManyObj];
                     } else if (conversationUsers.length > 1) {
-                        // GOAL: delete the deleted user from the conversationUsers array and if the user is in the admins array, delete the user from that array as well 
                         _conversationUsers = conversationUsers.filter(userId => userId !== userToDeleteId)
                         const _adMins = adMins.filter(({ userId }) => userId !== userToDeleteId);
                         const newConversation = {
@@ -773,220 +731,486 @@ describe('Delete all material from the deletedUser', () => {
     // WHAT I WANT: the main admin of the group will be either userAId, userBId, userCId
     if (hasGroupChats) {
         // testing for conversationA
-        it('deleted user is no longer in conversationA for all users that are in the chatA', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId] } }).then(users => {
-                const booleanValsIsDelUserNotInChatSet = getIsDelUserPresentChatA(users)
-                // after the deletion of the duplicated values, if the deleted user is not in any of the conversationUsers array for each user, then the length of booleanValsIsDelUserNotInChat should be one, since the var isDelUserNotInUserGroupChat will come out to be false for all users 
-                assert.equal(booleanValsIsDelUserNotInChatSet.length, 1);
-                done();
-            }).catch(error => {
-                if (error) {
-                    console.error('Test failed. Deleted user is still in conversationA of userA: ', error)
-                    assert.fail();
+        it('deleted user was deleted from chatA in all chats of users in chatA', done => {
+            User.find({ id: { $in: [userAId, userBId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                console.log('users: ', users)
+                const userA = users.find(({ id }) => id === userAId)
+                const userB = users.find(({ id }) => id === userBId)
+                const userC = users.find(({ id }) => id === userCId);
+                console.log('userA: ', userA)
+                const chatAUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationAId);
+                const allChatUsersForAllUserChats = [...chatAUserA.conversationUsers, ...chatAUserB.conversationUsers, ...chatAUserC.conversationUsers]
+                const areStrings = allChatUsersForAllUserChats.every(userId => typeof userId === 'string');
+                const areNotUndefined = allChatUsersForAllUserChats.every(userId => userId !== undefined);
+                if (areNotUndefined && areStrings) {
+                    const isDeletedUserNotPresentChatAUserA = !chatAUserA.conversationUsers.find(userId => userId === userToDeleteId)
+                    const isDeletedUserNotPresentChatAUserB = !chatAUserB.conversationUsers.find(userId => userId === userToDeleteId)
+                    const isDeletedUserNotPresentChatAUserC = !chatAUserC.conversationUsers.find(userId => userId === userToDeleteId)
+                    const booleanValsIsDeletedUserNotPresent = [isDeletedUserNotPresentChatAUserA, isDeletedUserNotPresentChatAUserB, isDeletedUserNotPresentChatAUserC]
+                    assert.equal(booleanValsIsDeletedUserNotPresent.every(val => val === true), true)
+                } else {
+                    assert.fail()
                 }
-            })
-        });
-
-        it('checking if deleted user is not an admin of chatA', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId] } }).then(users => {
-                const booleanValsIsDelUserNotInChatSet = getIsDelUserPresentChatA(users, true)
-                assert.equal(booleanValsIsDelUserNotInChatSet.length, 1);
-                done();
+                done()
             }).catch(error => {
                 if (error) {
-                    console.error('Test failed. Deleted user is still in conversationA of userA: ', error)
+                    console.error('An error has occurred: ', error);
                     assert.fail();
                 }
             })
         })
 
-        it('checking if the main admin is the same for all users', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId] } })
-                .then(users => {
-                    const userA = users.find(({ id }) => id === userAId);
-                    const userB = users.find(({ id }) => id === userBId);
-                    const userC = users.find(({ id }) => id === userCId);
-                    const userAChatA = userA.conversations.find(({ conversationId }) => conversationId === conversationAId);
-                    const userBChatA = userB.conversations.find(({ conversationId }) => conversationId === conversationAId);
-                    const userCChatA = userC.conversations.find(({ conversationId }) => conversationId === conversationAId);
-                    const mainAdminIdChatAUserA = userAChatA.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatAUserB = userBChatA.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatAUserC = userCChatA.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminInArray = [...new Set([mainAdminIdChatAUserA, mainAdminIdChatAUserB, mainAdminIdChatAUserC])];
-                    assert.equal(mainAdminInArray.length, 1);
-                    done()
-                })
-                .catch(error => {
-                    if (error) {
-                        console.error('Users in conversationA has different mainAdmin: ', error)
-                        assert.fail()
-                    }
-                })
+        it('deleted user was deleted from chatA in all chats of users in chatA as a admin.', done => {
+            User.find({ id: { $in: [userAId, userBId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId)
+                const userB = users.find(({ id }) => id === userBId)
+                const userC = users.find(({ id }) => id === userCId);
+                const chatAUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const isDeletedUserNotPresentChatAUserA = !chatAUserA.adMins.find(({ userId }) => userId === userToDeleteId)
+                const isDeletedUserNotPresentChatAUserB = !chatAUserB.adMins.find(({ userId }) => userId === userToDeleteId)
+                const isDeletedUserNotPresentChatAUserC = !chatAUserC.adMins.find(({ userId }) => userId === userToDeleteId)
+                const booleanValsIsDeletedUserNotPresent = [isDeletedUserNotPresentChatAUserA, isDeletedUserNotPresentChatAUserB, isDeletedUserNotPresentChatAUserC]
+                assert.equal(booleanValsIsDeletedUserNotPresent.every(val => val === true), true)
+                done()
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
         })
-        it('checking if the main admin is the same for all users check 2', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId] } })
-                .then(users => {
-                    const userA = users.find(({ id }) => id === userAId);
-                    const userB = users.find(({ id }) => id === userBId);
-                    const userC = users.find(({ id }) => id === userCId);
-                    const userAChatA = userA.conversations.find(({ conversationId }) => conversationId === conversationAId);
-                    const userBChatA = userB.conversations.find(({ conversationId }) => conversationId === conversationAId);
-                    const userCChatA = userC.conversations.find(({ conversationId }) => conversationId === conversationAId);
-                    const mainAdminIdChatAUserA = userAChatA.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatAUserB = userBChatA.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatAUserC = userCChatA.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdInChats = [mainAdminIdChatAUserA, mainAdminIdChatAUserB, mainAdminIdChatAUserC];
-                    assert.equal(mainAdminIdInChats.every(id => id === mainAdminIdChatAUserA), true);
+
+        it('Testing if the same main admin for all users in the chat.', done => {
+            User.find({ id: { $in: [userAId, userBId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId)
+                const userB = users.find(({ id }) => id === userBId)
+                const userC = users.find(({ id }) => id === userCId);
+                const chatAUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserAMainAdminId = chatAUserA.adMins.find(({ isMain }) => isMain).userId
+                const chatAUserBMainAdminId = chatAUserB.adMins.find(({ isMain }) => isMain).userId
+                const chatAUserCMainAdminId = chatAUserC.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdForAllChats = [chatAUserCMainAdminId, chatAUserBMainAdminId, chatAUserAMainAdminId];
+                const areStrings = mainAdminIdForAllChats.every(userId => typeof userId === 'string')
+                const areNotUndefined = mainAdminIdForAllChats.every(userId => userId !== undefined);
+                if (areStrings && areNotUndefined) {
+                    assert.equal(mainAdminIdForAllChats.every(userId => userId === chatAUserAMainAdminId), true)
                     done()
-                })
-                .catch(error => {
-                    if (error) {
-                        console.error('Users in conversationA has different mainAdmin: ', error)
-                        assert.fail()
-                    }
-                })
+                } else {
+                    assert.fail()
+                }
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
+        })
+
+        it('Is main admin either userA, b, or c for chatA.', done => {
+            User.find({ id: { $in: [userAId, userBId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId)
+                const userB = users.find(({ id }) => id === userBId)
+                const userC = users.find(({ id }) => id === userCId);
+                const chatAUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationAId)
+                const chatAUserAMainAdminId = chatAUserA.adMins.find(({ isMain }) => isMain).userId
+                const chatAUserBMainAdminId = chatAUserB.adMins.find(({ isMain }) => isMain).userId
+                const chatAUserCMainAdminId = chatAUserC.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdForAllChats = [chatAUserAMainAdminId, chatAUserBMainAdminId, chatAUserCMainAdminId]
+                const isMainAdminSameForAllChats = mainAdminIdForAllChats.every(userId => userId === chatAUserAMainAdminId);
+                const areStrings = mainAdminIdForAllChats.every(userId => typeof userId === 'string')
+                const areNotUndefined = mainAdminIdForAllChats.every(userId => userId !== undefined);
+                if (isMainAdminSameForAllChats && areNotUndefined && areStrings) {
+                    assert.equal(mainAdminIdForAllChats.every(userId => [userAId, userBId, userCId].includes(userId)), true)
+                } else {
+                    assert.fail()
+                }
+                done()
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
         })
         // end of testing for conversationA
 
-        // start of testing for conversationB
-        it("deleted user is no longer in conversationB for all users' chats that are in chatB", done => {
-            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } }).then(users => {
-                const booleanValsIsDelUserNotInChatSet = getIsDelUserPresentChatB(users)
-                // after the deletion of the duplicated values, if the deleted user is not in any of the conversationUsers array for each user, then the length of booleanValsIsDelUserNotInChat should be one, since the var isDelUserNotInUserGroupChat will come out to be false for all users 
-                assert.equal(booleanValsIsDelUserNotInChatSet.length, 1);
-                // const userD = users.find(({ id }) => id === userDId);
-                done();
+        // start of testing of conversationB
+        it('deleted user was deleted from chatB in all chats of users in chatB', done => {
+            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } }, { conversations: 1, id: 1 }).then(users => {
+                console.log('users: ', users)
+                const userA = users.find(({ id }) => id === userAId);
+                const userB = users.find(({ id }) => id === userBId);
+                const userC = users.find(({ id }) => id === userCId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatBUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const usersInAllChats = [...chatBUserA.conversationUsers, ...chatBUserB.conversationUsers, ...chatBUserC.conversationUsers, ...chatBUserD.conversationUsers];
+                const areStrings = usersInAllChats.every(userId => typeof userId === 'string');
+                const areNotUndefined = usersInAllChats.every(userId => userId !== undefined);
+                if (areNotUndefined && areStrings) {
+                    const isDeletedUserNotPresentChatBUserA = !chatBUserA.conversationUsers.find(userId => userId === userToDeleteId)
+                    const isDeletedUserNotPresentChatBUserB = !chatBUserB.conversationUsers.find(userId => userId === userToDeleteId)
+                    const isDeletedUserNotPresentChatBUserC = !chatBUserC.conversationUsers.find(userId => userId === userToDeleteId)
+                    const isDeletedUserNotPresentChatBUserD = !chatBUserD.conversationUsers.find(userId => userId === userToDeleteId)
+                    const booleanValsIsDeletedUserNotPresent = [isDeletedUserNotPresentChatBUserA, isDeletedUserNotPresentChatBUserB, isDeletedUserNotPresentChatBUserC, isDeletedUserNotPresentChatBUserD]
+                    assert.equal(booleanValsIsDeletedUserNotPresent.every(val => val === true), true)
+                    done()
+                } else {
+                    assert.fail()
+                }
+
             }).catch(error => {
                 if (error) {
-                    console.error('Test failed. Deleted user is still in conversationB for all users in group: ', error)
+                    console.error('An error has occurred: ', error);
                     assert.fail();
                 }
             })
         });
 
-        it('checking if deleted user is not an admin of chatB', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } }).then(users => {
-                const booleanValsIsDelUserNotInChatSet = getIsDelUserPresentChatB(users, true)
-                // if equal to zero, then the array is filled with false booleans since the check for each chat of the user came to be false
-                assert.equal(booleanValsIsDelUserNotInChatSet.length, 1);
+        it("Deleted user is not present as an admin in all users' chats of chatB.", done => {
+            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId)
+                const userB = users.find(({ id }) => id === userBId)
+                const userC = users.find(({ id }) => id === userCId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatBUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const isDeletedUserNotPresentChatBUserA = !chatBUserA.adMins.find(({ userId }) => userId === userToDeleteId)
+                const isDeletedUserNotPresentChatBUserB = !chatBUserB.adMins.find(({ userId }) => userId === userToDeleteId)
+                const isDeletedUserNotPresentChatBUserC = !chatBUserC.adMins.find(({ userId }) => userId === userToDeleteId)
+                const isDeletedUserNotPresentChatBUserD = !chatBUserD.adMins.find(({ userId }) => userId === userToDeleteId)
+                const booleanValsIsDeletedUserNotPresent = [isDeletedUserNotPresentChatBUserD, isDeletedUserNotPresentChatBUserC, isDeletedUserNotPresentChatBUserB, isDeletedUserNotPresentChatBUserA]
+                assert.equal(booleanValsIsDeletedUserNotPresent.every(val => val === true), true);
                 done();
             }).catch(error => {
                 if (error) {
-                    console.error('Test failed. Deleted user is still in conversationB of userA as a admin: ', error)
+                    console.error('Deleted user is still present in chatB: ', error);
                     assert.fail();
                 }
             })
         })
 
-        it('checking if the main admin is the same for all users in chatB', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } })
-                .then(users => {
-                    const userA = users.find(({ id }) => id === userAId);
-                    const userB = users.find(({ id }) => id === userBId);
-                    const userC = users.find(({ id }) => id === userCId);
-                    const userD = users.find(({ id }) => id === userDId);
-                    const userAChatB = userA.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userBChatB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userCChatB = userC.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userDChatB = userD.conversations.find(({ conversationId }) => conversationId === conversationBId)
-                    const mainAdminIdChatBUserA = userAChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserB = userBChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserC = userCChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserD = userDChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminInArray = [...new Set([mainAdminIdChatBUserA, mainAdminIdChatBUserB, mainAdminIdChatBUserC, mainAdminIdChatBUserD])];
-                    assert.equal(mainAdminInArray.length, 1);
-                    done()
-                })
-                .catch(error => {
-                    if (error) {
-                        console.error('Users in chat do not have the same main admin: ', error)
-                        assert.fail()
-                    }
-                })
+        it('Testing if the same main admin for all users in the chatB.', done => {
+            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId)
+                const userB = users.find(({ id }) => id === userBId)
+                const userC = users.find(({ id }) => id === userCId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatBUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserAMainAdminId = chatBUserA.adMins.find(({ isMain }) => isMain).userId
+                const chatBUserBMainAdminId = chatBUserB.adMins.find(({ isMain }) => isMain).userId
+                const chatBUserCMainAdminId = chatBUserC.adMins.find(({ isMain }) => isMain).userId
+                const chatBUserDMainAdminId = chatBUserD.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdForAllChats = [chatBUserAMainAdminId, chatBUserBMainAdminId, chatBUserCMainAdminId, chatBUserDMainAdminId];
+                const areStrings = mainAdminIdForAllChats.every(userId => typeof userId === 'string');
+                const areNotUndefined = mainAdminIdForAllChats.every(userId => userId !== undefined);
+                if (areStrings && areNotUndefined) {
+                    assert.equal(mainAdminIdForAllChats.every(userId => userId === chatBUserAMainAdminId), true)
+                } else {
+                    assert.fail();
+                }
+                done()
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                } ha
+            })
         })
 
-        it('checking if the main admin is the same for all users in chatB check 2', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } })
-                .then(users => {
-                    const userA = users.find(({ id }) => id === userAId);
-                    const userB = users.find(({ id }) => id === userBId);
-                    const userC = users.find(({ id }) => id === userCId);
-                    const userD = users.find(({ id }) => id === userDId);
-                    const userAChatB = userA.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userBChatB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userCChatB = userC.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userDChatB = userD.conversations.find(({ conversationId }) => conversationId === conversationBId)
-                    const mainAdminIdChatBUserA = userAChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserB = userBChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserC = userCChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserD = userDChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdsInUsersChats = [mainAdminIdChatBUserA, mainAdminIdChatBUserB, mainAdminIdChatBUserC, mainAdminIdChatBUserD]
-                    assert.equal(mainAdminIdsInUsersChats.every(userId => userId === mainAdminIdChatBUserA), true);
-                    done()
-                })
-                .catch(error => {
-                    if (error) {
-                        console.error('Users in chat do not have the same main admin: ', error)
+        it('Is main admin either userA, b, c, or d for chatB', done => {
+            User.find({ id: { $in: [userAId, userBId, userDId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId)
+                const userB = users.find(({ id }) => id === userBId)
+                const userC = users.find(({ id }) => id === userCId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatBUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationBId)
+                const chatBUserAMainAdminId = chatBUserA.adMins.find(({ isMain }) => isMain).userId
+                const chatBUserBMainAdminId = chatBUserB.adMins.find(({ isMain }) => isMain).userId
+                const chatBUserCMainAdminId = chatBUserC.adMins.find(({ isMain }) => isMain).userId
+                const chatBUserDMainAdminId = chatBUserD.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdForAllChats = [chatBUserAMainAdminId, chatBUserBMainAdminId, chatBUserCMainAdminId, chatBUserDMainAdminId];
+                const areStrings = mainAdminIdForAllChats.every(userId => typeof userId === 'string');
+                const areNotUndefined = mainAdminIdForAllChats.every(userId => userId !== undefined);
+                if (areNotUndefined && areStrings) {
+                    const isMainAdminSameForAllChats = mainAdminIdForAllChats.every(userId => userId === chatBUserAMainAdminId);
+                    if (isMainAdminSameForAllChats) {
+                        assert.equal(mainAdminIdForAllChats.every(userId => [userBId, userCId].includes(userId)), true)
+                        done()
+                    } else {
                         assert.fail()
                     }
-                })
-        })
-        it('checking if the main admin of the group is either userC or userB', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } })
-                .then(users => {
-                    const userA = users.find(({ id }) => id === userAId);
-                    const userB = users.find(({ id }) => id === userBId);
-                    const userC = users.find(({ id }) => id === userCId);
-                    const userD = users.find(({ id }) => id === userDId);
-                    const userAChatB = userA.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userBChatB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userCChatB = userC.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userDChatB = userD.conversations.find(({ conversationId }) => conversationId === conversationBId)
-                    const mainAdminIdChatBUserA = userAChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserB = userBChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserC = userCChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserD = userDChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdsInUsersChats = [mainAdminIdChatBUserA, mainAdminIdChatBUserB, mainAdminIdChatBUserC, mainAdminIdChatBUserD]
-                    assert.equal(mainAdminIdsInUsersChats.every(userId => userId === mainAdminIdChatBUserA), true);
-                    done()
-                })
-                .catch(error => {
-                    if (error) {
-                        console.error('Users in chat do not have the same main admin: ', error)
-                        assert.fail()
-                    }
-                })
-        })
+                } else {
+                    assert.fail()
 
-        it('checking if the main admin of the group is either userC or userB', done => {
-            User.find({ id: { $in: [userAId, userBId, userCId, userDId] } })
-                .then(users => {
-                    const userA = users.find(({ id }) => id === userAId);
-                    const userB = users.find(({ id }) => id === userBId);
-                    const userC = users.find(({ id }) => id === userCId);
-                    const userD = users.find(({ id }) => id === userDId);
-                    const userAChatB = userA.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userBChatB = userB.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userCChatB = userC.conversations.find(({ conversationId }) => conversationId === conversationBId);
-                    const userDChatB = userD.conversations.find(({ conversationId }) => conversationId === conversationBId)
-                    const mainAdminIdChatBUserA = userAChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserB = userBChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserC = userCChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdChatBUserD = userDChatB.adMins.find(({ isMain }) => isMain).userId
-                    const mainAdminIdsInUsersChats = [mainAdminIdChatBUserA, mainAdminIdChatBUserB, mainAdminIdChatBUserC, mainAdminIdChatBUserD]
-                    assert.equal(mainAdminIdsInUsersChats.includes(userToDeleteId), true);
-                    done()
-                })
-                .catch(error => {
-                    if (error) {
-                        console.error('Users in chat do not have the same main admin: ', error)
-                        assert.fail()
-                    }
-                })
+                }
+
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
         })
         // end of testing for conversationB
 
-        // start of testing for conversationC
+        // testing for conversationC
+        it('deleted user was deleted from chatB in all chats of users in chatC', done => {
+            User.find({ id: { $in: [userAId, userBId, userDId] } }, { conversations: 1, id: 1 }).then(users => {
+                console.log('users: ', users)
+                const userA = users.find(({ id }) => id === userAId);
+                const userB = users.find(({ id }) => id === userBId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatCUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const allChatUsers = [...chatCUserA.conversationUsers, ...chatCUserB.conversationUsers, ...chatCUserD.conversationUsers]
+                const areStrings = allChatUsers.every(val => typeof val === 'string');
+                if (areStrings) {
+                    const isDeletedUserNotPresentChatCUserA = !chatCUserA.conversationUsers.find(userId => userId === userToDeleteId)
+                    const isDeletedUserNotPresentChatCUserB = !chatCUserB.conversationUsers.find(userId => userId === userToDeleteId)
+                    const isDeletedUserNotPresentChatCUserC = !chatCUserD.conversationUsers.find(userId => userId === userToDeleteId)
+                    const booleanValsIsDeletedUserNotPresent = [isDeletedUserNotPresentChatCUserA, isDeletedUserNotPresentChatCUserB, isDeletedUserNotPresentChatCUserC];
+                    assert.equal(booleanValsIsDeletedUserNotPresent.every(val => val === true), true);
+                    done();
+                } else {
+                    assert.fail()
+                }
+
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
+        });
+
+        it("Deleted user is not present as an admin in all users' chats of chatC.", done => {
+            User.find({ id: { $in: [userAId, userBId, userDId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId);
+                const userB = users.find(({ id }) => id === userBId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatCUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const isDeletedUserNotAdminChatCUserA = !chatCUserA.adMins.find(({ userId }) => userId === userToDeleteId)
+                const isDeletedUserNotAdminChatCUserB = !chatCUserB.adMins.find(({ userId }) => userId === userToDeleteId)
+                const isDeletedUserNotAdminChatCUserD = !chatCUserD.adMins.find(({ userId }) => userId === userToDeleteId)
+                const booleanValsIsDeletedUserNotPresent = [isDeletedUserNotAdminChatCUserA, isDeletedUserNotAdminChatCUserB, isDeletedUserNotAdminChatCUserD];
+                assert.equal(booleanValsIsDeletedUserNotPresent.every(val => val === true), true)
+                done()
+            }).catch(error => {
+                if (error) {
+                    console.error('Deleted user is still present in chatB: ', error);
+                    assert.fail();
+                }
+            })
+        })
+
+        it('Testing if the same main admin for all users in chatC.', done => {
+            User.find({ id: { $in: [userAId, userBId, userDId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId);
+                const userB = users.find(({ id }) => id === userBId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatCUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const mainAdminIdChatCUserA = chatCUserA.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdChatCUserB = chatCUserB.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdChatCUserC = chatCUserD.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdsForAllUsersChats = [mainAdminIdChatCUserA, mainAdminIdChatCUserB, mainAdminIdChatCUserC];
+                const areNotUndefined = mainAdminIdsForAllUsersChats.every(userId => userId !== undefined);
+                const areStrings = mainAdminIdsForAllUsersChats.every(userId => typeof userId === 'string');
+                if (areStrings && areNotUndefined) {
+                    assert.equal(mainAdminIdsForAllUsersChats.every(userId => userId === mainAdminIdChatCUserA), true)
+                    done()
+                } else {
+                    assert.fail()
+                }
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
+        })
+
+        it('Is main admin either userA, B, or D for chatC', done => {
+            User.find({ id: { $in: [userAId, userBId, userDId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId);
+                const userB = users.find(({ id }) => id === userBId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatCUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const mainAdminIdChatCUserA = chatCUserA.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdChatCUserB = chatCUserB.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdChatCUserD = chatCUserD.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdsForAllUsersChats = [mainAdminIdChatCUserA, mainAdminIdChatCUserB, mainAdminIdChatCUserD];
+                const areNotUndefined = mainAdminIdsForAllUsersChats.every(userId => userId !== undefined);
+                const areStrings = mainAdminIdsForAllUsersChats.every(userId => typeof userId === 'string');
+                if (areStrings && areNotUndefined) {
+                    assert.equal(mainAdminIdsForAllUsersChats.every(userId => [userAId, userBId, userDId].includes(userId)), true)
+                    done()
+                } else {
+                    assert.fail()
+                }
+
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
+        })
+        // end of testing for conversationC
+
+        // start of testing for conversationD
+        it('deleted user was deleted from chatB in all chats of users in chatD', done => {
+            User.find({ id: { $in: [userAId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId);
+                const userC = users.find(({ id }) => id === userCId);
+                const chatDUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationDId)
+                const chatDUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationDId)
+                const allChatUsers = [...chatDUserA.conversationUsers, ...chatDUserC.conversationUsers]
+                const areStrings = allChatUsers.every(val => typeof val === 'string');
+                if (areStrings) {
+                    const isDeletedUserNotPresentChatCUserA = !chatDUserA.conversationUsers.find(userId => userId === userToDeleteId)
+                    const isDeletedUserNotPresentChatCUserB = !chatDUserC.conversationUsers.find(userId => userId === userToDeleteId)
+                    const booleanValsIsDeletedUserNotPresent = [isDeletedUserNotPresentChatCUserA, isDeletedUserNotPresentChatCUserB];
+                    assert.equal(booleanValsIsDeletedUserNotPresent.every(val => val === true), true);
+                    done();
+                } else {
+                    assert.fail()
+                }
+
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
+        });
+
+
+        it("Deleted user is not present as an admin in all users' chats of chatD.", done => {
+            User.find({ id: { $in: [userAId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId);
+                const userC = users.find(({ id }) => id === userCId);
+                const chatCUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationDId)
+                const chatCUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationDId)
+                const isDeletedUserNotAdminChatCUserA = !chatCUserA.adMins.find(({ userId }) => userId === userToDeleteId)
+                const isDeletedUserNotAdminChatCUserB = !chatCUserC.adMins.find(({ userId }) => userId === userToDeleteId)
+                const booleanValsIsDeletedUserNotPresent = [isDeletedUserNotAdminChatCUserA, isDeletedUserNotAdminChatCUserB];
+                assert.equal(booleanValsIsDeletedUserNotPresent.every(val => val === true), true)
+                done()
+            }).catch(error => {
+                if (error) {
+                    console.error('Deleted user is still present in chatB: ', error);
+                    assert.fail();
+                }
+            })
+        })
+
+        it('Testing if the same main admin for all users in chatD.', done => {
+            User.find({ id: { $in: [userAId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId);
+                const userC = users.find(({ id }) => id === userCId);
+                const chatDUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationDId)
+                const chatDUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationDId)
+                const mainAdminIdChatDUserA = chatDUserA.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdChatDUserC = chatDUserC.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdsForAllUsersChats = [mainAdminIdChatDUserA, mainAdminIdChatDUserC];
+                const areNotUndefined = mainAdminIdsForAllUsersChats.every(userId => userId !== undefined);
+                const areStrings = mainAdminIdsForAllUsersChats.every(userId => typeof userId === 'string');
+                if (areStrings && areNotUndefined) {
+                    assert.equal(mainAdminIdsForAllUsersChats.every(userId => userId === mainAdminIdChatDUserA), true)
+                    done()
+                } else {
+                    assert.fail()
+                }
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
+        })
+
+        it('Is main admin either userA, B, or D for chatC', done => {
+            User.find({ id: { $in: [userAId, userBId, userDId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId);
+                const userB = users.find(({ id }) => id === userBId);
+                const userD = users.find(({ id }) => id === userDId);
+                const chatCUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserB = userB.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const chatCUserD = userD.conversations.find(({ conversationId }) => conversationId === conversationCId)
+                const mainAdminIdChatCUserA = chatCUserA.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdChatCUserB = chatCUserB.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdChatCUserC = chatCUserD.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdsForAllUsersChats = [mainAdminIdChatCUserA, mainAdminIdChatCUserB, mainAdminIdChatCUserC];
+                const areNotUndefined = mainAdminIdsForAllUsersChats.every(userId => userId !== undefined);
+                const areStrings = mainAdminIdsForAllUsersChats.every(userId => typeof userId === 'string');
+                if (areStrings && areNotUndefined) {
+                    assert.equal(mainAdminIdsForAllUsersChats.every(userId => [userAId, userBId, userDId].includes(userId)), true)
+                    done()
+                } else {
+                    assert.fail()
+                }
+
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
+        })
+
+        it('Is main admin either userA or C for chatD', done => {
+            User.find({ id: { $in: [userAId, userCId] } }, { conversations: 1, id: 1 }).then(users => {
+                const userA = users.find(({ id }) => id === userAId);
+                const userC = users.find(({ id }) => id === userCId);
+                const chatDUserA = userA.conversations.find(({ conversationId }) => conversationId === conversationDId)
+                const chatDUserC = userC.conversations.find(({ conversationId }) => conversationId === conversationDId)
+                const mainAdminIdChatDUserA = chatDUserA.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdChatDUserC = chatDUserC.adMins.find(({ isMain }) => isMain).userId
+                const mainAdminIdsForAllUsersChats = [mainAdminIdChatDUserC, mainAdminIdChatDUserA];
+                const areNotUndefined = mainAdminIdsForAllUsersChats.every(userId => userId !== undefined);
+                const areStrings = mainAdminIdsForAllUsersChats.every(userId => typeof userId === 'string');
+                if (areStrings && areNotUndefined) {
+                    assert.equal(mainAdminIdsForAllUsersChats.every(userId => [userAId, userCId].includes(userId)), true)
+                    done()
+                } else {
+                    assert.fail()
+                }
+
+            }).catch(error => {
+                if (error) {
+                    console.error('An error has occurred: ', error);
+                    assert.fail();
+                }
+            })
+        })
+
+
 
     }
 
@@ -1148,7 +1372,7 @@ describe('Delete all material from the deletedUser', () => {
             })
         })
 
-        it('checking if deleted user is being followed by userC', () => {
+        it('checking if deleted user is being followed by userC', done => {
             User.findOne({ id: userCId }, { followers: 1, activities: 1 }).then(user => {
                 const isNotPresentInUserCFollowing = !user.activities.following.map(({ userId }) => userId).includes(userToDeleteId)
                 assert.equal(isNotPresentInUserCFollowing, true);
