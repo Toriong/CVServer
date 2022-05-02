@@ -425,7 +425,7 @@ router.route("/users/updateInfo").post((request, response) => {
     // console.log('name status: ', name === 'checkDeletedLikedActivities')
     if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
-        const { topics, socialMedia } = data
+        const { topics, socialMedia, bio } = data
         if (socialMedia) {
             User.updateOne(
                 {
@@ -434,6 +434,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 {
                     topics: topics,
                     socialMedia: socialMedia,
+                    bio: bio,
                     isUserNew: false
                 },
                 (error, numsAffected) => {
@@ -599,6 +600,7 @@ router.route("/users/updateInfo").post((request, response) => {
             console.log({ tagsFromClient })
             const areTagsSame = JSON.stringify(draftInDbTags) === JSON.stringify(tagsFromClient);
             const wasNoSubtitleChosen = (subtitleFromClient === undefined) && (subtitleInDb === '' || subtitleInDb === undefined)
+            console.log({ subtitleInDb });
             const isSubtitleSame = wasNoSubtitleChosen ? undefined : subtitleFromClient === subtitleInDb;
             const wasNoImageChosen = (imgUrlInDb === undefined) && (imgUrlFromClient === undefined);
             const isImgUrlSame = wasNoImageChosen ? undefined : imgUrlInDb === imgUrlFromClient;
@@ -933,39 +935,57 @@ router.route("/users/updateInfo").post((request, response) => {
         const { targetUserId, signedInUserId, followedUserAt } = data;
         console.log('dta ', data);
         if (followedUserAt) {
-            User.updateOne({ _id: signedInUserId },
-                {
-                    $push:
-                    {
-                        "activities.following": { userId: targetUserId, followedUserAt }
-                    }
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error(`Error message 667: ${error}`)
-                    } else {
-                        console.log(`New following added, numsAffected: `, numsAffected)
-                    }
+            User.findOne({ _id: signedInUserId }, { 'activities.following': 1 }).then(currentUser => {
+                const isFollowingTargetUser = currentUser?.activities?.following?.length && currentUser.activities.following.map(({ userId }) => JSON.parse(JSON.stringify(userId))).includes(targetUserId)
+                if (!isFollowingTargetUser) {
+                    User.updateOne({ _id: signedInUserId },
+                        {
+                            $push:
+                            {
+                                "activities.following": { userId: targetUserId, followedUserAt }
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error(`Error message 667: ${error}`)
+                            } else {
+                                console.log(`New following added, numsAffected: `, numsAffected)
+                            }
+                        }
+                    );
+                } else {
+                    console.log('Target user is being followed by the current user.')
                 }
-            );
-            // IN DISPLAYING THE notifications, show the follower and the time of the follow
-            User.updateOne({ _id: targetUserId },
-                {
-                    $addToSet:
-                    {
-                        followers: { userId: signedInUserId, wasFollowedAt: followedUserAt },
-                        'notifications.newFollowers': { userId: signedInUserId, isMarkedRead: false }
-                    }
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error(`Error message 687: ${error}`)
-                    } else {
-                        console.log(`User is being followed by ${signedInUserId}. `, numsAffected)
-                        response.json('user has a new follower and is notified');
-                    }
+            });
+
+            // GOAL: check if the current user is a follower of the target user
+            User.findOne({ _id: targetUserId }, { followers: 1 }).then(targetUser => {
+                const isFollowedByCurrentUser = targetUser?.followers?.length && !!targetUser.followers.find(({ userId }) => userId === signedInUserId)
+                if (!isFollowedByCurrentUser) {
+                    User.updateOne({ _id: targetUserId },
+                        {
+                            $addToSet:
+                            {
+                                followers: { userId: signedInUserId, wasFollowedAt: followedUserAt },
+                                'notifications.newFollowers': { userId: signedInUserId, isMarkedRead: false }
+                            }
+                        },
+                        (error, numsAffected) => {
+                            if (error) {
+                                console.error(`Error message 687: ${error}`)
+                            } else {
+                                console.log(`User is being followed by ${signedInUserId}. `, numsAffected)
+                                response.json('user has a new follower and is notified');
+                            }
+                        }
+                    );
+                } else {
+                    console.log('Target user is already being followed by the current user.')
+
                 }
-            );
+
+            })
+
         } else {
             console.log('request.body: ', request.body);
             User.updateOne({ _id: signedInUserId },
@@ -1633,88 +1653,91 @@ router.route("/users/updateInfo").post((request, response) => {
         // WHAT IS HAPPENING: 
         // it is showing that the reply id doesn't exist 
         User.findOne({ _id: notifyUserId }, { 'notifications.likes.replies': 1, _id: 0 }).then(result => {
-            const replyLikesNotifications = (result.notifications && result.notifications.likes && result.notifications.likes.replies && result.notifications.likes.replies.length) && result.notifications.likes.replies
-            if (replyLikesNotifications) {
-
-                const { isPostPresent, isCommentPresent, isReplyPresent } = checkLikesInfo(data, replyLikesNotifications, { isReply: true });
-                console.log({
-                    isPostPresent, isCommentPresent, isReplyPresent
-                })
-                if (isPostPresent && isCommentPresent && isReplyPresent) {
-                    console.log('case 1 reply like notifications')
-                    // GOAL: push the following into userIdsOfLikes for the object that contains the liked reply: {userId, isMarkedRead: false}
-                    // the reply was already liked before, push the new id of liked into userIdsOfLikes
-                    User.updateOne(
-                        { _id: notifyUserId },
-                        {
-                            $addToSet:
+            if (result) {
+                const replyLikesNotifications = result?.notifications?.likes?.replies?.length && result.notifications.likes.replies
+                if (replyLikesNotifications) {
+                    const { isPostPresent, isCommentPresent, isReplyPresent } = checkLikesInfo(data, replyLikesNotifications, { isReply: true });
+                    console.log({
+                        isPostPresent, isCommentPresent, isReplyPresent
+                    })
+                    if (isPostPresent && isCommentPresent && isReplyPresent) {
+                        console.log('case 1 reply like notifications')
+                        // GOAL: push the following into userIdsOfLikes for the object that contains the liked reply: {userId, isMarkedRead: false}
+                        // the reply was already liked before, push the new id of liked into userIdsOfLikes
+                        User.updateOne(
+                            { _id: notifyUserId },
                             {
-                                'notifications.likes.replies.$[post].commentsRepliedTo.$[comment].replies.$[reply].userIdsOfLikes': { userId: userIdOfLike, isMarkedRead: false }
-                            }
-                        },
-                        {
-                            arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }, { 'reply.replyId': replyId }]
-                        },
-                        (error, numsAffected) => {
-                            if (error) {
-                                console.error('An error has occurred in notifying author of reply of new like: ', error);
-                            } else {
-                                console.log('Case 1. User was notified of reply like, numsAffected: ', numsAffected);
-                            }
-                        }
-                    );
-                } else if (isPostPresent && isCommentPresent && !isReplyPresent) {
-                    console.log('case 2 reply like notifications')
-                    User.updateOne(
-                        { _id: notifyUserId },
-                        {
-                            $addToSet:
+                                $addToSet:
+                                {
+                                    'notifications.likes.replies.$[post].commentsRepliedTo.$[comment].replies.$[reply].userIdsOfLikes': { userId: userIdOfLike, isMarkedRead: false }
+                                }
+                            },
                             {
-                                'notifications.likes.replies.$[post].commentsRepliedTo.$[comment].replies': { replyId: replyId, userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }] }
+                                arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }, { 'reply.replyId': replyId }]
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('An error has occurred in notifying author of reply of new like: ', error);
+                                } else {
+                                    console.log('Case 1. User was notified of reply like, numsAffected: ', numsAffected);
+                                }
                             }
-                        },
-                        {
-                            arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }]
-                        },
-                        (error, numsAffected) => {
-                            if (error) {
-                                console.error('An error has occurred in notifying author of reply of new like: ', error);
-                            } else {
-                                console.log('Case 2. User was notified of reply like, numsAffected: ', numsAffected);
-                            }
-                        }
-                    );
-                } else if (isPostPresent && !isCommentPresent && !isReplyPresent) {
-                    console.log('case 3 reply like notifications')
-                    User.updateOne(
-                        { _id: notifyUserId },
-                        {
-                            $addToSet:
+                        );
+                    } else if (isPostPresent && isCommentPresent && !isReplyPresent) {
+                        console.log('case 2 reply like notifications')
+                        User.updateOne(
+                            { _id: notifyUserId },
                             {
-                                'notifications.likes.replies.$[post].commentsRepliedTo': { commentId: commentId, replies: [{ replyId: replyId, userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }] }] }
+                                $addToSet:
+                                {
+                                    'notifications.likes.replies.$[post].commentsRepliedTo.$[comment].replies': { replyId: replyId, userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }] }
+                                }
+                            },
+                            {
+                                arrayFilters: [{ 'post.postId': postId }, { 'comment.commentId': commentId }]
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('An error has occurred in notifying author of reply of new like: ', error);
+                                } else {
+                                    console.log('Case 2. User was notified of reply like, numsAffected: ', numsAffected);
+                                }
                             }
-                        },
-                        {
-                            arrayFilters: [{ 'post.postId': postId }]
-                        },
-                        (error, numsAffected) => {
-                            if (error) {
-                                console.error('An error has occurred in notifying author of reply of new like: ', error);
-                            } else {
-                                console.log('Case 3. User was notified of reply like, numsAffected: ', numsAffected);
+                        );
+                    } else if (isPostPresent && !isCommentPresent && !isReplyPresent) {
+                        console.log('case 3 reply like notifications')
+                        User.updateOne(
+                            { _id: notifyUserId },
+                            {
+                                $addToSet:
+                                {
+                                    'notifications.likes.replies.$[post].commentsRepliedTo': { commentId: commentId, replies: [{ replyId: replyId, userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }] }] }
+                                }
+                            },
+                            {
+                                arrayFilters: [{ 'post.postId': postId }]
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('An error has occurred in notifying author of reply of new like: ', error);
+                                } else {
+                                    console.log('Case 3. User was notified of reply like, numsAffected: ', numsAffected);
+                                }
                             }
-                        }
-                    );
+                        );
+                    } else {
+                        console.log('case 4 rib eye reply like notifications')
+                        notifyUserOfNewReplyLike(notifyUserId, newReplyLikeNotification);
+                    };
                 } else {
-                    console.log('case 4 rib eye reply like notifications')
+                    console.log('No notification for reply likes. Will make them. Case 5 rib eye reply like notification')
                     notifyUserOfNewReplyLike(notifyUserId, newReplyLikeNotification);
-                };
+                }
             } else {
-                console.log('No notification for reply likes. Will make them. Case 5 rib eye reply like notification')
-                notifyUserOfNewReplyLike(notifyUserId, newReplyLikeNotification);
+                console.log('the user of the reply was deleted')
+                response.sendStatus(200);
             }
         })
-        response.json('notifying author of reply of new like.');
     } else if (name === 'deleteReplyLikeNotification') {
         const { notifyUserId } = request.body;
         const { postId, commentId, replyId, userIdOfLike } = data;
@@ -1749,61 +1772,67 @@ router.route("/users/updateInfo").post((request, response) => {
         };
 
         User.findOne({ _id: notifyUserId }, { 'notifications.likes.comments': 1, _id: 0 }).then(result => {
-            const commentLikesNotifications = (result.notifications && result.notifications.likes && result.notifications.likes.comments && result.notifications.likes.comments.length) && result.notifications.likes.comments;
-            if (commentLikesNotifications) {
-                const { isCommentPresent, isPostPresent } = checkLikesInfo(data, commentLikesNotifications, { isComment: true });
-                if (isPostPresent && isCommentPresent) {
-                    console.log('case 1 comments notifications')
-                    User.updateOne(
-                        { _id: notifyUserId },
-                        {
-                            $addToSet:
+            if (result) {
+                const commentLikesNotifications = result?.notifications?.likes?.comments?.length && result.notifications.likes.comments;
+                if (commentLikesNotifications) {
+                    const { isCommentPresent, isPostPresent } = checkLikesInfo(data, commentLikesNotifications, { isComment: true });
+                    if (isPostPresent && isCommentPresent) {
+                        console.log('case 1 comments notifications')
+                        User.updateOne(
+                            { _id: notifyUserId },
                             {
-                                'notifications.likes.comments.$[postOfComment].comments.$[comment].userIdsOfLikes': { userId: userIdOfLike, isMarkedRead: false }
-                            }
-                        },
-                        {
-                            arrayFilters: [{ 'postOfComment.postId': postId }, { 'comment.commentId': commentId }]
-                        },
-                        (error, numsAffected) => {
-                            if (error) {
-                                console.error('An error has occurred in notifying author of comment of new like ', error);
-                            } else {
-                                console.log('Case 1. Comment notification for author of comment was sent, numsAffected: ', numsAffected);
-                            }
-                        }
-                    );
-                } else if (isPostPresent && !isCommentPresent) {
-                    console.log('case 2 comments notifications')
-                    // the current user is the first user to like a comment by userA on a post, but has liked other comments either by userA or not
-                    User.updateOne(
-                        { _id: notifyUserId },
-                        {
-                            $addToSet:
+                                $addToSet:
+                                {
+                                    'notifications.likes.comments.$[postOfComment].comments.$[comment].userIdsOfLikes': { userId: userIdOfLike, isMarkedRead: false }
+                                }
+                            },
                             {
-                                'notifications.likes.comments.$[postOfComment].comments': { commentId: commentId, userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }] }
+                                arrayFilters: [{ 'postOfComment.postId': postId }, { 'comment.commentId': commentId }]
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('An error has occurred in notifying author of comment of new like ', error);
+                                } else {
+                                    console.log('Case 1. Comment notification for author of comment was sent, numsAffected: ', numsAffected);
+                                }
                             }
-                        },
-                        {
-                            arrayFilters: [{ 'postOfComment.postId': postId }]
-                        },
-                        (error, numsAffected) => {
-                            if (error) {
-                                console.error('An error has occurred in notifying author of comment of new like ', error);
-                            } else {
-                                console.log('Case 2. Comment notification for author of comment was sent, numsAffected: ', numsAffected);
+                        );
+                    } else if (isPostPresent && !isCommentPresent) {
+                        console.log('case 2 comments notifications')
+                        // the current user is the first user to like a comment by userA on a post, but has liked other comments either by userA or not
+                        User.updateOne(
+                            { _id: notifyUserId },
+                            {
+                                $addToSet:
+                                {
+                                    'notifications.likes.comments.$[postOfComment].comments': { commentId: commentId, userIdsOfLikes: [{ userId: userIdOfLike, isMarkedRead: false }] }
+                                }
+                            },
+                            {
+                                arrayFilters: [{ 'postOfComment.postId': postId }]
+                            },
+                            (error, numsAffected) => {
+                                if (error) {
+                                    console.error('An error has occurred in notifying author of comment of new like ', error);
+                                } else {
+                                    console.log('Case 2. Comment notification for author of comment was sent, numsAffected: ', numsAffected);
+                                }
                             }
-                        }
-                    );
+                        );
+                    } else {
+                        console.log('case 3 comments notifications')
+                        addCommentNotification(notifyUserId, newCommentNotification);
+                    }
                 } else {
-                    console.log('case 3 comments notifications')
-                    addCommentNotification(notifyUserId, newCommentNotification);
-                }
+                    console.log('case 4 comments notifications')
+                    addCommentNotification(notifyUserId, newCommentNotification)
+                };
+                response.json('Will notify author of comment of new like.')
             } else {
-                console.log('case 4 comments notifications')
-                addCommentNotification(notifyUserId, newCommentNotification)
-            };
-            response.json('Will notify author of comment of new like.')
+                console.log('the user of the comment was deleted.')
+                response.json('The user of the comment was deleted.')
+            }
+
         })
     } else if (name === 'deleteCommentNotification') {
         const { notifyUserId } = request.body;
@@ -2512,10 +2541,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 isFollowingUser ? addDeletedActivity(field, userId, activityId) : console.log("The user is no longer being followed by the current user. Will not add the id of the user to deletedActivities.following");
             })
         } else if (field === 'posts') {
-            // GOAL: check if the posts still exist
-            // CASE 1: the post exist
-            // GOAL: if the post exist, then deleted the post from tracking 
-            BlogPost.findOne({ _id: postId }).countDocuments().then(isPresent => {
+            BlogPost.findOne({ _id: activityId }).countDocuments().then(isPresent => {
                 console.log('isPresent: ', isPresent);
                 isPresent ? addDeletedActivity(field, userId, activityId) : console.log('The post no longer exist. Will not add the id of the post to the deletedActivities.posts field.')
             })
@@ -2636,6 +2662,7 @@ router.route("/users/updateInfo").post((request, response) => {
             delete _newConversationForRecipient.newMessage;
             delete newConversationForSender.newMessage;
 
+            console.log('request.body: ', request.body)
             // REFACTOR: use a bulkWrite to update user's messages
             User.updateMany(
                 {
@@ -2675,7 +2702,7 @@ router.route("/users/updateInfo").post((request, response) => {
                         )
                     }
                 }
-            )
+            );
         } else {
             // GOAL: find the conversation that the user replied to and push the newMessage into the messages field for that conversation 
             console.log('userIdsInChat: ', userIdsInChat);
@@ -2693,6 +2720,7 @@ router.route("/users/updateInfo").post((request, response) => {
                 delete _newMessage.user
             }
 
+            console.log('request.body: ', request.body)
             // use bulkWrite
             User.updateMany(
                 {
@@ -2736,7 +2764,7 @@ router.route("/users/updateInfo").post((request, response) => {
                         )
                     }
                 }
-            )
+            );
         }
     } else if (name === 'updateMessagesReadStatus') {
         const { conversationId, invitationId } = request.body;
@@ -3015,15 +3043,17 @@ router.route("/users/updateInfo").post((request, response) => {
                                 }
                             }
                         ]
-                    ).catch(error => {
-                        if (error) {
-                            console.error('An error has occurred in deleting the user from target conversation, error message: ', error);
-                            response.sendStatus(503);
-                        } else {
+                    )
+                        .then(() => {
+                            console.log('User left group, bulk write done.')
                             response.sendStatus(200);
-                            console.log('Conversations updated. User has left the targeted conversation.')
-                        }
-                    })
+                        })
+                        .catch(error => {
+                            if (error) {
+                                console.error('An error has occurred in deleting the user from target conversation, error message: ', error);
+                                response.sendStatus(503);
+                            }
+                        })
                 } else {
                     const newMainAdmin = { userId: newMainAdminUserId, isMain: true };
                     User.bulkWrite(
@@ -3134,8 +3164,6 @@ router.route("/users/updateInfo").post((request, response) => {
                 response.sendStatus(200);
             }
         )
-    } else if (name === 'deleteAccount') {
-
     }
 }, (error, req, res, next) => {
     if (error) {
@@ -3432,6 +3460,7 @@ router.route("/users/:package").get((request, response) => {
     } else if (name === 'getFollowersAndFollowing') {
         const searchQuery = username ? { $or: [{ username: username }, { _id: userId }] } : { _id: userId };
         if (!username) {
+            // the user is on their own following or followers page
             User.findOne(searchQuery, { followers: 1, _id: 1, 'activities.following': 1 })
                 .then(result => {
                     if (result?.followers?.length || result?.activities?.following?.length) {
@@ -3451,7 +3480,7 @@ router.route("/users/:package").get((request, response) => {
                                 userIds = following.map(({ userId }) => userId);
                             }
                             if (followers?.length) {
-                                userIds = userIds ? [...userIds, ...followers.map(({ userId }) => userId)] : userIds;
+                                userIds = userIds ? [...userIds, ...followers.map(({ userId }) => userId)] : followers.map(({ userId }) => userId);
                             };
 
                             User.find({ _id: { $in: userIds } }, { _id: 1, iconPath: 1, username: 1 }).then(users => {
@@ -3460,17 +3489,17 @@ router.route("/users/:package").get((request, response) => {
                                     _following = following.map(user => {
                                         const targetUser = getUser(users, user.userId);
                                         return targetUser ? { ...user._doc, ...targetUser._doc } : null;
-                                    });
+                                    }).filter(user => !!user);
                                 };
                                 if (followers?.length) {
                                     _followers = followers.map(user => {
                                         const targetUser = getUser(users, user.userId);
                                         return targetUser ? { ...user._doc, ...targetUser._doc } : null;
-                                    })
+                                    }).filter(user => !!user);
                                 };
-                                _following = _following && _following.filter(user => !!user);
-                                _followers = _followers && _followers.filter(user => !!user);
-                                response.json({ followers: _followers, following: _following });
+                                const data = { followers: _followers, following: _following };
+                                console.log({ bacon: data });
+                                response.json(data);
                             })
                         } else {
                             response.json({ isEmpty: true })
@@ -3486,10 +3515,9 @@ router.route("/users/:package").get((request, response) => {
                 })
         } else {
             User.find(searchQuery, { followers: 1, username: 1, 'activities.following': 1, _id: 1 }).then(_users => {
-                console.table(_users)
                 const userBeingViewed = _users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
                 // GOAL: send an error status to the client when the user that is being viewed no longer exists
-                if (!userBeingViewed) {
+                if (userBeingViewed) {
                     const currentUser = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
                     const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
                     const currentUserFollowersFollowing = getFollowersAndFollowing(currentUser);
@@ -3538,13 +3566,18 @@ router.route("/users/:package").get((request, response) => {
                                 { ...usersInfo, currentUserFollowers: getIconAndUsername(currentUserFollowersFollowing.followers, users).filter(user => !!user) }
                                 :
                                 { currentUserFollowers: getIconAndUsername(currentUserFollowersFollowing.followers, users).filter(user => !!user) }
-                        }
+                        };
+
                         usersInfo ? response.json(usersInfo) : response.json({ isEmpty: true })
                     })
                 } else {
                     // the user doesn't exist
                     console.log("User doesn't exist.")
                     response.sendStatus(404)
+                }
+            }).catch(error => {
+                if (error) {
+                    console.error('An error in getting the followers and following of the user that is being viewed: ', error)
                 }
             })
         }
@@ -5784,82 +5817,183 @@ router.route("/users/:package").get((request, response) => {
                 list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
             });
         }
-        User.find({}, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1 }).then(users => {
-            const userBeingViewed = !isOnOwnProfile && users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
-            const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-            console.log('userId: ', userId)
-            console.log('currentUser: ', currentUser)
-            const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
-            const isViewingDiffUserReadingLists = (!isOnOwnProfile && !isOnSearchPage && !isViewingPost)
-            console.log('isViewingDiffUserReadingLists: ', isViewingDiffUserReadingLists);
-            if (isOnOwnProfile || userBeingViewed || isViewingPost || isOnSearchPage) {
-                // if the user is viewing a different user's reading list, then get the reading list info for that user
-                let { _id, readingLists, iconPath, activities, followers } = (isOnOwnProfile || isViewingPost || isOnSearchPage) ? currentUser : userBeingViewed;
-                const currentUserReadingLists = (!isOnOwnProfile && !isViewingPost && !isOnSearchPage) && currentUser.readingLists
-                const currentUserListNames = currentUserReadingLists && Object.keys(currentUserReadingLists);
-                let listsToDel;
-                let postIds = [];
-                if (readingLists) {
-                    let listNames = Object.keys(readingLists);
-                    // when viewing a diff user, delete all of the lists that are private
-                    (!isOnOwnProfile && !isViewingPost && !isOnSearchPage) && listNames.forEach(listName => {
-                        if (readingLists[listName].isPrivate) {
-                            delete readingLists[listName];
-                            listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
-                        }
-                    });
-
-                    // when viewing a diff user, delete all of the list names that are private
-                    listNames = (listsToDel && !isOnOwnProfile && !isOnSearchPage && !isViewingPost) ? listNames.filter(listName => !listsToDel.includes(listName)) : listNames
-                    if (listNames.length) {
-                        // get all of the postIds for the search query on the BlogPost collection
-                        listNames.forEach(listName => {
-                            const { list } = readingLists[listName];
-                            list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
-                        });
-                        // get the post ids of the posts that were saved by the current user when viewing the reading lists of another user
-                        (!isOnOwnProfile && currentUserListNames && !isOnSearchPage) && getPostIds(currentUserReadingLists, currentUserListNames, postIds);
-                        BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { publicationDate: 1, title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
-                            const _userId = (isOnOwnProfile || isViewingPost || isOnSearchPage) ? userId : userBeingViewed._id;
-                            let { readingLists: _readingLists, postsWithIntroPics } = readingLists ? getReadingListsAndPostsPics(readingLists, posts, users, _userId) : {}
-                            console.log('_readingLists: ', _readingLists)
-                            // if the user is viewing a different user's profile, then get the reading list of the current user as well 
-                            let _currentUserReadingLists;
-                            if (isViewingDiffUserReadingLists) {
-                                console.log('currentUserReadingLists: ', currentUserReadingLists)
-                                const { readingLists, postsWithIntroPics: _postsWithIntroPics } = currentUserReadingLists ? getReadingListsAndPostsPics(currentUserReadingLists, posts, users, userId) : {}
-                                if (readingLists) {
-                                    _currentUserReadingLists = readingLists;
-                                    console.log('_postsWithIntroPics: ')
-                                    console.table(_postsWithIntroPics)
-                                    _postsWithIntroPics?.length && _postsWithIntroPics.forEach(post => {
-                                        const postsWithIntroPicsIds = postsWithIntroPics.map(({ _id }) => _id);
-                                        !postsWithIntroPicsIds.includes(post._id) && postsWithIntroPics.push(post)
-                                    })
-                                };
-                            }
-
-                            // get the first option if the user is viewing another user's reading list 
-                            let userDefaultVals = isViewingDiffUserReadingLists ? { _id: _userId, readingLists: _readingLists, userIconPath: iconPath, _currentUserReadingLists } : { readingLists: _readingLists };
-                            console.log('userDefaultVals: ', userDefaultVals);
-                            if (followers?.length && !isOnOwnProfile && !isOnSearchPage) {
-                                userDefaultVals = {
-                                    ...userDefaultVals,
-                                    followers
-                                }
-                            };
-                            if (activities?.following?.length && !isOnOwnProfile && !isOnSearchPage) {
-                                userDefaultVals = {
-                                    ...userDefaultVals,
-                                    following: activities.following
-                                }
-                            }
-                            const usersInfo = (postsWithIntroPics.length && isViewingDiffUserReadingLists) ? { postsWithIntroPics, ...userDefaultVals } : { ...userDefaultVals }
-                            console.log('usersInfo: ', usersInfo);
-                            response.json(usersInfo);
-                        })
+        User.find({}, { _id: 1, blockedUsers: 1, readingLists: 1, username: 1, iconPath: 1, 'activities.following': 1, followers: 1, firstName: 1, lastName: 1 }).then(users => {
+            let userBeingViewed;
+            // if the current user is not viewing their readingLists, then get the reading list of the user that is being viewed by the current user
+            if (!isOnOwnProfile) {
+                userBeingViewed = users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
+            };
+            // if the user doesn't exist and the current user is not on their own profile, then send a 404 status to the client
+            if ((userBeingViewed && !isOnOwnProfile) || isOnOwnProfile) {
+                const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
+                const blockedUserIds = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
+                const isViewingDiffUserReadingLists = (!isOnOwnProfile && !isOnSearchPage && !isViewingPost)
+                if (isOnOwnProfile || userBeingViewed || isViewingPost || isOnSearchPage) {
+                    // if the user is viewing a different user's reading list, then get the reading list info for that user
+                    let _userBeingViewed;
+                    let currentUserReadingLists;
+                    if (isOnOwnProfile || isViewingPost || isOnSearchPage) {
+                        // the current user is being viewed
+                        _userBeingViewed = currentUser;
                     } else {
-                        let user = { userIconPath: iconPath };
+                        // some other user is being viewed
+                        _userBeingViewed = userBeingViewed
+                        // get the current user's reading list as well
+                        currentUserReadingLists = currentUser.readingLists
+                    }
+                    let { _id, readingLists, iconPath, activities, followers } = _userBeingViewed;
+                    let currentUserListNames;
+                    if (currentUserReadingLists) {
+                        currentUserListNames = Object.keys(currentUserReadingLists);
+                    }
+                    let listsToDel;
+                    let postIds = [];
+                    if (readingLists) {
+                        let listNames = Object.keys(readingLists);
+                        // when viewing a diff user, delete all of the lists that are private
+                        if (!isOnOwnProfile && !isViewingPost && !isOnSearchPage) {
+                            listNames.forEach(listName => {
+                                if (readingLists[listName].isPrivate) {
+                                    delete readingLists[listName];
+                                    listsToDel = listsToDel ? [...listsToDel, listName] : [listName];
+                                }
+                            });
+                        };
+                        // when viewing a diff user, delete all of the list names that are private
+                        if (listsToDel && !isOnOwnProfile && !isOnSearchPage && !isViewingPost) {
+                            listNames = listNames.filter(listName => !listsToDel.includes(listName));
+                        }
+                        if (listNames.length) {
+                            // get all of the postIds for the search query on the BlogPost collection
+                            listNames.forEach(listName => {
+                                const { list } = readingLists[listName];
+                                list.length && list.forEach(({ postId }) => { !postIds.includes(postId) && postIds.push(postId) });
+                            });
+                            // get the post ids of the posts that were saved by the current user when viewing the reading lists of another user
+                            if (!isOnOwnProfile && currentUserListNames && !isOnSearchPage) {
+                                getPostIds(currentUserReadingLists, currentUserListNames, postIds);
+                            };
+                            BlogPost.find({ $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }, { publicationDate: 1, title: 1, imgUrl: 1, subtitle: 1, comments: 1, userIdsOfLikes: 1, authorId: 1 }).then(posts => {
+                                let _userId
+                                if (isOnOwnProfile || isViewingPost || isOnSearchPage) {
+                                    _userId = userId
+                                } else {
+                                    // if the user is viewing a different user, then get there reading list 
+                                    _userId = userBeingViewed._id;
+                                }
+                                let { readingLists: _readingLists, postsWithIntroPics } = readingLists ? getReadingListsAndPostsPics(readingLists, posts, users, _userId) : {}
+                                let _currentUserReadingLists;
+                                // if the user is viewing a different user's profile, then get the reading list of the current user as well 
+                                if (isViewingDiffUserReadingLists) {
+                                    const { readingLists, postsWithIntroPics: _postsWithIntroPics } = currentUserReadingLists ? getReadingListsAndPostsPics(currentUserReadingLists, posts, users, userId) : {}
+                                    if (readingLists) {
+                                        _currentUserReadingLists = readingLists;
+                                        _postsWithIntroPics?.length && _postsWithIntroPics.forEach(post => {
+                                            const postsWithIntroPicsIds = postsWithIntroPics.map(({ _id }) => _id);
+                                            !postsWithIntroPicsIds.includes(post._id) && postsWithIntroPics.push(post)
+                                        })
+                                    };
+                                }
+
+                                if (isViewingDiffUserReadingLists) {
+                                    // if viewing the readingLists from a diff user, then get usernames and the icons of the users that are being followed by the user that is being viewed 
+                                    // do the above for the followers as well
+                                    let _following;
+                                    let _followers;
+                                    if (activities?.following?.length) {
+                                        _following = activities.following.map(user => {
+                                            const { iconPath, username } = getUser(users, user?.userId) ?? {};
+                                            return username ? { ...user, username: username, iconPath: iconPath } : null;
+                                        }).filter(user => !!user);
+                                    };
+                                    if (followers?.length) {
+                                        _followers = followers.map(user => {
+                                            const { iconPath, username } = getUser(users, user?.userId) ?? {};
+                                            return username ? { ...user, username: username, iconPath: iconPath } : null;
+                                        }).filter(user => !!user)
+                                    }
+                                    const { firstName, lastName } = _userBeingViewed;
+                                    const { followers: currentUserFollowers, activities: currentUserActivities } = currentUser;
+                                    console.log('bacon: ', _readingLists);
+                                    userDefaultVals = {
+                                        _id: _userId,
+                                        readingLists: _readingLists,
+                                        userIconPath: iconPath,
+                                        followers: _followers,
+                                        following: _following,
+                                        currentUserFollowing: currentUserActivities?.following?.length && currentUserActivities.following,
+                                        currentUserFollowers,
+                                        _currentUserReadingLists,
+                                        firstName,
+                                        lastName,
+                                    }
+                                } else {
+                                    // user is viewing there own reading list
+                                    let _following;
+                                    let _followers;
+                                    if (activities?.following?.length) {
+                                        _following = activities.following.map(user => {
+                                            const { iconPath, username } = getUser(users, user.userId) ?? {}
+                                            return username ?
+                                                {
+                                                    ...user,
+                                                    username: username,
+                                                    iconPath: iconPath
+                                                }
+                                                :
+                                                null
+                                        }).filter(user => !!user);
+                                    };
+                                    if (followers?.length) {
+                                        _followers = followers.map(user => {
+                                            const { iconPath, username } = getUser(users, user.userId) ?? {};
+                                            return username ?
+                                                {
+                                                    ...user,
+                                                    username: username,
+                                                    iconPath: iconPath
+                                                }
+                                                :
+                                                null
+                                        }).filter(user => !!user);
+                                    }
+                                    userDefaultVals = { readingLists: _readingLists, following: _following, followers: _followers };
+                                }
+
+                                // // if viewing another user, then get there followers
+                                // if (followers?.length && !isOnOwnProfile && !isOnSearchPage) {
+                                //     userDefaultVals = {
+                                //         ...userDefaultVals,
+                                //         followers
+                                //     }
+                                // };
+
+                                // // if viewing another user, then get their following 
+                                // if (activities?.following?.length && !isOnOwnProfile && !isOnSearchPage) {
+                                //     userDefaultVals = {
+                                //         ...userDefaultVals,
+                                //         following: activities.following
+                                //     }
+                                // }
+                                // storing all intro pics of posts into an array in order to have one source of truth since the same post can be saved into the different reading lists
+                                const usersInfo = (postsWithIntroPics.length && isViewingDiffUserReadingLists) ? { postsWithIntroPics, ...userDefaultVals } : { ...userDefaultVals }
+                                console.log('userInfo: ', usersInfo)
+                                response.json(usersInfo);
+                            })
+                        } else {
+                            let user = { userIconPath: iconPath };
+                            if (followers) {
+                                user = { ...user, followers };
+                            };
+                            if (activities?.following?.length) {
+                                user = { ...user, following: activities.following };
+                            };
+                            console.log('user: ', user);
+                            response.json(user);
+                        }
+                    } else if (!isOnOwnProfile) {
+                        console.log('userBeingViewed: ', userBeingViewed);
+                        let user = { userIconPath: iconPath, _id: userBeingViewed._id };
                         if (followers) {
                             user = { ...user, followers };
                         };
@@ -5868,24 +6002,15 @@ router.route("/users/:package").get((request, response) => {
                         };
                         console.log('user: ', user);
                         response.json(user);
+                    } else {
+                        response.json({ isEmpty: true })
                     }
-                } else if (!isOnOwnProfile) {
-                    console.log('userBeingViewed: ', userBeingViewed);
-                    let user = { userIconPath: iconPath, _id: userBeingViewed._id };
-                    if (followers) {
-                        user = { ...user, followers };
-                    };
-                    if (activities?.following?.length) {
-                        user = { ...user, following: activities.following };
-                    };
-                    console.log('user: ', user);
-                    response.json(user);
-                } else {
-                    response.json({ isEmpty: true })
                 }
             } else {
+                // the user doesn't exist, send error to client
                 response.sendStatus(404);
             }
+
         })
     } else if (name === 'getReadingListNamesAndUsers') {
         User.find({}, { __v: 0, password: 0, phoneNum: 0, publishedDrafts: 0, belief: 0, email: 0, reasonsToJoin: 0, sex: 0, notifications: 0, roughDrafts: 0, socialMedia: 0 }).then(users => {
@@ -5914,7 +6039,9 @@ router.route("/users/:package").get((request, response) => {
                     BlogPost.find(
                         { $and: [{ _id: { $in: postIds }, authorId: { $nin: blockedUserIds } }] }
                     ).then(posts => {
+                        console.log('posts: ', posts);
                         if (posts.length) {
+
                             readingListsNames.forEach(listName => {
                                 const listByUser = readingLists[listName];
                                 if (listByUser?.list?.length) {
@@ -5944,33 +6071,45 @@ router.route("/users/:package").get((request, response) => {
                             });
                             let data = { readingLists, users: _users, tags: topics };
                             const _following = activities?.following?.length && activities.following.map(_user => {
-                                const user = getUser(users, _user.userId);
-                                const { iconPath, username } = user;
-                                return { ..._user, iconPath, username };
-                            })
+                                console.log('activities.following: ', activities.following)
+                                const user = getUser(users, _user?.userId);
+                                const { iconPath, username } = user ?? {};
+                                return user ? { ..._user, iconPath, username } : null;
+                            }).filter(user => !!user);
                             data = _following?.length ? { ...data, following: _following } : data;
                             const _followers = followers.length && followers.map(_user => {
-                                const user = getUser(users, _user.userId);
-                                const { iconPath, username } = user;
-                                return { ..._user, iconPath, username };
-                            })
+                                const user = getUser(users, _user?.userId);
+                                const { iconPath, username } = user ?? {};
+                                return user ? { ..._user, iconPath, username } : null;
+                            }).filter(user => !!user);
                             data = _followers?.length ? { ...data, followers: _followers } : data;
                             response.json(data);
                         } else {
-                            let data = { readingLists, users: _users, tags: topics };
+                            let data = { users: _users, tags: topics };
                             const _following = activities?.following?.length && activities.following.map(_user => {
                                 const user = getUser(users, _user.userId);
-                                const { iconPath, username } = user;
-                                return { ..._user, iconPath, username };
-                            })
+                                const { iconPath, username } = user ?? {};
+                                return username ? { ..._user, iconPath, username } : null;
+                            }).filter(user => !!user)
                             data = _following?.length ? { ...data, following: _following } : data;
                             const _followers = followers.length && followers.map(_user => {
                                 const user = getUser(users, _user.userId);
-                                const { iconPath, username } = user;
-                                return { ..._user, iconPath, username };
-                            })
+                                const { iconPath, username } = user ?? {}
+                                return username ? { ..._user, iconPath, username } : null;
+                            }).filter(user => !!user)
                             data = followers?.length ? { ...data, followers: _followers } : data;
-                            response.json(data);
+                            const readingListsNames = Object.keys(readingLists);
+                            readingListsNames.forEach(listName => {
+                                readingLists = {
+                                    ...readingLists,
+                                    [listName]: {
+                                        ...readingLists[listName],
+                                        list: []
+                                    }
+                                }
+                            });
+                            // GOAL: clear all of the lists for each list 
+                            response.json({ ...data, readingLists });
                         }
 
                     });
@@ -6014,17 +6153,53 @@ router.route("/users/:package").get((request, response) => {
             console.log('users: ', users);
             const userBeingViewed = users.find(({ username: _username }) => JSON.stringify(_username) === JSON.stringify(username));
             const currentUser = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
-            if (!userBeingViewed) {
+            if (userBeingViewed) {
                 const { _id, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = userBeingViewed;
                 let _users = { _id, iconPath, firstName, lastName, bio, topics };
                 const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
-                console.log('followersAndFollowing: ', followersAndFollowing)
                 const currentUserFollowing = getFollowersAndFollowing(currentUser, false);
                 _users = followersAndFollowing ? { ...followersAndFollowing, ..._users } : _users;
                 _users = readingLists ? { ..._users, readingLists } : _users;
                 _users = socialMedia?.length ? { ..._users, socialMedia } : _users;
                 _users = currentUserFollowing ? { ..._users, currentUserFollowing: currentUserFollowing.following } : _users;
-                response.json(_users);
+                const { followers, following } = _users;
+                // GOAL: get the username and iconPath of the followers and following of the user that is being viewed by the current user 
+                let userIds;
+                if (followers?.length) {
+                    userIds = followers.map(({ userId }) => userId);
+                }
+                if (following?.length) {
+                    userIds = userIds ? [...userIds, ...following.map(({ userId }) => userId)] : following.map(({ userId }) => userId);
+                };
+                console.log({ userIds });
+                if (following?.length || followers?.length) {
+                    User.find({ _id: { $in: userIds } }, { username: 1, iconPath: 1 }).then(users => {
+                        const { followers, following } = _users;
+                        if (followers?.length) {
+                            _users = {
+                                ..._users,
+                                followers: followers.map(user => {
+                                    const { iconPath, username } = getUser(users, user.userId);
+                                    return { ...user, iconPath, username };
+                                })
+                            }
+                        };
+                        if (following?.length) {
+                            _users = {
+                                ..._users,
+                                following: following.map(user => {
+                                    const { iconPath, username } = getUser(users, user.userId);
+                                    return { ...user, iconPath, username };
+                                })
+                            }
+                        };
+                        console.log('_users: ', _users);
+                        response.json(_users);
+                    })
+                } else {
+                    response.json(_users);
+                }
+
             } else {
                 console.log("User doesn't exist.")
                 response.sendStatus(404)
@@ -6313,10 +6488,10 @@ router.route("/users/:package").get((request, response) => {
         // GOAL: for one on one messages, get the user icon and the username and id of the user that the current user is messaging put that info in the recipient field;
 
         // GOAL: for group messages, go through all of the messages and insert for each each user the following: {the id of the user , the icon of the user, the username of the user}
-        User.findOne({ _id: userId }, { _id: 0, conversations: 1, blockedUsers: 1 }).then(currentUser => {
+        User.findOne({ _id: userId }, { _id: 0, conversations: 1, blockedUsers: 1, 'activities.following': 1, followers: 1 }).then(currentUser => {
             User.find({ _id: { $nin: [userId] } }, { _id: 1, username: 1, iconPath: 1, blockedUsers: 1, conversations: 1 }).then(users => {
                 let totalNumUnreadMessages = 0;
-                const { conversations, blockedUsers } = currentUser;
+                const { conversations, blockedUsers, activities, followers } = currentUser;
                 if (conversations) {
                     const currentUserBlockedUsers = !!blockedUsers?.length && blockedUsers.map(({ userId }) => userId)
                     let _conversations = conversations.map(conversation => {
@@ -6413,7 +6588,28 @@ router.route("/users/:package").get((request, response) => {
                         };
 
                         return conversation;
-                    })
+                    });
+
+                    let _following;
+                    let _followers;
+                    if (activities?.following?.length) {
+                        _following = activities.following.map(user => {
+                            const { iconPath, username } = getUser(users, user.userId) ?? {}
+                            return username ?
+                                { ...user, iconPath, username }
+                                :
+                                null;
+                        }).filter(user => !!user);
+                    };
+                    if (followers?.length) {
+                        _followers = followers.map(user => {
+                            const { iconPath, username } = getUser(users, user.userId) ?? {}
+                            return username ?
+                                { ...user, iconPath, username }
+                                :
+                                null;
+                        }).filter(user => !!user)
+                    }
 
                     _conversations = _conversations.filter(({ doesInviterExist }) => !(doesInviterExist === false));
                     _conversations = _conversations.filter(({ doesRecipientExist }) => !(doesRecipientExist === false));
@@ -6429,11 +6625,33 @@ router.route("/users/:package").get((request, response) => {
                                 })
                                 :
                                 _conversations,
-                            totalNumUnreadMessages
+                            totalNumUnreadMessages,
+                            following: _following,
+                            followers: _followers
                         }
                     );
                 } else {
-                    response.json({ isEmpty: true })
+                    let _following;
+                    let _followers;
+                    if (activities?.following?.length) {
+                        _following = activities.following.map(user => {
+                            const { iconPath, username } = getUser(users, user.userId);
+                            return username ?
+                                { ...user, iconPath, username }
+                                :
+                                null;
+                        }).filter(user => !!user);
+                    };
+                    if (followers?.length) {
+                        _followers = followers.map(user => {
+                            const { iconPath, username } = getUser(users, user.userId);
+                            return username ?
+                                { ...user, iconPath, username }
+                                :
+                                null;
+                        }).filter(user => !!user)
+                    }
+                    response.json({ areChatsEmpty: true, following: _following, followers: _followers })
                 }
 
 
@@ -6559,36 +6777,48 @@ router.route("/users/:package").get((request, response) => {
     } else if (name === 'getBlockedStatus') {
         const { targetUserId, userId } = package;
         console.log('package: ', package)
-        User.find({ _id: targetUserId, "blockedUsers.userId": userId }, { _id: 0 }).countDocuments().then(isBlocked => {
-            console.log('isBlocked: ', !!isBlocked)
-            response.json(!!isBlocked)
+        User.findOne({ _id: targetUserId }, { _id: 1, blockedUsers: 1 }).then(user => {
+            if (user) {
+                const isBlocked = !!user?.blockedUsers?.length && !!user.blockedUsers.find(({ userId: _userId }) => _userId === userId)
+                console.log('isBlocked: ', isBlocked)
+                response.json({ isBlocked });
+            } else {
+                console.log('This user was deleted')
+                response.json({ wasUserDeleted: true });
+            }
         })
     } else if (name === 'getChatUser') {
         const { chatUserId, userId } = package;
-        console.log('chatUserId: ', chatUserId)
-        User.find({ _id: { $in: [chatUserId, userId] } }, { blockedUsers: 1, username: 1, iconPath: 1 }).then(users => {
-            console.log('users: ', users)
-            const currentUser = getUser(users, userId);
-            const chatUser = getUser(users, chatUserId);
-            const isChatUserBlocked = currentUser?.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId).includes(chatUserId)
-            const isCurrentUserBlocked = chatUser?.blockedUsers?.length && chatUser.blockedUsers.map(({ userId }) => userId).includes(userId)
-            if (!chatUser) {
-                response.json({ doesUserExist: false })
-            } else if (isChatUserBlocked || isCurrentUserBlocked) {
-                response.json({ willNotShowChatUser: true })
+        User.findOne(({ id: chatUserId })).countDocuments().then(doesUserExists => {
+            if (!!doesUserExists) {
+                User.find({ _id: { $in: [chatUserId, userId] } }, { blockedUsers: 1, username: 1, iconPath: 1 }).then(users => {
+                    console.log('users: ', users)
+                    const currentUser = getUser(users, userId);
+                    const chatUser = getUser(users, chatUserId);
+                    const isChatUserBlocked = currentUser?.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId).includes(chatUserId)
+                    const isCurrentUserBlocked = chatUser?.blockedUsers?.length && chatUser.blockedUsers.map(({ userId }) => userId).includes(userId)
+                    if (!chatUser) {
+                        response.json({ doesUserExist: false })
+                    } else if (isChatUserBlocked || isCurrentUserBlocked) {
+                        response.json({ willNotShowChatUser: true })
+                    } else {
+                        const { _id, iconPath, username } = chatUser;
+                        response.json({ _id, iconPath, username });
+                    }
+                })
             } else {
-                const { _id, iconPath, username } = chatUser;
-                response.json({ _id, iconPath, username });
+                response.json({ doesUserExist: false })
             }
         })
+
     } else if (name === 'getLikedTags') {
         User.findOne({ _id: userId }, { topics: 1 }).then(user => {
             response.json(user.tags)
         })
     } else if (name === 'checkUserExistence') {
+        console.log('userId: ', userId);
         User.findOne({ _id: userId }).countDocuments().then(isExisting => {
-            console.log({ isExisting })
-            response.json(isExisting)
+            response.json(!!isExisting)
         })
     }
 }, error => {

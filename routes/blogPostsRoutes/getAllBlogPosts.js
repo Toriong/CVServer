@@ -1,5 +1,6 @@
 const { getUser } = require("../../functions/getUser");
 const BlogPost = require("../../models/blogPost");
+const Tag = require("../../models/tag");
 const User = require("../../models/user");
 const router = require("../users");
 
@@ -44,7 +45,7 @@ router.route("/getAllBlogPosts/:package").get((req, res) => {
                     })
                 }
             });
-            User.find({ _id: { $in: userIds } }, { blockedUsers: 1 }).then(users => {
+            User.find({ _id: { $in: [...userIds, userId] } }, { blockedUsers: 1, topics: 1 }).then(users => {
                 const currentUser = getUser(users, userId);
                 const currentUserBlockedUserIds = !!currentUser?.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId)
                 let _blogPosts = blogPosts.filter(({ authorId }) => {
@@ -80,77 +81,121 @@ router.route("/getAllBlogPosts/:package").get((req, res) => {
 
                         return _comments ? { ...post._doc, comments: _comments, userIdsOfLikes: _userIdsOfLikes } : { ...post._doc, userIdsOfLikes: _userIdsOfLikes }
                     });
+                    Tag.find({}, { _id: 1, topic: 1 }).then(tags => {
+                        _blogPosts = _blogPosts.map(post => {
+                            const { comments, tags: _postTags } = post
+                            if (comments?.length) {
+                                const postTags = _postTags.map(tag => {
+                                    const { isNew, _id: tagId } = tag;
+                                    if (!isNew) {
+                                        // ASK A QUESTION ON STACK OVERFLOW ABOUT THIS CODE 
+                                        let tag = tags.find(({ _id }) => JSON.parse(JSON.stringify(tagId)) === JSON.parse(JSON.stringify(_id)));
+                                        tag = JSON.parse(JSON.stringify(tag));
+                                        return {
+                                            ...tag,
+                                            isLiked: currentUser.topics.includes(tagId),
+                                            topic: tag?.topic
+                                        }
+                                    };
 
-                    _blogPosts = _blogPosts.map(post => {
-                        if (post?.comments?.length) {
+                                    return tag;
+                                });
+                                return {
+                                    ...post,
+                                    tags: postTags,
+                                    comments: post.comments.map(comment => {
+                                        const { userIdsOfLikes, replies } = comment;
+                                        let _userIdsOfLikes;
+                                        let _replies
+                                        let _comment = { ...comment }
+                                        if (userIdsOfLikes?.length) {
+                                            // filter all users of the comment likes array that either were blocked by the current user or has blocked the current user
+                                            _userIdsOfLikes = userIdsOfLikes.filter(({ userId: commentLikeUserId }) => {
+                                                const commentLikeUser = getUser(users, commentLikeUserId)
+                                                const isCurrentUserBlocked = commentLikeUser?.blockedUsers?.length && !!commentLikeUser.blockedUsers.find(({ userId: _userId }) => userId === _userId)
+                                                const didCurrentUserBlockedCommentUser = currentUserBlockedUserIds && currentUserBlockedUserIds.includes(commentLikeUserId)
+                                                if (isCurrentUserBlocked || didCurrentUserBlockedCommentUser) return false
+                                                return true;
+                                            })
+                                        };
+                                        if (replies?.length) {
+                                            // filter all users of the reply array that either were blocked by the current user or has blocked the current user
+                                            _replies = replies.filter(({ userId: replyUserId }) => {
+                                                const replyUser = getUser(users, replyUserId)
+                                                const isCurrentUserBlocked = replyUser?.blockedUsers?.length && !!replyUser.blockedUsers.find(({ userId: _userId }) => userId === _userId)
+                                                const didCurrentUserBlockedReplyUser = currentUserBlockedUserIds && currentUserBlockedUserIds.includes(replyUserId)
+                                                if (isCurrentUserBlocked || didCurrentUserBlockedReplyUser) return false
+                                                return true;
+                                            });
+                                            if (_replies?.length) {
+                                                // filter all users that of the reply likes that either were blocked by the current user or has the current user blocked 
+                                                _replies = _replies.map(reply => {
+                                                    if (reply?.userIdsOfLikes?.length) {
+                                                        return {
+                                                            ...reply,
+                                                            userIdsOfLikes: reply.userIdsOfLikes.filter(({ userId: replyUserId }) => {
+                                                                const replyUser = getUser(users, replyUserId)
+                                                                const isCurrentUserBlocked = replyUser?.blockedUsers?.length && !!replyUser.blockedUsers.find(({ userId: _userId }) => userId === _userId)
+                                                                const didCurrentUserBlockedReplyUser = currentUserBlockedUserIds && currentUserBlockedUserIds.includes(replyUserId)
+                                                                if (isCurrentUserBlocked || didCurrentUserBlockedReplyUser) return false
+                                                                return true;
+                                                            })
+                                                        }
+                                                    };
+
+                                                    return reply
+                                                })
+                                            }
+                                        };
+
+                                        if (_replies) {
+                                            _comment = {
+                                                ..._comment,
+                                                replies: _replies
+                                            }
+                                        };
+                                        if (_userIdsOfLikes) {
+                                            _comment = {
+                                                ..._comment,
+                                                userIdsOfLikes: _userIdsOfLikes
+                                            }
+                                        }
+
+                                        return _comment;
+                                    })
+                                }
+                            };
+                            // GOAL: insert the isLiked field into each tag if the tag was liked by the current user
+                            // the field isLiked is inserted into the tag
+                            // the tagId is found in the user liked tags
+                            // for each tag check if its id is found in the user's liked tags array
+                            // get the current user liked tags array
+                            // get the current user from the users array
+
+
+
                             return {
                                 ...post,
-                                comments: post.comments.map(comment => {
-                                    const { userIdsOfLikes, replies } = comment;
-                                    let _userIdsOfLikes;
-                                    let _replies
-                                    let _comment = { ...comment }
-                                    if (userIdsOfLikes?.length) {
-                                        // filter all users of the comment likes array that either were blocked by the current user or has blocked the current user
-                                        _userIdsOfLikes = userIdsOfLikes.filter(({ userId: commentLikeUserId }) => {
-                                            const commentLikeUser = getUser(users, commentLikeUserId)
-                                            const isCurrentUserBlocked = commentLikeUser?.blockedUsers?.length && !!commentLikeUser.blockedUsers.find(({ userId: _userId }) => userId === _userId)
-                                            const didCurrentUserBlockedCommentUser = currentUserBlockedUserIds && currentUserBlockedUserIds.includes(commentLikeUserId)
-                                            if (isCurrentUserBlocked || didCurrentUserBlockedCommentUser) return false
-                                            return true;
-                                        })
-                                    };
-                                    if (replies?.length) {
-                                        // filter all users of the reply array that either were blocked by the current user or has blocked the current user
-                                        _replies = replies.filter(({ userId: replyUserId }) => {
-                                            const replyUser = getUser(users, replyUserId)
-                                            const isCurrentUserBlocked = replyUser?.blockedUsers?.length && !!replyUser.blockedUsers.find(({ userId: _userId }) => userId === _userId)
-                                            const didCurrentUserBlockedReplyUser = currentUserBlockedUserIds && currentUserBlockedUserIds.includes(replyUserId)
-                                            if (isCurrentUserBlocked || didCurrentUserBlockedReplyUser) return false
-                                            return true;
-                                        });
-                                        if (_replies?.length) {
-                                            // filter all users that of the reply likes that either were blocked by the current user or has the current user blocked 
-                                            _replies = _replies.map(reply => {
-                                                if (reply?.userIdsOfLikes?.length) {
-                                                    return {
-                                                        ...reply,
-                                                        userIdsOfLikes: reply.userIdsOfLikes.filter(({ userId: replyUserId }) => {
-                                                            const replyUser = getUser(users, replyUserId)
-                                                            const isCurrentUserBlocked = replyUser?.blockedUsers?.length && !!replyUser.blockedUsers.find(({ userId: _userId }) => userId === _userId)
-                                                            const didCurrentUserBlockedReplyUser = currentUserBlockedUserIds && currentUserBlockedUserIds.includes(replyUserId)
-                                                            if (isCurrentUserBlocked || didCurrentUserBlockedReplyUser) return false
-                                                            return true;
-                                                        })
-                                                    }
-                                                };
+                                tags: _postTags.map(tag => {
+                                    const { isNew, _id: tagId } = tag;
+                                    if (!isNew) {
+                                        let tag = tags.find(({ _id }) => JSON.parse(JSON.stringify(tagId)) === JSON.parse(JSON.stringify(_id)));
+                                        tag = JSON.parse(JSON.stringify(tag));
 
-                                                return reply
-                                            })
+                                        return {
+                                            ...tag,
+                                            isLiked: currentUser.topics.includes(tagId),
+                                            topic: tag.topic
                                         }
                                     };
 
-                                    if (_replies) {
-                                        _comment = {
-                                            ..._comment,
-                                            replies: _replies
-                                        }
-                                    };
-                                    if (_userIdsOfLikes) {
-                                        _comment = {
-                                            ..._comment,
-                                            userIdsOfLikes: _userIdsOfLikes
-                                        }
-                                    }
-
-                                    return _comment;
+                                    return tag;
                                 })
-                            }
-                        };
+                            };
+                        });
+                        res.json(_blogPosts)
+                    })
 
-                        return post;
-                    });
-                    res.json(_blogPosts)
                 } else {
                     res.json({ isEmpty: true })
                 }

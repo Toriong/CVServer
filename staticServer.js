@@ -64,7 +64,14 @@ app.use("/", require("./routes/tags"));
 
 app.use("/", require("./routes/blogPostsRoutes/getAllBlogPosts"))
 
-app.use("/", require("./routes/deleteUser"))
+app.use("/", require("./routes/blogPostsRoutes/checkExistenceOfPost"))
+
+app.use("/", require("./routes/deleteUser"));
+
+app.use("/", require("./routes/users/checkStatusOfUser"))
+
+app.use("/", require("./routes/users/checkExistenceOfUsers"))
+
 
 
 

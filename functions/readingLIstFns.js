@@ -12,7 +12,7 @@ const getReadingListsAndPostsPics = (_readingLists, posts, users, _userId) => {
         _list = _list.filter(({ postId }) => {
             const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(postId))
             const author = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId));
-            const blockedUserIds = author?.blockedUsers?.length ? author.blockedUser.map(({ userId }) => userId) : [];
+            const blockedUserIds = author?.blockedUsers?.length ? author.blockedUsers.map(({ userId }) => userId) : [];
             return !blockedUserIds.includes(_userId);
         })
         // GOAL: get the following info: subtitle, title, intro pic, likes, comments, and date of publication
