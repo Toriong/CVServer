@@ -105,10 +105,6 @@ const editSelectedTags = selectedTags => selectedTags.map(tag => {
 })
 
 
-//get the blogPost from the database and sends it to the Feed.js component
-router.route("/blogPosts").get((req, res) => {
-
-});
 
 
 router.route("/blogPosts").post((req, res) => {
@@ -933,9 +929,12 @@ router.route("/blogPosts/:package").get((req, res) => {
                                 userInfo = {
                                     ...userInfo,
                                     following: activities.following.map(user => {
-                                        const targetUser = getUser(users, user.userId) ?? {}
-                                        const userUpdated = targetUser ? { ...targetUser._doc, ...user._doc } : null
-                                        return userUpdated
+                                        const targetUser = getUser(users, user.userId);
+                                        if (targetUser) {
+                                            const { _id, username, iconPath } = targetUser._doc;
+                                            return { _id, username, iconPath };
+                                        }
+                                        return null;
                                     }).filter(user => !!user)
                                 }
                             }
@@ -944,8 +943,13 @@ router.route("/blogPosts/:package").get((req, res) => {
                                     ...userInfo,
                                     followers: followers.map(user => {
                                         const targetUser = getUser(users, user.userId);
-                                        const userUpdated = targetUser ? { ...targetUser._doc, ...user._doc } : null;
-                                        return userUpdated
+                                        console.log('bacon and cheese: ', { ...targetUser._doc });
+                                        if (targetUser) {
+                                            const { _id, username, iconPath } = targetUser._doc;
+                                            return { _id, username, iconPath };
+                                        }
+
+                                        return null;
                                     }).filter(user => !!user)
                                 }
                             };
@@ -998,9 +1002,9 @@ router.route("/blogPosts/:package").get((req, res) => {
             const targetPost = posts.find(({ _id }) => _id === draftId);
             console.log('targetPost: ', targetPost);
             if (targetPost) {
-                const restsOfPosts = posts.filter(({ _id }) => _id !== draftId)
+                const restsOfPosts = posts.filter(({ _id }) => _id !== draftId);
                 let _posts;
-                if (restsOfPosts.length > 3) {
+                if (restsOfPosts.length >= 3) {
                     const postsByTime = restsOfPosts.sort((postA, postB) => {
                         const { miliSeconds: miliSecondsPostA } = postA.publicationDate;
                         const { miliSeconds: miliSecondsPostB } = postB.publicationDate;
@@ -1035,7 +1039,7 @@ router.route("/blogPosts/:package").get((req, res) => {
                     _posts = { targetPost };
                 };
                 let userIds = [];
-                if (_posts.moreFromAuthor) {
+                if (_posts?.moreFromAuthor) {
                     _posts.moreFromAuthor.forEach(post => {
                         const { userIdsOfLikes: postLikes, comments, authorId } = post;
                         // get the id of the post author
@@ -1310,6 +1314,7 @@ router.route("/blogPosts/:package").get((req, res) => {
                             moreFromAuthor: _moreFromAuthor
                         }
                     };
+                    console.log('bacon: ', { _posts })
                     res.json(_posts);
                 });
             } else {

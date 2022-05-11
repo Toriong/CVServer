@@ -13,9 +13,6 @@ const Tag = require("../models/tag");
 const fs = require('fs');
 const router = express.Router();
 const path = require('path');
-const moment = require('moment');
-// what does he do?
-const he = require('he');
 const { getFollowersAndFollowing } = require("../functions/getFollowersAndFollowing");
 const { sortTagsOrUsersResults, sortResults, getFilterResultsFn } = require("../functions/searchFns");
 const { getUser } = require("../functions/getUser");
@@ -408,14 +405,17 @@ router.route("/users").post((request, response) => {
             isUserNew: true
         });
         console.log(newUser);
-        response.json({
-            status: "backend successfully received your request, user added to database",
-        });
-        newUser.save();
+        newUser.save().then(() => {
+            User.findOne({ username: username }, { _id: 1 }).then(user => {
+                console.log('user,_id: ', user?._id)
+                response.json({ _id: user?._id });
+            })
+        })
     };
-
-
-
+}, (error, req, res, next) => {
+    if (error) {
+        res.status(500).send('An error has occurred. Please try again later.')
+    }
 })
 
 
@@ -426,48 +426,38 @@ router.route("/users/updateInfo").post((request, response) => {
     if (name === "addBioTagsAndSocialMedia") {
         console.log("updating user's account")
         const { topics, socialMedia, bio } = data
-        if (socialMedia) {
-            User.updateOne(
-                {
-                    _id: userId
-                },
-                {
-                    topics: topics,
-                    socialMedia: socialMedia,
-                    bio: bio,
-                    isUserNew: false
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error("error message: ", error);
-                        response.json("User added social media and reading topics");
-                    } else {
-                        console.log("User added social media and reading topics. NumsAffected: ", numsAffected);
-                    }
+        console.log('topics: ', topics)
+        console.log('socialMedia: ', socialMedia)
+        console.log('bio: ', bio)
+        let userUpdateObj = { isUserNew: false, bio, socialMedia, topics };
+        // if (bio) {
+        //     userUpdateObj = { ...userUpdateObj, bio };
+        // }
+        // if (socialMedia) {
+        //     userUpdateObj = { ...userUpdateObj, socialMedia };
+        // }
+        // if (topics) {
+        //     userUpdateObj = { ...userUpdateObj, topics };
+        // }
+        User.updateOne(
+            {
+                _id: userId
+            },
+            userUpdateObj
+            ,
+            (error, numsAffected) => {
+                if (error) {
+                    console.error("error message: ", error);
+                    response.status(500).send('An error has occurred. Please try again.')
+                } else {
+                    console.log("User added social media and reading topics. NumsAffected: ", numsAffected);
+                    response.json({
+                        message: "backend successfully updated user's profile"
+                    });
                 }
-            );
-        } else {
-            User.updateOne(
-                {
-                    _id: userId
-                },
-                {
-                    topics: topics
-                },
-                (error, numsAffected) => {
-                    if (error) {
-                        console.error("error message: ", error);
-                        response.json("User added topics");
-                    } else {
-                        console.log("User added social media and reading topics. NumsAffected: ", numsAffected);
-                    }
-                }
-            );
-        }
+            }
+        );
 
-        response.json({
-            message: "backend successfully updated user's profile"
-        });
         //     // updates only the title, subtitle, introPic, and the body of the user's draft
     } else if (name === "updateDraft") {
         const { draftId, field, userId, wasPicDeleted, imgUrl } = request.body;
@@ -1168,8 +1158,6 @@ router.route("/users/updateInfo").post((request, response) => {
         // deleting the blocked user from the current user's followers list or just removing the user 
     } else if (name === "blockOrDelFollower") {
         const { deletedUser, isBlocked, blockedAt, isFollowing, isAFollower } = request.body;
-        let wasError;
-        let wasRemovedOnly;
         if (isBlocked && isFollowing && isAFollower) {
             console.log('user is being removed, blocked, and unFollowed.')
             User.updateOne(
@@ -3184,7 +3172,7 @@ const userIconStorage = multer.diskStorage({
 const userIconUpload = multer({
     storage: userIconStorage,
     limits: {
-        fileSize: 1000000
+        fileSize: 1_000_000
     },
     fileFilter(req, file, cb) {
         cb(null, true)
@@ -3194,48 +3182,25 @@ const userIconUpload = multer({
 router.route('/users/updateUserIcon').post(userIconUpload.single('file'), (req, res) => {
     const { bio, userId, name } = req.body;
     console.log('req.body: ', req.body)
-    if (bio) {
-        User.updateOne(
-            { _id: userId },
-            {
-                $set:
-                {
-                    bio: bio,
-                    iconPath: userId + path.extname(req.file.originalname)
-                }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.log("Error in updating bio. Error message: ", error)
-                };
-                console.log("Bio updated, numsAffected: ", numsAffected);
-            }
-        )
-    } else {
-        User.updateOne(
-            { _id: userId },
-            {
-                $set:
-                {
-                    iconPath: userId + path.extname(req.file.originalname)
-                }
-            },
-            (error, numsAffected) => {
-                if (error) {
-                    console.log("Error in updating bio. Error message: ", error)
-                } else {
-                    console.log("Bio updated, numsAffected: ", numsAffected);
-                }
-            }
-        )
-    };
-    res.status(200).json({ message: 'Image upload successful!', iconPath: userId + path.extname(req.file.originalname) });
+    const _iconPath = userId + path.extname(req.file.originalname)
+    User.updateOne(
+        { _id: userId },
+        {
+            $set: { iconPath: _iconPath }
+        },
+        (error, numsAffected) => {
+            if (error) {
+                console.log("Error in updating bio. Error message: ", error)
+            };
+            console.log("Bio updated, numsAffected: ", numsAffected);
+        }
+    )
+    res.status(200).json({ message: 'Image upload successful!', iconPath: _iconPath });
 }, (error, req, res, next) => {
     const { status } = res;
     if (status === 400 || error) {
-        console.error("ERROR! Can't upload image: ", error);
-        console.log("error.code: ", error.code);
         if (error.code === 'LIMIT_FILE_SIZE') {
+            console.error('An error has occurred in uploading image: ', error.code);
             res.status(413).send('Image is too large. Please choose a smaller image and try again.')
         };
     }
@@ -3442,7 +3407,9 @@ router.route("/users/:package").get((request, response) => {
     } else if ((name === 'getUserId') && username) {
         console.log('username: ', username);
         User.findOne({ username: username }).then(user => {
-            response.json(user._id)
+            console.log('user: ', user)
+            console.log('user._id: ', user?._id)
+            response.json(user?._id)
         }).catch(error => {
             if (error) {
                 console.error('An error has occurred: ', error)
@@ -3460,7 +3427,7 @@ router.route("/users/:package").get((request, response) => {
     } else if (name === 'getFollowersAndFollowing') {
         const searchQuery = username ? { $or: [{ username: username }, { _id: userId }] } : { _id: userId };
         if (!username) {
-            // the user is on their own following or followers page
+            // the user is on their following or followers page
             User.findOne(searchQuery, { followers: 1, _id: 1, 'activities.following': 1 })
                 .then(result => {
                     if (result?.followers?.length || result?.activities?.following?.length) {
@@ -3514,9 +3481,9 @@ router.route("/users/:package").get((request, response) => {
                     }
                 })
         } else {
+            // the user is on another user's following and followers page
             User.find(searchQuery, { followers: 1, username: 1, 'activities.following': 1, _id: 1 }).then(_users => {
                 const userBeingViewed = _users.find(({ username: _username }) => JSON.stringify(username) === JSON.stringify(_username));
-                // GOAL: send an error status to the client when the user that is being viewed no longer exists
                 if (userBeingViewed) {
                     const currentUser = _users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(userId));
                     const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
@@ -3538,10 +3505,10 @@ router.route("/users/:package").get((request, response) => {
                     };
 
                     const getIconAndUsername = (followingOrFollowers, users) => followingOrFollowers.map(user => {
-                        console.log('followingOrFollowers: ', followingOrFollowers)
                         const targetUser = getUser(users, user.userId);
                         return targetUser;
-                    })
+                    }).filter(user => !!user);
+
                     User.find({ _id: { $in: [...new Set(userIds)] } }, { _id: 1, username: 1, iconPath: 1 }).then(users => {
                         let usersInfo;
                         if (followersAndFollowing?.following?.length) {
@@ -6179,21 +6146,20 @@ router.route("/users/:package").get((request, response) => {
                             _users = {
                                 ..._users,
                                 followers: followers.map(user => {
-                                    const { iconPath, username } = getUser(users, user.userId);
-                                    return { ...user, iconPath, username };
-                                })
+                                    const { iconPath, username } = getUser(users, user.userId) ?? {}
+                                    return username ? { ...user, iconPath, username } : null
+                                }).filter(user => !!user)
                             }
                         };
                         if (following?.length) {
                             _users = {
                                 ..._users,
                                 following: following.map(user => {
-                                    const { iconPath, username } = getUser(users, user.userId);
-                                    return { ...user, iconPath, username };
-                                })
+                                    const { iconPath, username } = getUser(users, user.userId) ?? {};
+                                    return username ? { ...user, iconPath, username } : null
+                                }).filter(user => !!user)
                             }
                         };
-                        console.log('_users: ', _users);
                         response.json(_users);
                     })
                 } else {

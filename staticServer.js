@@ -70,7 +70,9 @@ app.use("/", require("./routes/deleteUser"));
 
 app.use("/", require("./routes/users/checkStatusOfUser"))
 
-app.use("/", require("./routes/users/checkExistenceOfUsers"))
+app.use("/", require("./routes/users/checkExistenceOfUsers"));
+
+app.use("/", require("./routes/users/blockOrDeleteFollower"));
 
 
 
