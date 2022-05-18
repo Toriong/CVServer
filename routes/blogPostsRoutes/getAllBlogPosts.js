@@ -47,7 +47,6 @@ router.route("/getAllBlogPosts/:package").get((req, res) => {
             });
             User.find({ _id: { $in: [...userIds, userId] } }, { blockedUsers: 1, topics: 1 }).then(users => {
                 const currentUser = getUser(users, userId);
-                console.log('currentUser: ', currentUser);
                 const currentUserBlockedUserIds = !!currentUser?.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId)
                 let _blogPosts = blogPosts.filter(({ authorId }) => {
                     const postAuthor = getUser(users, authorId)

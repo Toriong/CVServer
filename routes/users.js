@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const { insertNewLike } = require("../functions/insertNewLike");
 const { sortListNamesByCreation } = require("../functions/sortListNamesByCreation");
 const { addUserInfoToPosts } = require('../functions/addUserInfoToPosts')
+const he = require('he');
 const express = require('express');
 const multer = require('multer');
 const User = require("../models/user");
@@ -2769,7 +2770,6 @@ router.route("/users/updateInfo").post((request, response) => {
             }
         const arrayFilters = conversationId ? [{ "message.isRead": { $exists: true } }] : [];
 
-        // GOAL: when the user updates 'areMessagesRead' status to true, then go through all of the messages that has isRead and change them to true 
         if (areMessagesRead) {
             User.updateOne(
                 { _id: userId, ...searchQueryForChat },
@@ -2784,8 +2784,12 @@ router.route("/users/updateInfo").post((request, response) => {
                     response.sendStatus(200)
                 }
             )
-        } else {
-            const updatesObj = conversationId ? { "conversations.$.areMessagesRead": areMessagesRead } : { "conversations.$.isInvitationRead": areMessagesRead };
+        }
+        else {
+            const updatesObj = conversationId ? { "conversations.$.areMessagesRead": false } : { "conversations.$.isInvitationRead": false };
+            console.log('updatesObj: ', updatesObj)
+            console.log('searchQueryForChat: ', searchQueryForChat)
+            console.log('userId: ', userId)
             User.updateOne(
                 { _id: userId, ...searchQueryForChat },
                 { $set: updatesObj },
@@ -5763,7 +5767,6 @@ router.route("/users/:package").get((request, response) => {
                     ...readingLists,
                     [listName]: previousNames ? { ...readingLists[listName], didNameChanged: true, list: _list } : { ...readingLists[listName], list: _list }
                 };
-                // DO I NEED TO DO THIS?
                 // get all of the posts that has intro pics
                 _list.forEach(({ postId, isIntroPicPresent }) => {
                     if (isIntroPicPresent) {
@@ -6124,22 +6127,31 @@ router.route("/users/:package").get((request, response) => {
                 const { _id, iconPath, firstName, lastName, readingLists, bio, socialMedia, topics } = userBeingViewed;
                 let _users = { _id, iconPath, firstName, lastName, bio, topics };
                 const followersAndFollowing = getFollowersAndFollowing(userBeingViewed);
-                const currentUserFollowing = getFollowersAndFollowing(currentUser, false);
+                const currentUserFollowingAndFollowers = getFollowersAndFollowing(currentUser, false);
                 _users = followersAndFollowing ? { ...followersAndFollowing, ..._users } : _users;
                 _users = readingLists ? { ..._users, readingLists } : _users;
                 _users = socialMedia?.length ? { ..._users, socialMedia } : _users;
-                _users = currentUserFollowing ? { ..._users, currentUserFollowing: currentUserFollowing.following } : _users;
-                const { followers, following } = _users;
+                _users = currentUserFollowingAndFollowers?.following?.length ? { ..._users, currentUserFollowing: currentUserFollowingAndFollowers.following } : _users;
+                _users = currentUserFollowingAndFollowers?.followers?.length ? { ..._users, currentUserFollowers: currentUserFollowingAndFollowers?.followers } : _users;
+
+                const { followers, following, currentUserFollowing: _currentUserFollowing, currentUserFollowers } = _users;
                 // GOAL: get the username and iconPath of the followers and following of the user that is being viewed by the current user 
                 let userIds;
                 if (followers?.length) {
                     userIds = followers.map(({ userId }) => userId);
-                }
+                };
                 if (following?.length) {
                     userIds = userIds ? [...userIds, ...following.map(({ userId }) => userId)] : following.map(({ userId }) => userId);
                 };
-                console.log({ userIds });
-                if (following?.length || followers?.length) {
+                if (_currentUserFollowing?.length) {
+                    userIds = userIds ? [...userIds, ..._currentUserFollowing.map(({ userId }) => userId)] : _currentUserFollowing.map(({ userId }) => userId);
+                };
+                if (currentUserFollowers?.length) {
+                    userIds = userIds ? [...userIds, ...currentUserFollowers.map(({ userId }) => userId)] : currentUserFollowers.map(({ userId }) => userId);
+                };
+
+
+                if (following?.length || followers?.length || currentUser?.following) {
                     User.find({ _id: { $in: userIds } }, { username: 1, iconPath: 1 }).then(users => {
                         const { followers, following } = _users;
                         if (followers?.length) {
@@ -6160,6 +6172,26 @@ router.route("/users/:package").get((request, response) => {
                                 }).filter(user => !!user)
                             }
                         };
+
+                        console.log('bacon and cheese: ', _users.currentUserFollowing)
+                        if (_currentUserFollowing?.length) {
+                            _users = {
+                                ..._users,
+                                currentUserFollowing: _currentUserFollowing.map(user => {
+                                    const { iconPath, username } = getUser(users, user.userId) ?? {};
+                                    return username ? { ...user, iconPath, username } : null;
+                                }).filter(user => !!user)
+                            };
+                        }
+                        if (currentUserFollowers?.length) {
+                            _users = {
+                                ..._users,
+                                currentUserFollowing: currentUserFollowers.map(user => {
+                                    const { iconPath, username } = getUser(users, user.userId) ?? {};
+                                    return username ? { ...user, iconPath, username } : null;
+                                }).filter(user => !!user)
+                            };
+                        }
                         response.json(_users);
                     })
                 } else {
@@ -6325,8 +6357,6 @@ router.route("/users/:package").get((request, response) => {
                                         const tagCopy = JSON.stringify({ ...tag });
                                         return JSON.parse(tagCopy);
                                     });
-                                    // GOAL: have the following data structure for the search tag: {topic: (put tag name here), description: (put description here), postsWithTag: [put all posts that has the tag here]}
-                                    // GOAL: for the _tagsResults array, for each post, find the post that has the tag that the user search for 
                                     _tagsResults = _tagsResults.map(tag => {
                                         let _postsWithTags = _posts.filter(({ tags }) => tags.map(({ _id }) => _id).includes(tag._id));
                                         if (_postsWithTags.length > 1) {
@@ -6345,7 +6375,7 @@ router.route("/users/:package").get((request, response) => {
                                             return 0;
                                         })
                                     };
-                                    // GOAL: put the tags that start with the user input first, then put all tags that consist of the user input next
+                                    //put the tags that start with the user input first, then put all tags that consist of the user input next
                                     response.json(sortResults(_tagsResults, input, searchType))
                                 } else {
                                     // posts are empty since the user blocked the authors or the authors blocked the user
@@ -6376,7 +6406,8 @@ router.route("/users/:package").get((request, response) => {
                                 postResults = postResults.length ? addUserInfoToPosts(postResults, users, currentUser, tags) : postResults
                                 response.json(postResults.length ? sortResults(postResults, input, searchType) : postResults)
                             } else if (_results.length && (searchType === 'people')) {
-                                let _users = delBlockedUsers(_results, currentUser, users);
+                                let _users = users.filter(({ _id }) => JSON.stringify(_id) !== JSON.stringify(userId));
+                                _users = delBlockedUsers(_results, currentUser, _users)
                                 _users = blockedUserIds?.length ? _users.filter(({ _id }) => !blockedUserIds.includes(JSON.parse(JSON.stringify(_id)))) : _users;
                                 _users = _users.length ?
                                     // check whether the user that was searched is followed by the current user
@@ -6405,7 +6436,6 @@ router.route("/users/:package").get((request, response) => {
                                     : _users;
 
                                 // check whether the user that was searched is either: following the current user, is followed by the current user, or neither 
-                                // if (isOnMessenger) {
                                 _users = _users?.length ?
                                     _users.map(user => {
                                         if (JSON.stringify(user._id) !== JSON.stringify(userId)) {
@@ -6419,7 +6449,6 @@ router.route("/users/:package").get((request, response) => {
                                     })
                                     :
                                     _users;
-                                // }
                                 response.json(_users.length ? sortResults(_users, input) : _users)
                             } else {
                                 response.json([]);
@@ -6459,22 +6488,30 @@ router.route("/users/:package").get((request, response) => {
                 let totalNumUnreadMessages = 0;
                 const { conversations, blockedUsers, activities, followers } = currentUser;
                 if (conversations) {
+                    // getting blocked users in order to prevent the current user from messaging them 
                     const currentUserBlockedUsers = !!blockedUsers?.length && blockedUsers.map(({ userId }) => userId)
                     let _conversations = conversations.map(conversation => {
-                        const { userIdRecipient, messages, conversationUsers, conversationToJoinId, isInvitationRead, inviterId } = conversation;
 
+                        const { userIdRecipient, messages, conversationUsers, conversationToJoinId, inviterId, isInvitationRead } = conversation;
                         totalNumUnreadMessages = messages ?
                             messages.reduce((totalUnreadMessages, message) => {
-                                return totalUnreadMessages + ((message?.isRead === false) ? 1 : 0);
+                                const doesUserExist = users.map(({ _id }) => JSON.parse((JSON.stringify(_id)))).includes(userIdRecipient ?? inviterId);
+                                console.log('doesUserExist: ', doesUserExist);
+                                // if messages.isRead is true or messages.isRead and either userIdRecipient or inviterId
+                                const isMessageUnread = message?.isRead === false
+                                return totalUnreadMessages + (((((!!userIdRecipient ?? !!inviterId) && doesUserExist) || conversationUsers?.length) && isMessageUnread) ? 1 : 0);
                             }, totalNumUnreadMessages)
                             :
                             (isInvitationRead === false) ? totalNumUnreadMessages + 1 : totalNumUnreadMessages;
 
                         const recipient = userIdRecipient && getUser(users, userIdRecipient);
+
+                        // for one-on-one chats
                         if (recipient && userIdRecipient) {
                             const { iconPath, username, blockedUsers } = recipient
                             const isCurrentUserBlocked = blockedUsers && blockedUsers.map(({ userId }) => userId).includes(userId);
                             const isUserOfMessageBlocked = currentUserBlockedUsers && currentUserBlockedUsers.includes(userIdRecipient);
+                            // GOAL: if the user has an unread message that is in the array of messages, then insert false into areMessagesRead)
                             delete conversation.userIdRecipient;
                             return { ...conversation, recipient: { _id: userIdRecipient, iconPath, username }, isUserOfMessageBlocked, isCurrentUserBlocked }
                         } else if (userIdRecipient) {
@@ -6520,6 +6557,7 @@ router.route("/users/:package").get((request, response) => {
                             return _id ? { _id, username, iconPath } : null
                         });
 
+
                         return {
                             ...conversation,
                             isGroup: true,
@@ -6532,7 +6570,7 @@ router.route("/users/:package").get((request, response) => {
                                 const isCurrentUserBlocked = messageUser?.blockedUsers?.length && messageUser.blockedUsers.map(({ userId }) => userId).includes(userId);
                                 const isUserOfMessageBlocked = (currentUserBlockedUsers && messageUser) && currentUserBlockedUsers.includes(message.user._id);
                                 return (messageUser || isMsgByCurrentUser) ? { ...message, isUserOfMessageBlocked, isCurrentUserBlocked } : { ...message, doesUserExist: false };
-                            })
+                            }),
                         }
                     });
 
@@ -6580,22 +6618,23 @@ router.route("/users/:package").get((request, response) => {
                     _conversations = _conversations.filter(({ doesInviterExist }) => !(doesInviterExist === false));
                     _conversations = _conversations.filter(({ doesRecipientExist }) => !(doesRecipientExist === false));
 
-                    response.json(
-                        {
-                            conversations: _conversations.length > 1 ?
-                                _conversations.sort((conversationA, conversationB) => {
-                                    const timeA = conversationA?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationA?.timeOfSendInvitation?.miliSeconds
-                                    const timeB = conversationB?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationB?.timeOfSendInvitation?.miliSeconds
 
-                                    return timeB - timeA;
-                                })
-                                :
-                                _conversations,
-                            totalNumUnreadMessages,
-                            following: _following,
-                            followers: _followers
-                        }
-                    );
+                    const currentUserConversations = {
+                        conversations: _conversations.length > 1 ?
+                            _conversations.sort((conversationA, conversationB) => {
+                                const timeA = conversationA?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationA?.timeOfSendInvitation?.miliSeconds
+                                const timeB = conversationB?.messages?.[0]?.timeOfSend?.miliSeconds ?? conversationB?.timeOfSendInvitation?.miliSeconds
+
+                                return timeB - timeA;
+                            })
+                            :
+                            _conversations,
+                        totalNumUnreadMessages,
+                        following: _following,
+                        followers: _followers
+                    };
+                    console.log('currentUserConversations: ', currentUserConversations)
+                    response.json(currentUserConversations);
                 } else {
                     let _following;
                     let _followers;
@@ -6635,6 +6674,7 @@ router.route("/users/:package").get((request, response) => {
             if (username) {
                 let targetConversation = conversations.find(({ conversationId: _conversationId }) => conversationId === _conversationId);
                 if (targetConversation) {
+                    // delete all users that no longer exist
                     const _conversationUsers = targetConversation.conversationUsers.map(userId => {
                         const { _id, iconPath, username } = getUser(users, userId) || {};
                         return _id ? { _id, iconPath, username } : null;
@@ -6645,7 +6685,8 @@ router.route("/users/:package").get((request, response) => {
                             return {
                                 ...message,
                                 user: { _id: inviterId, username, iconPath },
-                                isRead: false
+                                // isRead: false
+                                isRead: true
                             }
                             // if the message is not by the current user
                         } else if (message?.userId !== userId) {
@@ -6654,13 +6695,15 @@ router.route("/users/:package").get((request, response) => {
                                 {
                                     ...message,
                                     user: { _id, username, iconPath },
-                                    isRead: false
+                                    // isRead: false
+                                    isRead: true
                                 }
                                 :
                                 {
                                     ...message,
                                     doesUserExist: false,
-                                    isRead: false
+                                    // isRead: false
+                                    isRead: true
                                 }
                         }
 
@@ -6672,51 +6715,52 @@ router.route("/users/:package").get((request, response) => {
                         ...targetConversation,
                         conversationUsers: _conversationUsers,
                         messages: _messages,
-                        areMessagesRead: false
+                        areMessagesRead: true
                     }
                     response.json({ targetConversation });
 
-                    // targetConversation = {
-                    //     ...targetConversation,
-                    //     conversationUsers: [...targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id))), userId]
-                    // };
-                    // User.bulkWrite(
-                    //     [
-                    //         {
-                    //             updateOne:
-                    //             {
-                    //                 "filter": { _id: userId },
-                    //                 "update": {
-                    //                     $pull: { conversations: { conversationToJoinId: conversationId } },
-                    //                 }
-                    //             }
-                    //         },
-                    //         {
-                    //             updateOne:
-                    //             {
-                    //                 "filter": { _id: userId },
-                    //                 "update": {
-                    //                     $push: { conversations: targetConversation },
-                    //                 }
-                    //             }
-                    //         },
-                    //         {
-                    //             updateMany:
-                    //             {
-                    //                 "filter": { _id: { $in: usersInConversation } },
-                    //                 "update": {
-                    //                     $push: { 'conversations.$[conversation].conversationUsers': userId },
-                    //                 },
-                    //                 "arrayFilters": [{ "conversation.conversationId": conversationId }]
-                    //             }
-                    //         }
-                    //     ]
-                    // ).catch(error => {
-                    //     if (error) {
-                    //         console.error('An error has occurred in updating the conversations of the current user: ', error)
-                    //     }
-                    //     console.log('Conversation added and invite deleted');
-                    // })
+                    targetConversation = {
+                        ...targetConversation,
+                        conversationUsers: [...targetConversation.conversationUsers.map(({ _id }) => JSON.parse(JSON.stringify(_id))), userId]
+                    };
+
+                    User.bulkWrite(
+                        [
+                            {
+                                updateOne:
+                                {
+                                    "filter": { _id: userId },
+                                    "update": {
+                                        $pull: { conversations: { conversationToJoinId: conversationId } },
+                                    }
+                                }
+                            },
+                            {
+                                updateOne:
+                                {
+                                    "filter": { _id: userId },
+                                    "update": {
+                                        $push: { conversations: targetConversation },
+                                    }
+                                }
+                            },
+                            {
+                                updateMany:
+                                {
+                                    "filter": { _id: { $in: usersInConversation } },
+                                    "update": {
+                                        $push: { 'conversations.$[conversation].conversationUsers': userId },
+                                    },
+                                    "arrayFilters": [{ "conversation.conversationId": conversationId }]
+                                }
+                            }
+                        ]
+                    ).catch(error => {
+                        if (error) {
+                            console.error('An error has occurred in updating the conversations of the current user: ', error)
+                        }
+                        console.log('Conversation added and invite deleted');
+                    })
                 } else {
                     console.log("The sender of the invitation had left the conversation.")
                     response.sendStatus(503)

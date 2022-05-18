@@ -13,7 +13,10 @@ router.route("/tags").get((req, res) => {
 router.route("/tags/:package").get((req, res) => {
     console.log("getting all tag names");
     const { package } = req.params;
-    const { name } = JSON.parse(package);
+    console.log('steaksss: ', package);
+    const _package = JSON.parse(package);
+    console.log('hello there bacon: ', _package);
+    const { name } = package ? JSON.parse(package) : {}
     if (name === "getTagNames") {
         Tag.find({}, { description: 0 })
             .then(tags => {

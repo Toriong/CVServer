@@ -17,8 +17,10 @@ const sortResults = (searchResults, input, searchType) => {
     let resultsIncludesInput = [];
     searchResults.forEach(result => {
         const { topic, username, title } = result;
-        const resultType = isTagSearch ? topic : isStoriesSearch ? title : username;
-        if (resultType.toUpperCase().startsWith(input.toUpperCase())) {
+        const resultType = isTagSearch ? topic : (isStoriesSearch ? title : username);
+        console.log('resultType, bacon: ', resultType.toUpperCase())
+        const _resultType = resultType.toUpperCase()
+        if (_resultType.toUpperCase().startsWith(input.toUpperCase())) {
             resultsStartWithInput.push(result);
         } else {
             resultsIncludesInput.push(result);

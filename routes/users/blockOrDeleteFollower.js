@@ -5,9 +5,10 @@ const router = require("../users");
 
 
 
-router.route("/blockOrDelFollower").post((req, res) => {
-    const { deletedUserId, isBlocked, blockedAt, isFollowing, isAFollower, data } = req.body;
-    const { userId: currentUserId } = data;
+router.route("/blockOrDeleteFollower").post((req, res) => {
+    const { deletedUserId, isBlocked, blockedAt, isFollowing, isAFollower, currentUserId } = req.body;
+    console.log('hello there meng');
+    console.log('req.body: ', req.body)
     if (isBlocked && isFollowing && isAFollower) {
         console.log('user is being removed, blocked, and unFollowed.')
         User.updateOne(
@@ -124,10 +125,7 @@ router.route("/blockOrDelFollower").post((req, res) => {
             }
         )
     } else if (isAFollower) {
-        // GOAL: 
-        // delete the target user from the current user's followers
-        // delete the current user from the target user's (the user that was deleted from the current user's followers) following
-
+        // delete the target user as a follower from the current user's follower's list and delete the current user from the following list of the target user
         User.bulkWrite(
             [
                 {
@@ -144,15 +142,15 @@ router.route("/blockOrDelFollower").post((req, res) => {
                     {
                         "filter": { _id: deletedUserId },
                         "update": {
-                            $pull: { 'activities.following': { userId: deletedUserId } }
+                            $pull: { 'activities.following': { userId: currentUserId } }
                         }
                     }
                 }
             ]
-        )
+        ).then(() => { res.json({ message: 'Updates has occurred. Target user was deleted as a follower.' }); })
     } else {
         User.updateOne(
-            { _id: userId },
+            { _id: currentUserId },
             {
                 $push:
                 {
@@ -168,7 +166,7 @@ router.route("/blockOrDelFollower").post((req, res) => {
             }
         );
     }
-    res.sendStatus(200);
+    // res.sendStatus(200);
 })
 
 module.exports = router;
