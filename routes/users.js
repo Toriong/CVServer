@@ -5756,7 +5756,6 @@ router.route("/users/:package").get((request, response) => {
 
                     return !blockedUserIds.includes(_userId);
                 })
-                // GOAL: get the following info: subtitle, title, intro pic, likes, comments, and date of publication
                 _list = _list.map(post => {
                     const targetPost = posts.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(post.postId));
                     const { username: authorUsername } = users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(targetPost.authorId))
@@ -5852,6 +5851,7 @@ router.route("/users/:package").get((request, response) => {
                                     _userId = userBeingViewed._id;
                                 }
                                 let { readingLists: _readingLists, postsWithIntroPics } = readingLists ? getReadingListsAndPostsPics(readingLists, posts, users, _userId) : {}
+                                console.log('donuts and bacon: ', postsWithIntroPics);
                                 let _currentUserReadingLists;
                                 // if the user is viewing a different user's profile, then get the reading list of the current user as well 
                                 if (isViewingDiffUserReadingLists) {
@@ -5884,7 +5884,6 @@ router.route("/users/:package").get((request, response) => {
                                     }
                                     const { firstName, lastName } = _userBeingViewed;
                                     const { followers: currentUserFollowers, activities: currentUserActivities } = currentUser;
-                                    console.log('bacon: ', _readingLists);
                                     userDefaultVals = {
                                         _id: _userId,
                                         readingLists: _readingLists,
@@ -5946,8 +5945,7 @@ router.route("/users/:package").get((request, response) => {
                                 //     }
                                 // }
                                 // storing all intro pics of posts into an array in order to have one source of truth since the same post can be saved into the different reading lists
-                                const usersInfo = (postsWithIntroPics.length && isViewingDiffUserReadingLists) ? { postsWithIntroPics, ...userDefaultVals } : { ...userDefaultVals }
-                                console.log('userInfo: ', usersInfo)
+                                const usersInfo = { postsWithIntroPics, ...userDefaultVals };
                                 response.json(usersInfo);
                             })
                         } else {
@@ -5958,7 +5956,6 @@ router.route("/users/:package").get((request, response) => {
                             if (activities?.following?.length) {
                                 user = { ...user, following: activities.following };
                             };
-                            console.log('user: ', user);
                             response.json(user);
                         }
                     } else if (!isOnOwnProfile) {
@@ -6335,9 +6332,7 @@ router.route("/users/:package").get((request, response) => {
                             return JSON.parse(_tag);
                         })
                         User.find({}, { _id: 1, username: 1, blockedUsers: 1, topics: 1, readingLists: 1, activities: 1, iconPath: 1 }).then(users => {
-                            console.log('userId: ', userId)
                             const currentUser = getUser(users, userId);
-                            console.log('currentUser: ', currentUser);
                             const currentUserBlockedUsers = currentUser.blockedUsers?.length && currentUser.blockedUsers.map(({ userId }) => userId);
                             BlogPost.find({ 'tags._id': { $in: tagIds } }, { _id: 1, tags: 1, publicationDate: 1, authorId: 1, comments: 1, userIdsOfLikes: 1, title: 1, subtitle: 1, imgUrl: 1, body: 1 }).then(posts => {
                                 const _posts = posts.filter(({ authorId }) => {
@@ -6352,11 +6347,11 @@ router.route("/users/:package").get((request, response) => {
                                     return false;
                                 });
 
-                                if (_posts.length) {
-                                    _tagsResults = _tagsResults.map(tag => {
-                                        const tagCopy = JSON.stringify({ ...tag });
-                                        return JSON.parse(tagCopy);
-                                    });
+                                _tagsResults = _tagsResults.map(tag => {
+                                    const tagCopy = JSON.stringify({ ...tag });
+                                    return JSON.parse(tagCopy);
+                                });
+                                if (_posts?.length) {
                                     _tagsResults = _tagsResults.map(tag => {
                                         let _postsWithTags = _posts.filter(({ tags }) => tags.map(({ _id }) => _id).includes(tag._id));
                                         if (_postsWithTags.length > 1) {
@@ -6368,19 +6363,21 @@ router.route("/users/:package").get((request, response) => {
                                             postsWithTag: addUserInfoToPosts(_postsWithTags, users, currentUser, _tags)
                                         }
                                     });
-                                    if (_tagsResults.length > 1) {
-                                        _tagsResults = _tagsResults.sort(({ topic: topicA }, { topic: topicB }) => {
-                                            if (topicA > topicB) return -1;
-                                            if (topicA < topicB) return 1;
-                                            return 0;
-                                        })
-                                    };
-                                    //put the tags that start with the user input first, then put all tags that consist of the user input next
-                                    response.json(sortResults(_tagsResults, input, searchType))
-                                } else {
-                                    // posts are empty since the user blocked the authors or the authors blocked the user
-                                    response.json([]);
+                                };
+
+                                // if there are no results then send the empty array to the client
+                                // if there is one result, then send the array to the client
+                                if (_tagsResults.length > 1) {
+                                    _tagsResults = _tagsResults.sort(({ topic: topicA }, { topic: topicB }) => {
+                                        if (topicA > topicB) return -1;
+                                        if (topicA < topicB) return 1;
+                                        return 0;
+                                    })
                                 }
+
+                                //put the tags that start with the user input first, then put all tags that consist of the user input next
+                                response.json(sortResults(_tagsResults, input, searchType))
+                                // } 
                             })
                         }
 
@@ -6496,7 +6493,6 @@ router.route("/users/:package").get((request, response) => {
                         totalNumUnreadMessages = messages ?
                             messages.reduce((totalUnreadMessages, message) => {
                                 const doesUserExist = users.map(({ _id }) => JSON.parse((JSON.stringify(_id)))).includes(userIdRecipient ?? inviterId);
-                                console.log('doesUserExist: ', doesUserExist);
                                 // if messages.isRead is true or messages.isRead and either userIdRecipient or inviterId
                                 const isMessageUnread = message?.isRead === false
                                 return totalUnreadMessages + (((((!!userIdRecipient ?? !!inviterId) && doesUserExist) || conversationUsers?.length) && isMessageUnread) ? 1 : 0);
@@ -6564,7 +6560,6 @@ router.route("/users/:package").get((request, response) => {
                             conversationUsers: _conversationUsers.filter(user => !!user),
                             messages: messages.map(message => {
                                 // if the message is not by the current user
-                                console.log('messages: ', messages)
                                 const isMsgByCurrentUser = (message.user._id === userId);
                                 const messageUser = !isMsgByCurrentUser && users.find(({ _id }) => JSON.stringify(_id) === JSON.stringify(message.user._id))
                                 const isCurrentUserBlocked = messageUser?.blockedUsers?.length && messageUser.blockedUsers.map(({ userId }) => userId).includes(userId);
@@ -6633,7 +6628,6 @@ router.route("/users/:package").get((request, response) => {
                         following: _following,
                         followers: _followers
                     };
-                    console.log('currentUserConversations: ', currentUserConversations)
                     response.json(currentUserConversations);
                 } else {
                     let _following;

@@ -74,6 +74,8 @@ app.use("/", require("./routes/users/checkExistenceOfUsers"));
 
 app.use("/", require("./routes/users/blockOrDeleteFollower"));
 
+app.use("/", require("./routes/users/changeUserPassword"));
+
 
 
 
