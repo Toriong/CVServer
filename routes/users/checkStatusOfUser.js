@@ -8,7 +8,7 @@ const { getUser } = require("../../functions/getUser");
 
 router.route("/checkStatusOfUser/:package").get((req, res) => {
     const package = JSON.parse(req.params.package);
-    const { name, targetUserId, currentUserId, willCheckIfUserIsInChat, conversationId } = package;
+    const { name, targetUserId, currentUserId, willCheckIfUserIsInChat, conversationId, username } = package;
     console.log('package: ', package);
     // well check if the target user blocked the current user, the current user blocked the target user, and the existence of the target user
     if (name === 'checkStatusOfUser') {
@@ -39,7 +39,10 @@ router.route("/checkStatusOfUser/:package").get((req, res) => {
                 res.json({ doesUserNotExist: true });
             }
         })
-
+    } else if (name === 'checkStatusByUsername') {
+        User.findOne({ username: username }).countDocuments().then(doesUserExist => {
+            res.json({ doesUserExist: !!doesUserExist })
+        })
     }
 }, error => {
     if (error) {

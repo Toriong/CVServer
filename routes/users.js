@@ -24,35 +24,6 @@ const { insertNewActivity } = require("../functions/insertNewActivity");
 
 
 
-
-// GOAL: if the current user is following the user that they want to block, delete that user from their following list  
-
-// NOTES:
-// do you need the msOfCurrentYear?
-
-// CASE #2: userA is the first reply to userB's comment and the post is written by userB. Store a reply notification for userB
-// the following is pushed into userB.notifications.replies: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]
-// the notifications.replies field is accessed 
-// userB is found by using the notifyUserId
-// the following is received from the front-end: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]}
-// the send the following: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]}
-// notifications.replies doesn't exist
-// if notifications.replies doesn't exist, then send the following to the server: {postId, repliesInfo:[{commentAuthorId, commentsRepliedTo: [{id, replies: [{authorId, replies:[id of replies]}]}
-// get notifications.replies of userB. 
-// userA replies to userB's comment which is on userB's post.
-
-
-// GOAL: CHECK IF THE CURRENT USER LIKED THE REPLY BEFORE 
-// don't do anything
-// the current user liked the reply before
-// accessing the likedReplyIds, check if the current user liked the reply before, then don't do anything
-// the likedReplyIds is accessed
-// the comment id exist
-// if the comment id exist, then access the likedReplyIds field
-// the repliedToComments field is accessed
-// the current post exist
-// if the current post exist, then access the repliedToComments
-
 const _getTimeElapsedText = eventTime => {
     const { miliSeconds: currentTimeInMS, msOfCurrentYear } = getTime();
     const timeSinceReply = currentTimeInMS - eventTime.miliSeconds;
@@ -3432,10 +3403,10 @@ router.route("/users/:package").get((request, response) => {
         const searchQuery = username ? { $or: [{ username: username }, { _id: userId }] } : { _id: userId };
         if (!username) {
             // the user is on their following or followers page
-            User.findOne(searchQuery, { followers: 1, _id: 1, 'activities.following': 1 })
+            User.findOne(searchQuery, { followers: 1, _id: 1, 'activities.following': 1, topics: 1 })
                 .then(result => {
-                    if (result?.followers?.length || result?.activities?.following?.length) {
-                        const { followers, activities } = result;
+                    if (result?.followers?.length || result?.activities?.following?.length || result?.topics?.length) {
+                        const { followers, activities, topics } = result;
                         let user;
                         if (followers?.length) {
                             user = { followers };
@@ -3444,7 +3415,6 @@ router.route("/users/:package").get((request, response) => {
                             user = user ? { ...user, following: activities.following } : { following: activities.following };
                         };
                         if (user) {
-                            // GOAL: get the icon and username of the targeted user:
                             const { following, followers } = user;
                             let userIds;
                             if (following?.length) {
@@ -3469,9 +3439,14 @@ router.route("/users/:package").get((request, response) => {
                                     }).filter(user => !!user);
                                 };
                                 const data = { followers: _followers, following: _following };
-                                console.log({ bacon: data });
-                                response.json(data);
+                                if (topics?.length) {
+                                    response.json({ ...data, tags: topics })
+                                } else {
+                                    response.json(data);
+                                }
                             })
+                        } else if (topics?.length) {
+                            response.json({ tags: topics });
                         } else {
                             response.json({ isEmpty: true })
                         }
@@ -3657,7 +3632,7 @@ router.route("/users/:package").get((request, response) => {
         // GOAL: GET ALL OF THE REPLY NOTIFICATIONS
         // CASE#1:
         User.findOne({ _id: userId }, { _id: 0, notifications: 1, publishedDrafts: 1, followers: 1, blockedUsers: 1 }).then(result => {
-            const { publishedDrafts, notifications, followers, blockedUsers } = result;
+            const { publishedDrafts, notifications, followers, blockedUsers } = result ?? {};
             const blockedUserIds = blockedUsers && blockedUsers.map(({ userId }) => userId);
             if (notifications) {
                 const { replies, comments, likes, newPostsFromFollowing, newFollowers } = notifications;
