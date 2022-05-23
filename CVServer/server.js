@@ -7,7 +7,7 @@ const dbconnection = "mongodb+srv://gtorio:simba1997@clustercv.blvqa.mongodb.net
 const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
-const port = process.env.PORT || 3005;
+const port = process?.env?.PORT || 3005;
 
 
 // will create temporary files on my server
@@ -111,8 +111,16 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
 });
 
 
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static('client/build'))
+}
 
 
+// app.use(express.static(path.join(__dirname, "/client")));
+
+// app.get('*', (req, res) => {
+//     res.sendFile(path.join(__dirname, '/client/build', 'index.html'));
+// });
 
 
 

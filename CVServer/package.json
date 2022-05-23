@@ -4,10 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "static": "nodemon staticServer.js",
+    "static": "nodemon server.js",
     "socket": "nodemon socketServer.js",
     "test": "jest",
-    "mochaTest": "mocha --timeout 10000"
+    "build": "cd client && npm run build",
+    "install-client": "cd client && npm run build",
+    "start": "node server.js",
+    "client": "cd client && npm start",
+    "mochaTest": "mocha --timeout 10000",
+    "heroku-postbuild": "npm run install-client && npm run build"
   },
   "keywords": [
     "node",
@@ -38,10 +43,10 @@
     "socket.io-client": "^4.4.1",
     "util": "^0.12.4",
     "utils": "^0.3.1",
-    "uuid": "^8.3.2"
+    "uuid": "^8.3.2",
+    "dotenv": "^10.0.0"
   },
   "devDependencies": {
-    "dotenv": "^10.0.0",
     "jest": "^27.4.4",
     "mocha": "^9.2.1",
     "nodemon": "^2.0.9"
