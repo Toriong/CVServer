@@ -7,6 +7,7 @@ const dbconnection = "mongodb+srv://gtorio:simba1997@clustercv.blvqa.mongodb.net
 const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
+const port = process.env.PORT || 3005;
 
 
 // will create temporary files on my server
@@ -14,6 +15,9 @@ const multiparty = require('connect-multiparty');
 
 // this will enable the front-end to upload files/images to the server
 const multipartyMiddleware = multiparty({ uploadDir: './writingPostImageUploads' });
+
+app.use(express.static(path.join(__dirname, 'build'))); ``
+
 
 // fix this bodyParser
 app.use(bodyParser.json({ limit: "1000mb" }));
@@ -112,9 +116,6 @@ app.post("/writePostImages", multipartyMiddleware, (req, res) => {
 
 
 
-
-
-
-app.listen(3005, () => {
-    console.log('server listening on 3005')
+app.listen(port, () => {
+    console.log(`Server listening on ${port}.`)
 })
